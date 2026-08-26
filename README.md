@@ -1,5 +1,7 @@
 # 🔍 StellarSearch — Pay-Per-Query Web Search for AI Agents
 
+[![CI](https://github.com/Emmy123222/Stellar-Search/actions/workflows/ci.yml/badge.svg)](https://github.com/Emmy123222/Stellar-Search/actions/workflows/ci.yml)
+
 > **Stellar Hackathon 2026 · Agents on Stellar**
 > Zero mock data. Real x402 payments. Real Serper.dev Search. Real Groq AI. Real Freighter wallet.
 
