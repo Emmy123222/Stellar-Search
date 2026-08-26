@@ -23,6 +23,7 @@ import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
+import { LRUCache } from 'lru-cache'
 import logger from './logger'
 import crypto, { randomUUID } from 'crypto'
 import {
@@ -259,6 +260,9 @@ async function deliverWebhookWithRetry(job: SearchJob, maxAttempts = MAX_JOB_WEB
   console.error(`[webhook] exhausted retries for job ${job.id}`)
 }
 
+// ─── Search result cache (issue #21) ─────────────────────────────────────
+const searchCache = new LRUCache<string, unknown>({ max: 100, ttl: 60_000 })
+
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = config.receivingAddress
 const FACILITATOR_URL   = config.facilitatorUrl
@@ -434,6 +438,13 @@ app.get('/search', async (req: Request, res: Response) => {
     }
     const cleanQ = v.cleanQ
 
+    const cacheKey = `${cleanQ}:${count}:${freshness ?? ''}`
+    const cached = searchCache.get(cacheKey) as SearchResponse | undefined
+    if (cached) {
+      stats.totalQueries++
+      return res.json({ ...cached, cached: true })
+    }
+
     const t0 = Date.now()
 
     const requestBody: Record<string, unknown> = {
@@ -533,6 +544,7 @@ app.get('/search', async (req: Request, res: Response) => {
       txHash,
       latencyMs,
       suggestions,
+      cached: false,
     }
 
     // Record opted-in receipt (cap 50, in-memory)
@@ -544,6 +556,7 @@ app.get('/search', async (req: Request, res: Response) => {
 
     providerDelivered = true
     resultCount = results.length
+    searchCache.set(cacheKey, responseBody)
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[search error]', err.message)

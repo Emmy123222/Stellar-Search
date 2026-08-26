@@ -107,6 +107,7 @@ export interface SearchResponse {
   txHash: string | null
   latencyMs: number
   suggestions?: string[]
+  cached?: boolean
 }
 
 export interface ImageSearchResponse {
