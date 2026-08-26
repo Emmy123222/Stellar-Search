@@ -32,39 +32,23 @@ import {
 import Groq from 'groq-sdk'
 import dotenv from 'dotenv'
 import {
-  HORIZON_URL, 
-  USDC_ISSUER, 
+  HORIZON_URL,
+  USDC_ISSUER,
   STELLAR_NETWORK,
   STELLAR_EXPERT_URL,
   AMOUNT_USDC,
   USDC_CONTRACT,
   AMOUNT_STROOPS,
 } from '../src/lib/constants'
-import { formatConfigurationError, readMcpConfig } from '../src/lib/config'
+import { MAX_BATCH_SIZE } from '../src/types/index.js'
+import { aiSummarize, checkBalance, webSearch } from './handlers.js'
 
 dotenv.config()
 
-let config
-try {
-  config = readMcpConfig()
-} catch (error) {
-  console.error(formatConfigurationError(error))
-  throw error
-}
-const SERVER_URL = config.searchApiUrl
-const GROQ_API_KEY = config.groqApiKey
+const SERVER_URL = process.env.SEARCH_API_URL || 'http://localhost:3001'
+const GROQ_API_KEY = process.env.GROQ_API_KEY!
 
-const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
-
-/** Clamp a search count to [min, max], falling back to defaultValue on NaN/fractional/negative. */
-export function clampCount(
-  value: unknown,
-  { min, max, defaultValue }: { min: number; max: number; defaultValue: number },
-): number {
-  const n = Number(value)
-  if (!Number.isFinite(n) || n < min) return defaultValue
-  return Math.floor(Math.min(n, max))
-}
+const groq = new Groq({ apiKey: GROQ_API_KEY })
 
 // ─── Receipt store (opted-in, in-memory, capped) ──────────────────────────
 export interface McpReceipt {
@@ -458,6 +442,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // Helper to handle abort without false completion
   const isAborted = () => controller.signal.aborted
 
+  // Keep the externally exposed tools backed by the tested handler
+  // implementations. The remaining branches below handle image, news, and
+  // stats tools which have different response shapes.
+  if (name === 'web_search') {
+    const input = args as { query: string; count?: number; freshness?: string }
+    return webSearch(fetch, SERVER_URL, input.query, input.count ?? 5, input.freshness)
+  }
+  if (name === 'ai_summarize') {
+    const input = args as { text: string; instruction?: string }
+    return aiSummarize(groq, input.text, input.instruction ?? 'summarise')
+  }
+  if (name === 'check_balance') {
+    const input = args as { address: string }
+    return checkBalance(fetch, input.address)
+  }
+
   // ── web_search with progress ──────────────────────────────────────────
   if (name === 'web_search') {
     const { query, count = 5, freshness } = args as { query: string; count?: number; freshness?: string }
@@ -472,10 +472,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       await sendProgress(server, progressToken, 'settlement', 'Settling 0.001 USDC on Stellar')
       if (isAborted()) throw Object.assign(new Error('Request cancelled'), { code: 'CANCELLED' })
 
-      const safeCount = clampCount(count, { min: 1, max: 10, defaultValue: 5 })
-      const params = new URLSearchParams({ q: query, count: String(safeCount) })
-      if (freshness) params.set('freshness', freshness)
       await sendProgress(server, progressToken, 'search', `Searching Serper for "${query}"`)
+
+      const params = new URLSearchParams({ q: query, count: String(count) })
+      if (freshness) params.set('freshness', freshness)
 
       const res = await fetch(`${SERVER_URL}/search?${params}`, { signal: controller.signal })
 
@@ -553,7 +553,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (isAborted()) throw Object.assign(new Error('Request cancelled'), { code: 'CANCELLED' })
       await sendProgress(server, progressToken, 'search', `Searching images for "${query}"`)
 
-      const safeCount = clampCount(count, { min: 1, max: 10, defaultValue: 5 })
+      const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 10)
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
 
       const res = await fetch(`${SERVER_URL}/images?${params}`, { signal: controller.signal })
@@ -620,7 +620,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (isAborted()) throw Object.assign(new Error('Request cancelled'), { code: 'CANCELLED' })
       await sendProgress(server, progressToken, 'search', `Searching news for "${query}"`)
 
-      const safeCount = clampCount(count, { min: 1, max: 20, defaultValue: 10 })
+      const safeCount = Math.min(Math.max(parseInt(String(count)) || 10, 1), 20)
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
       if (freshness) params.set('freshness', freshness)
 
@@ -677,9 +677,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── ai_summarize ──────────────────────────────────────────────────────
   if (name === 'ai_summarize') {
     const { text, instruction = 'summarise' } = args as { text: string; instruction?: string }
-    if (!groq) {
-      return { content: [{ type: 'text', text: 'AI summarization is not configured.' }], isError: true }
-    }
 
     try {
       const completion = await groq.chat.completions.create({
