@@ -14,6 +14,12 @@ import {
 import { Horizon } from '@stellar/stellar-sdk'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
 
+declare global {
+  interface Window {
+    __STELLAR_SEARCH_E2E_WALLET__?: boolean
+  }
+}
+
 export interface WalletState {
   publicKey: string | null
   connected: boolean
@@ -126,6 +132,20 @@ export function useFreighterWallet() {
     setWallet(prev => ({ ...prev, loading: true, error: null }))
 
     try {
+      if (typeof window !== 'undefined' && window.__STELLAR_SEARCH_E2E_WALLET__) {
+        setWallet(prev => ({
+          ...prev,
+          publicKey: 'GTESTWALLET7E2ESEARCHFIXTURE7E2ESEARCHFIXTURE7E2ESEARCH',
+          connected: true,
+          network: 'TESTNET',
+          xlmBalance: '100.0000',
+          usdcBalance: '10.000000',
+          loading: false,
+          error: null,
+        }))
+        return
+      }
+
       const connected = await isConnected()
       if (!connected.isConnected) {
         throw new Error(
@@ -190,6 +210,8 @@ export function useFreighterWallet() {
 
   // Auto-check if already connected on mount
   useEffect(() => {
+    if (typeof window !== 'undefined' && window.__STELLAR_SEARCH_E2E_WALLET__) return
+
     const check = async () => {
       try {
         const connected = await isConnected()
