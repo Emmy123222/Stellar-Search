@@ -16,6 +16,7 @@
 import express, { Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import { buildCorsOptions, getCorsStartupMessage } from './corsConfig.js'
 import Groq from 'groq-sdk'
@@ -47,7 +48,32 @@ const limiter = rateLimit({
   },
 })
 
-// ─── Middleware ───────────────────────────────────────────────────────────
+// ─── Security Headers & Middleware ────────────────────────────────────────
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        connectSrc: [
+          "'self'",
+          'https://horizon-testnet.stellar.org',
+          'https://horizon.stellar.org',
+          'https://soroban-testnet.stellar.org',
+          'https://soroban-rpc.mainnet.stellar.org',
+          'https://google.serper.dev',
+          'https://www.x402.org',
+          'https://channels.openzeppelin.com',
+          'http://localhost:*',
+          'ws://localhost:*',
+        ],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+)
 app.use(cors(buildCorsOptions()))
 app.use(express.json())
 app.use(limiter)

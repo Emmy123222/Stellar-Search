@@ -35,6 +35,7 @@
     "express-rate-limit": "^8.6.2",
     "framer-motion": "^11.0.0",
     "groq-sdk": "^0.9.0",
+    "helmet": "^8.3.0",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
