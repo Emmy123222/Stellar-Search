@@ -16,14 +16,14 @@ interface Props {
   wallet: WalletState
   onConnectWallet: () => void
   session: SearchSession
-  search: (query: string, count?: number) => Promise<void>
+  search: (query: string, freshnessOrCount?: string | number, count?: number) => Promise<void>
   reset: () => void
 }
 
 export function SearchPage({ wallet, onConnectWallet, session, search, reset }: Props) {
-  const handleSearch = (query: string) => {
+  const handleSearch = (query: string, freshness?: string) => {
     if (!wallet.connected) { onConnectWallet(); return }
-    search(query)
+    search(query, freshness)
   }
 
   const isSearching = session.status === 'searching'
@@ -129,7 +129,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
             {(session.status === 'complete' || session.status === 'searching') && (
               <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-                <SearchResults results={session.results} query={session.query} isLoading={session.status === 'searching'} />
+                <SearchResults results={session.results} query={session.query} isLoading={session.status === 'searching'} txHash={session.txHash} />
               </motion.div>
             )}
 

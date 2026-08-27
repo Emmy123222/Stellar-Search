@@ -16,6 +16,7 @@
 import express, { Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import rateLimit from 'express-rate-limit'
 import { buildCorsOptions, getCorsStartupMessage } from './corsConfig.js'
 import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
@@ -33,6 +34,23 @@ dotenv.config()
 
 const app  = express()
 const PORT = process.env.PORT || 3001
+const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE || '30', 10)
+
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: RATE_LIMIT_PER_MINUTE,
+  standardHeaders: true,
+  legacyHeaders: true,
+  handler: (_req: Request, res: Response) => {
+    res.setHeader('Retry-After', '60')
+    res.status(429).json({ error: 'Too many requests, please try again later.' })
+  },
+})
+
+// ─── Middleware ───────────────────────────────────────────────────────────
+app.use(cors(buildCorsOptions()))
+app.use(express.json())
+app.use(limiter)
 
 // ─── In-memory stats ──────────────────────────────────────────────────────
 const stats = {
@@ -55,10 +73,6 @@ if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
 const groq = new Groq({ apiKey: GROQ_API_KEY })
-
-// ─── Middleware ───────────────────────────────────────────────────────────
-app.use(cors(buildCorsOptions()))
-app.use(express.json())
 
 // ─── x402 payment guard on /search ───────────────────────────────────────
 // paymentMiddlewareFromConfig is the recommended API per official Stellar docs.

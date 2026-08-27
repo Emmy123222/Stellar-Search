@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles, Search } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
+import { explorerTxUrl, truncateHash } from '../../lib/stellar'
 
 interface Props {
   results: SearchResult[]
   query: string
   isLoading?: boolean
+  txHash?: string | null
 }
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
@@ -15,7 +17,7 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
     : 'http://localhost:3001'
 )
 
-export function SearchResults({ results, query, isLoading }: Props) {
+export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
@@ -123,9 +125,27 @@ export function SearchResults({ results, query, isLoading }: Props) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="font-display text-xs text-white/35 tracking-widest" aria-live="polite">
-          {results.length} RESULTS · SERPER.DEV · PAID VIA x402
-        </p>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <p className="font-display text-xs text-white/35 tracking-widest" aria-live="polite">
+            {results.length} RESULTS · SERPER.DEV · PAID VIA x402
+          </p>
+          {txHash && (
+            <a
+              href={explorerTxUrl(txHash)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="View transaction on Stellar Expert"
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs text-neon-cyan hover:underline transition-all"
+              style={{
+                background: 'rgba(0,245,255,0.08)',
+                border: '1px solid rgba(0,245,255,0.25)',
+              }}
+            >
+              <span>Tx: {truncateHash(txHash)}</span>
+              <ExternalLink className="w-3 h-3 flex-shrink-0" />
+            </a>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <button
             onClick={summarize}
