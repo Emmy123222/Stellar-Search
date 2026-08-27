@@ -1,43 +1,77 @@
 import { motion } from 'framer-motion'
 import { ExternalLink, GitBranch, Globe, Shield, Zap, Code2, Server } from 'lucide-react'
-import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, HORIZON_URL } from '../lib/stellar'
+import {
+  IS_MAINNET,
+  STELLAR_NETWORK,
+  AMOUNT_USDC,
+  STELLAR_EXPERT_URL,
+  HORIZON_URL,
+} from '../lib/stellar'
 
 const getSteps = () => [
   {
-    num: '01', icon: Globe, color: '#00f5ff',
+    num: '01',
+    icon: Globe,
+    color: '#00f5ff',
     title: 'Agent hits /search endpoint',
-    desc:  'Any HTTP client sends GET /search?q=query. No API key needed — just a Stellar wallet with USDC.',
-    code:  'GET /search?q=AI+agent+payments',
+    desc: 'Any HTTP client sends GET /search?q=query. No API key needed — just a Stellar wallet with USDC.',
+    code: 'GET /search?q=AI+agent+payments',
   },
   {
-    num: '02', icon: Zap, color: '#ffb800',
+    num: '02',
+    icon: Zap,
+    color: '#ffb800',
     title: 'Server returns HTTP 402',
-    desc:  'The @x402/express middleware responds with 402 Payment Required and a payment specification.',
-    code:  `HTTP 402 · X-Payment-Required: {"amount":"10000","currency":"USDC","network":"${STELLAR_NETWORK}"}`,
+    desc: 'The @x402/express middleware responds with 402 Payment Required and a payment specification.',
+    code: `HTTP 402 · X-Payment-Required: {"amount":"10000","currency":"USDC","network":"${STELLAR_NETWORK}"}`,
   },
   {
-    num: '03', icon: Shield, color: '#7dd3fc',
+    num: '03',
+    icon: Shield,
+    color: '#7dd3fc',
     title: 'Sign Soroban auth entry',
-    desc:  'The x402 client signs a Soroban authorization entry via Freighter — no private key exposure.',
-    code:  'signAuthEntry(authEntry) → X-Payment: <base64-sig>',
+    desc: 'The x402 client signs a Soroban authorization entry via Freighter — no private key exposure.',
+    code: 'signAuthEntry(authEntry) → X-Payment: <base64-sig>',
   },
   {
-    num: '04', icon: Server, color: '#39ff14',
+    num: '04',
+    icon: Server,
+    color: '#39ff14',
     title: 'Settle on Stellar + get results',
-    desc:  `OpenZeppelin facilitator verifies the signature, settles ${AMOUNT_USDC} USDC on-chain, and the server returns search results.`,
-    code:  'GET /search + X-Payment: <sig> → 200 OK + results',
+    desc: `OpenZeppelin facilitator verifies the signature, settles ${AMOUNT_USDC} USDC on-chain, and the server returns search results.`,
+    code: 'GET /search + X-Payment: <sig> → 200 OK + results',
   },
 ]
 
 const getStack = () => [
-  { label: 'Payment protocol', value: 'x402 (@x402/express + @x402/stellar)',              href: 'https://x402.org' },
-  { label: 'Blockchain',       value: IS_MAINNET ? 'Stellar Mainnet' : 'Stellar Testnet',    href: 'https://developers.stellar.org' },
-  { label: 'Smart contracts',  value: 'Soroban auth entry signing',                        href: 'https://developers.stellar.org/docs/smart-contracts' },
-  { label: 'Facilitator',      value: 'OpenZeppelin x402 (channels.openzeppelin.com)',     href: 'https://docs.openzeppelin.com/relayer/1.4.x/guides/stellar-x402-facilitator-guide' },
-  { label: 'Wallet',           value: 'Freighter (@stellar/freighter-api)',                href: 'https://freighter.app' },
-  { label: 'Balances / tx',    value: 'Stellar Horizon REST API (live)',                   href: HORIZON_URL },
-  { label: 'Search backend',   value: 'Serper.dev API',                                   href: 'https://serper.dev' },
-  { label: 'AI assistant',     value: 'Groq (groq-sdk) · Llama 3.3 70B',                  href: 'https://console.groq.com' },
+  {
+    label: 'Payment protocol',
+    value: 'x402 (@x402/express + @x402/stellar)',
+    href: 'https://x402.org',
+  },
+  {
+    label: 'Blockchain',
+    value: IS_MAINNET ? 'Stellar Mainnet' : 'Stellar Testnet',
+    href: 'https://developers.stellar.org',
+  },
+  {
+    label: 'Smart contracts',
+    value: 'Soroban auth entry signing',
+    href: 'https://developers.stellar.org/docs/smart-contracts',
+  },
+  {
+    label: 'Facilitator',
+    value: 'OpenZeppelin x402 (channels.openzeppelin.com)',
+    href: 'https://docs.openzeppelin.com/relayer/1.4.x/guides/stellar-x402-facilitator-guide',
+  },
+  { label: 'Wallet', value: 'Freighter (@stellar/freighter-api)', href: 'https://freighter.app' },
+  { label: 'Balances / tx', value: 'Stellar Horizon REST API (live)', href: HORIZON_URL },
+  { label: 'Search backend', value: 'Serper.dev API', href: 'https://serper.dev' },
+  {
+    label: 'AI assistant',
+    value: 'Groq (groq-sdk) · Llama 3.3 70B',
+    href: 'https://console.groq.com',
+  },
 ]
 
 export function DocsPage() {
@@ -47,19 +81,28 @@ export function DocsPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 space-y-16">
-
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-        <span className="font-display text-xs text-neon-cyan/50 tracking-widest">DOCUMENTATION</span>
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="space-y-4"
+      >
+        <span className="font-display text-xs text-neon-cyan/50 tracking-widest">
+          DOCUMENTATION
+        </span>
         <h1 className="font-display text-3xl sm:text-4xl text-white">HOW IT WORKS</h1>
         <p className="text-white/45 text-lg max-w-2xl leading-relaxed">
-          StellarSearch is a pay-per-query search API for autonomous AI agents. It uses the real x402 protocol
-          on Stellar — no mock data, no fake payments. Every search costs {AMOUNT_USDC} USDC settled on-chain.
+          StellarSearch is a pay-per-query search API for autonomous AI agents. It uses the real
+          x402 protocol on Stellar — no mock data, no fake payments. Every search costs{' '}
+          {AMOUNT_USDC} USDC settled on-chain.
         </p>
         <div className="flex flex-wrap gap-3 pt-1">
           {[
-            { label: 'x402 Docs',        href: 'https://developers.stellar.org/docs/build/agentic-payments/x402' },
-            { label: 'GitHub Repo',      href: 'https://github.com/stellar/x402-stellar' },
+            {
+              label: 'x402 Docs',
+              href: 'https://developers.stellar.org/docs/build/agentic-payments/x402',
+            },
+            { label: 'GitHub Repo', href: 'https://github.com/stellar/x402-stellar' },
             { label: `${networkLabel} Explorer`, href: STELLAR_EXPERT_URL },
           ].map(({ label, href }) => (
             <a
@@ -79,7 +122,9 @@ export function DocsPage() {
       {/* x402 payment flow */}
       <section className="space-y-5">
         <div>
-          <span className="font-display text-xs text-neon-cyan/35 tracking-widest">THE x402 PROTOCOL</span>
+          <span className="font-display text-xs text-neon-cyan/35 tracking-widest">
+            THE x402 PROTOCOL
+          </span>
           <h2 className="font-display text-2xl text-white mt-1">Payment flow</h2>
         </div>
         <div className="space-y-3">
@@ -92,7 +137,10 @@ export function DocsPage() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.08 }}
                 className="flex gap-5 rounded-xl p-5"
-                style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}
+                style={{
+                  background: 'rgba(6,13,20,0.6)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}
               >
                 <div className="flex-shrink-0 flex flex-col items-center gap-2">
                   <div
@@ -110,7 +158,10 @@ export function DocsPage() {
                   </div>
                   <p className="text-white/45 text-sm leading-relaxed mb-3">{step.desc}</p>
                   <div className="py-2 px-3 rounded-lg bg-black/30 border border-white/5">
-                    <code className="font-mono text-xs break-all" style={{ color: 'rgba(0,245,255,0.6)' }}>
+                    <code
+                      className="font-mono text-xs break-all"
+                      style={{ color: 'rgba(0,245,255,0.6)' }}
+                    >
                       {step.code}
                     </code>
                   </div>
@@ -124,10 +175,15 @@ export function DocsPage() {
       {/* Real stack */}
       <section className="space-y-5">
         <div>
-          <span className="font-display text-xs text-neon-cyan/35 tracking-widest">REAL STACK — NO MOCKS</span>
+          <span className="font-display text-xs text-neon-cyan/35 tracking-widest">
+            REAL STACK — NO MOCKS
+          </span>
           <h2 className="font-display text-2xl text-white mt-1">Technology used</h2>
         </div>
-        <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{ border: '1px solid rgba(255,255,255,0.07)' }}
+        >
           {STACK.map(({ label, value, href }, i) => (
             <motion.div
               key={label}
@@ -140,7 +196,10 @@ export function DocsPage() {
                 background: 'rgba(6,13,20,0.5)',
               }}
             >
-              <span className="font-display text-white/25 tracking-wider w-44 flex-shrink-0 uppercase" style={{ fontSize: '10px' }}>
+              <span
+                className="font-display text-white/25 tracking-wider w-44 flex-shrink-0 uppercase"
+                style={{ fontSize: '10px' }}
+              >
                 {label}
               </span>
               <a
@@ -172,18 +231,34 @@ export function DocsPage() {
             <GitBranch className="w-5 h-5 text-neon-cyan" />
           </div>
           <div className="space-y-2">
-            <h3 className="font-display text-sm text-neon-cyan">STELLAR HACKATHON 2026 · AGENTS ON STELLAR</h3>
+            <h3 className="font-display text-sm text-neon-cyan">
+              STELLAR HACKATHON 2026 · AGENTS ON STELLAR
+            </h3>
             <p className="text-white/45 text-sm leading-relaxed">
-              Built for the Agents on Stellar hackathon (March 30 – April 13, 2026). Addresses the explicit
-              demand signal: pay-per-query web search instead of monthly subscriptions. Uses real x402 protocol,
-              real Stellar testnet transactions, real search results, and real Groq AI — zero mock data.
+              Built for the Agents on Stellar hackathon (March 30 – April 13, 2026). Addresses the
+              explicit demand signal: pay-per-query web search instead of monthly subscriptions.
+              Uses real x402 protocol, real Stellar testnet transactions, real search results, and
+              real Groq AI — zero mock data.
             </p>
             <div className="flex flex-wrap gap-2 pt-1">
-              {['x402 Protocol', 'Soroban Auth', 'USDC Micropayments', 'Freighter Wallet', 'Serper.dev', 'Groq AI', 'MCP Server'].map(tag => (
+              {[
+                'x402 Protocol',
+                'Soroban Auth',
+                'USDC Micropayments',
+                'Freighter Wallet',
+                'Serper.dev',
+                'Groq AI',
+                'MCP Server',
+              ].map(tag => (
                 <span
                   key={tag}
                   className="px-2 py-0.5 rounded-full font-display"
-                  style={{ background: 'rgba(0,245,255,0.08)', color: 'rgba(0,245,255,0.6)', border: '1px solid rgba(0,245,255,0.15)', fontSize: '10px' }}
+                  style={{
+                    background: 'rgba(0,245,255,0.08)',
+                    color: 'rgba(0,245,255,0.6)',
+                    border: '1px solid rgba(0,245,255,0.15)',
+                    fontSize: '10px',
+                  }}
                 >
                   {tag}
                 </span>

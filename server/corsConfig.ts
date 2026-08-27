@@ -13,17 +13,14 @@ const CORS_ALLOWED_HEADERS = [
   'X-PAYMENT',
 ] as const
 
-const CORS_EXPOSED_HEADERS = [
-  'PAYMENT-REQUIRED',
-  'X-Payment-Response',
-] as const
+const CORS_EXPOSED_HEADERS = ['PAYMENT-REQUIRED', 'X-Payment-Response'] as const
 
 const CORS_METHODS = ['GET', 'POST', 'OPTIONS'] as const
 
 export function parseAllowedOrigins(raw?: string): string[] {
   return (raw ?? '')
     .split(',')
-    .map((entry) => entry.trim())
+    .map(entry => entry.trim())
     .filter(Boolean)
 }
 
@@ -59,7 +56,7 @@ export function buildCorsOptions(): CorsOptions {
 
   if (allowed.length === 0) {
     console.warn(
-      '[cors] ALLOWED_ORIGINS is empty in production — blocking cross-origin browser requests',
+      '[cors] ALLOWED_ORIGINS is empty in production — blocking cross-origin browser requests'
     )
   }
 

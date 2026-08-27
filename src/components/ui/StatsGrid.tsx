@@ -13,10 +13,34 @@ interface ServerStats {
 }
 
 const CARDS = [
-  { key: 'totalQueries',     label: 'Total Queries', Icon: TrendingUp, color: '#00f5ff', fmt: (v: unknown) => Number(v).toLocaleString() },
-  { key: 'totalUsdcSettled', label: 'USDC Settled',  Icon: Zap,        color: '#ffb800', fmt: (v: unknown) => `$${v}` },
-  { key: 'avgLatencyMs',     label: 'Avg Latency',   Icon: Clock,      color: '#39ff14', fmt: (v: unknown) => `${v}ms` },
-  { key: 'uptime',           label: 'Uptime',        Icon: Shield,     color: '#7dd3fc', fmt: (v: unknown) => String(v) },
+  {
+    key: 'totalQueries',
+    label: 'Total Queries',
+    Icon: TrendingUp,
+    color: '#00f5ff',
+    fmt: (v: unknown) => Number(v).toLocaleString(),
+  },
+  {
+    key: 'totalUsdcSettled',
+    label: 'USDC Settled',
+    Icon: Zap,
+    color: '#ffb800',
+    fmt: (v: unknown) => `$${v}`,
+  },
+  {
+    key: 'avgLatencyMs',
+    label: 'Avg Latency',
+    Icon: Clock,
+    color: '#39ff14',
+    fmt: (v: unknown) => `${v}ms`,
+  },
+  {
+    key: 'uptime',
+    label: 'Uptime',
+    Icon: Shield,
+    color: '#7dd3fc',
+    fmt: (v: unknown) => String(v),
+  },
 ]
 
 interface StatsGridProps {
@@ -34,19 +58,19 @@ export function StatsGrid({ pollingIntervalMs = 10_000 }: StatsGridProps) {
   })
 
   const load = useCallback(async () => {
-      const data = await fetchServerStats()
-      if (data) {
-        const next: ServerStats = {
-          totalQueries:     data.totalQueries     ?? 0,
-          totalUsdcSettled: data.totalUsdcSettled ?? '0.00',
-          avgLatencyMs:     data.avgLatencyMs     ?? 0,
-          uptime:           data.uptime           ?? '—',
-          status: 'online',
-        }
-        setStats(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next)
-      } else {
-        setStats(prev => ({ ...prev, status: 'offline' }))
+    const data = await fetchServerStats()
+    if (data) {
+      const next: ServerStats = {
+        totalQueries: data.totalQueries ?? 0,
+        totalUsdcSettled: data.totalUsdcSettled ?? '0.00',
+        avgLatencyMs: data.avgLatencyMs ?? 0,
+        uptime: data.uptime ?? '—',
+        status: 'online',
       }
+      setStats(previous => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next))
+    } else {
+      setStats(prev => ({ ...prev, status: 'offline' }))
+    }
   }, [])
 
   useEffect(() => {
@@ -87,17 +111,23 @@ export function StatsGrid({ pollingIntervalMs = 10_000 }: StatsGridProps) {
           <p className="font-display text-lg font-bold" style={{ color }}>
             {fmt(stats[key])}
           </p>
-          <p className="font-display text-white/30 mt-0.5 tracking-wider uppercase"
-            style={{ fontSize: '9px' }}>
+          <p
+            className="font-display text-white/30 mt-0.5 tracking-wider uppercase"
+            style={{ fontSize: '9px' }}
+          >
             {label}
           </p>
-          <div className="mt-2.5 h-px rounded-full"
-            style={{ background: `linear-gradient(90deg, ${color}50, transparent)` }} />
+          <div
+            className="mt-2.5 h-px rounded-full"
+            style={{ background: `linear-gradient(90deg, ${color}50, transparent)` }}
+          />
         </motion.div>
       ))}
 
       <div className="col-span-2 lg:col-span-4 flex items-center justify-end gap-2 mt-1">
-        <div className={`w-1.5 h-1.5 rounded-full ${stats.status === 'online' ? 'bg-neon-green animate-pulse' : 'bg-red-500'}`} />
+        <div
+          className={`w-1.5 h-1.5 rounded-full ${stats.status === 'online' ? 'bg-neon-green animate-pulse' : 'bg-red-500'}`}
+        />
         <span className="font-display text-xs text-white/25">
           SERVER {stats.status === 'online' ? 'ONLINE' : 'OFFLINE — run: npm run server'}
         </span>

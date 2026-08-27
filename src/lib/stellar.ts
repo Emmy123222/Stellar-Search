@@ -41,12 +41,12 @@ export function formatTimeAgo(isoString: string): string {
  */
 export async function fetchServerStats() {
   try {
-    const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
-      typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
+    const SERVER_URL =
+      (import.meta as any).env?.VITE_SERVER_URL ??
+      (typeof window !== 'undefined' && window.location.origin.includes('vercel.app')
         ? `${window.location.origin}/api`
-        : 'http://localhost:3001'
-    )
-    
+        : 'http://localhost:3001')
+
     const res = await fetch(`${SERVER_URL}/health`)
     if (!res.ok) return null
     return await res.json()

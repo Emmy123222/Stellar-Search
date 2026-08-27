@@ -47,12 +47,12 @@ export function SearchSuggestions({ onSelect, aiSuggestions }: Props) {
             onMouseEnter={e => {
               const el = e.currentTarget as HTMLButtonElement
               el.style.borderColor = isAi ? 'rgba(255,176,0,0.3)' : 'rgba(0,245,255,0.25)'
-              el.style.background   = isAi ? 'rgba(255,176,0,0.05)' : 'rgba(0,245,255,0.04)'
+              el.style.background = isAi ? 'rgba(255,176,0,0.05)' : 'rgba(0,245,255,0.04)'
             }}
             onMouseLeave={e => {
               const el = e.currentTarget as HTMLButtonElement
               el.style.borderColor = 'rgba(255,255,255,0.08)'
-              el.style.background  = 'transparent'
+              el.style.background = 'transparent'
             }}
           >
             {q}

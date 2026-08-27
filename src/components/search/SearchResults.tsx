@@ -11,22 +11,26 @@ interface Props {
   txHash?: string | null
 }
 
-const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
-  typeof window !== 'undefined' && window.location.origin.includes('vercel.app')
+const SERVER_URL =
+  (import.meta as any).env?.VITE_SERVER_URL ??
+  (typeof window !== 'undefined' && window.location.origin.includes('vercel.app')
     ? `${window.location.origin}/api`
-    : 'http://localhost:3001'
-)
+    : 'http://localhost:3001')
 
 export function SearchResults({ results, query, isLoading, txHash }: Props) {
-  const [summary, setSummary]               = useState<string>('')
-  const [summaryError, setSummaryError]     = useState<string | null>(null)
-  const [summarizing, setSummarizing]       = useState(false)
+  const [summary, setSummary] = useState<string>('')
+  const [summaryError, setSummaryError] = useState<string | null>(null)
+  const [summarizing, setSummarizing] = useState(false)
 
   if (isLoading) {
     return (
       <div className="space-y-3">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="animate-pulse rounded-xl p-4 space-y-3" style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        {[1, 2, 3].map(i => (
+          <div
+            key={i}
+            className="animate-pulse rounded-xl p-4 space-y-3"
+            style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}
+          >
             <div className="flex gap-2">
               <div className="w-16 h-4 bg-white/10 rounded-full"></div>
               <div className="w-12 h-4 bg-white/10 rounded-full"></div>
@@ -52,9 +56,10 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
     setSummaryError(null)
     setSummary('')
 
-    const snippets = results.slice(0, 5).map((r, i) =>
-      `${i + 1}. ${r.title} — ${r.url}\n   ${r.description}`
-    ).join('\n')
+    const snippets = results
+      .slice(0, 5)
+      .map((r, i) => `${i + 1}. ${r.title} — ${r.url}\n   ${r.description}`)
+      .join('\n')
 
     const prompt =
       `Here are search results for "${query}". ` +
@@ -76,9 +81,9 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
 
       const isSSE = res.headers.get('content-type')?.includes('text/event-stream')
       if (isSSE && res.body) {
-        const reader  = res.body.getReader()
+        const reader = res.body.getReader()
         const decoder = new TextDecoder('utf-8')
-        let   buffer  = ''
+        let buffer = ''
         while (true) {
           const { value, done } = await reader.read()
           if (done) break
@@ -88,7 +93,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
             const raw = buffer.slice(0, blank)
             buffer = buffer.slice(blank + 2)
             let event = 'message'
-            let data  = ''
+            let data = ''
             for (const line of raw.split('\n')) {
               if (line.startsWith('event:')) event = line.slice(6).trim()
               else if (line.startsWith('data:')) data += line.slice(5).trim()
@@ -98,7 +103,9 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
               try {
                 const { content } = JSON.parse(data) as { content?: string }
                 if (content) setSummary(prev => prev + content)
-              } catch { /* skip malformed */ }
+              } catch {
+                /* skip malformed */
+              }
             } else if (event === 'done') {
               break
             } else if (event === 'error') {
@@ -178,7 +185,9 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
           >
             <div className="flex items-center gap-2">
               <Sparkles className="w-3 h-3 text-neon-cyan" />
-              <span className="font-display text-xs text-neon-cyan tracking-wider">AI SUMMARY · GROQ</span>
+              <span className="font-display text-xs text-neon-cyan tracking-wider">
+                AI SUMMARY · GROQ
+              </span>
               {summarizing && (
                 <span className="flex items-center gap-1 ml-auto">
                   {[0, 1, 2].map(j => (
@@ -239,7 +248,9 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
                 </span>
                 <div className="flex items-center gap-1 text-neon-amber/60">
                   <Star className="w-3 h-3 fill-current" />
-                  <span className="font-display text-xs">{(r.relevanceScore * 100).toFixed(0)}%</span>
+                  <span className="font-display text-xs">
+                    {(r.relevanceScore * 100).toFixed(0)}%
+                  </span>
                 </div>
                 {r.publishedAt && (
                   <div className="flex items-center gap-1 text-white/25">
@@ -253,13 +264,14 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
                 {r.title}
               </h3>
 
-              <p className="font-mono text-xs mb-2 truncate" style={{ color: 'rgba(0,245,255,0.35)' }}>
+              <p
+                className="font-mono text-xs mb-2 truncate"
+                style={{ color: 'rgba(0,245,255,0.35)' }}
+              >
                 {r.url}
               </p>
 
-              <p className="text-white/45 text-xs leading-relaxed line-clamp-2">
-                {r.description}
-              </p>
+              <p className="text-white/45 text-xs leading-relaxed line-clamp-2">{r.description}</p>
             </div>
 
             <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border border-white/8 text-white/25 group-hover:text-neon-cyan group-hover:border-neon-cyan/30 transition-all mt-0.5">
@@ -274,7 +286,9 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
               animate={{ width: `${r.relevanceScore * 100}%` }}
               transition={{ delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
               className="h-full rounded-full"
-              style={{ background: 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))' }}
+              style={{
+                background: 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))',
+              }}
             />
           </div>
         </motion.a>

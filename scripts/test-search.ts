@@ -86,7 +86,8 @@ async function runSearch() {
   data.results.forEach((r: any, i: number) => {
     console.log(`\n${i + 1}. ${r.title}`)
     console.log(`   ${r.url}`)
-    if (r.description) console.log(`   ${r.description.slice(0, 120)}${r.description.length > 120 ? '...' : ''}`)
+    if (r.description)
+      console.log(`   ${r.description.slice(0, 120)}${r.description.length > 120 ? '...' : ''}`)
   })
 
   // 3. Test Groq AI
@@ -133,7 +134,9 @@ async function runSearch() {
       process.exit(1)
     }
     if (suggMs > 500) {
-      console.warn(`⚠  Suggestions added ${suggMs - ms}ms — exceeds 500ms budget (total: ${suggMs}ms)`)
+      console.warn(
+        `⚠  Suggestions added ${suggMs - ms}ms — exceeds 500ms budget (total: ${suggMs}ms)`
+      )
     }
 
     console.log(`\n✓ Got ${suggestions.length} AI suggestions (${suggMs}ms total):`)

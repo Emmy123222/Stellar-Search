@@ -15,12 +15,12 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import Groq from 'groq-sdk'
 import dotenv from 'dotenv'
-import { 
-  HORIZON_URL, 
-  USDC_ISSUER, 
+import {
+  HORIZON_URL,
+  USDC_ISSUER,
   STELLAR_NETWORK,
   STELLAR_EXPERT_URL,
-  AMOUNT_USDC
+  AMOUNT_USDC,
 } from '../src/lib/constants'
 
 dotenv.config()
@@ -33,7 +33,7 @@ const groq = new Groq({ apiKey: GROQ_API_KEY })
 // ─── MCP server ───────────────────────────────────────────────────────────
 const server = new Server(
   { name: 'stellar-search', version: '1.0.0' },
-  { capabilities: { tools: {} } },
+  { capabilities: { tools: {} } }
 )
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -48,7 +48,11 @@ Use for current events, documentation, research, or anything needing up-to-date 
         properties: {
           query: { type: 'string', description: 'Search query' },
           count: { type: 'number', description: 'Results count (1–10, default 5)', default: 5 },
-          freshness: { type: 'string', enum: ['pd', 'pw', 'pm'], description: 'Age: pd=day, pw=week, pm=month' },
+          freshness: {
+            type: 'string',
+            enum: ['pd', 'pw', 'pm'],
+            description: 'Age: pd=day, pw=week, pm=month',
+          },
         },
         required: ['query'],
       },
@@ -77,7 +81,11 @@ Use for breaking stories, current events, and time-sensitive reporting.`,
         properties: {
           query: { type: 'string', description: 'News search query' },
           count: { type: 'number', description: 'Results count (1–20, default 10)', default: 10 },
-          freshness: { type: 'string', enum: ['pd', 'pw', 'pm'], description: 'Age: pd=day, pw=week, pm=month' },
+          freshness: {
+            type: 'string',
+            enum: ['pd', 'pw', 'pm'],
+            description: 'Age: pd=day, pw=week, pm=month',
+          },
         },
         required: ['query'],
       },
@@ -89,7 +97,11 @@ Use for breaking stories, current events, and time-sensitive reporting.`,
         type: 'object',
         properties: {
           text: { type: 'string', description: 'Text to summarise or analyse' },
-          instruction: { type: 'string', description: 'What to do with the text (e.g. "summarise", "extract key points")', default: 'summarise' },
+          instruction: {
+            type: 'string',
+            description: 'What to do with the text (e.g. "summarise", "extract key points")',
+            default: 'summarise',
+          },
         },
         required: ['text'],
       },
@@ -107,7 +119,8 @@ Use for breaking stories, current events, and time-sensitive reporting.`,
     },
     {
       name: 'get_search_stats',
-      description: 'Get live statistics from the StellarSearch server (total queries, USDC settled, uptime, latencies).',
+      description:
+        'Get live statistics from the StellarSearch server (total queries, USDC settled, uptime, latencies).',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -116,12 +129,16 @@ Use for breaking stories, current events, and time-sensitive reporting.`,
   ],
 }))
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async request => {
   const { name, arguments: args } = request.params
 
   // ── web_search ────────────────────────────────────────────────────────
   if (name === 'web_search') {
-    const { query, count = 5, freshness } = args as { query: string; count?: number; freshness?: string }
+    const {
+      query,
+      count = 5,
+      freshness,
+    } = args as { query: string; count?: number; freshness?: string }
 
     try {
       const params = new URLSearchParams({ q: query, count: String(count) })
@@ -143,16 +160,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         .join('\n\n')
 
       return {
-        content: [{
-          type: 'text',
-          text: [
-            `🔍 Results for: "${query}"`,
-            `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
-            `⚡ Latency: ${data.latencyMs}ms`,
-            `📊 ${data.count} results\n`,
-            formatted,
-          ].join('\n'),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: [
+              `🔍 Results for: "${query}"`,
+              `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
+              `⚡ Latency: ${data.latencyMs}ms`,
+              `📊 ${data.count} results\n`,
+              formatted,
+            ].join('\n'),
+          },
+        ],
       }
     } catch (err: any) {
       return { content: [{ type: 'text', text: `Search failed: ${err.message}` }], isError: true }
@@ -176,30 +195,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const data: any = await res.json()
       const formatted = data.results
-        .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   Image: ${r.imageUrl}\n   Source: ${r.sourceUrl} (${r.source})`)
+        .map(
+          (r: any, i: number) =>
+            `${i + 1}. **${r.title}**\n   Image: ${r.imageUrl}\n   Source: ${r.sourceUrl} (${r.source})`
+        )
         .join('\n\n')
 
       return {
-        content: [{
-          type: 'text',
-          text: [
-            `🖼️  Image results for: "${query}"`,
-            `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
-            `⚡ Latency: ${data.latencyMs}ms`,
-            `📊 ${data.count} results\n`,
-            formatted,
-          ].join('\n'),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: [
+              `🖼️  Image results for: "${query}"`,
+              `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
+              `⚡ Latency: ${data.latencyMs}ms`,
+              `📊 ${data.count} results\n`,
+              formatted,
+            ].join('\n'),
+          },
+        ],
       }
     } catch (err: any) {
-      return { content: [{ type: 'text', text: `Image search failed: ${err.message}` }], isError: true }
+      return {
+        content: [{ type: 'text', text: `Image search failed: ${err.message}` }],
+        isError: true,
+      }
     }
   }
 
   // ── news_search ───────────────────────────────────────────────────────
   if (name === 'news_search') {
-    const { query, count = 10, freshness } = args as {
-      query: string; count?: number; freshness?: string
+    const {
+      query,
+      count = 10,
+      freshness,
+    } = args as {
+      query: string
+      count?: number
+      freshness?: string
     }
 
     try {
@@ -223,19 +256,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         .join('\n\n')
 
       return {
-        content: [{
-          type: 'text',
-          text: [
-            `📰 News results for: "${query}"`,
-            `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
-            `⚡ Latency: ${data.latencyMs}ms`,
-            `📊 ${data.count} results\n`,
-            formatted,
-          ].join('\n'),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: [
+              `📰 News results for: "${query}"`,
+              `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
+              `⚡ Latency: ${data.latencyMs}ms`,
+              `📊 ${data.count} results\n`,
+              formatted,
+            ].join('\n'),
+          },
+        ],
       }
     } catch (err: any) {
-      return { content: [{ type: 'text', text: `News search failed: ${err.message}` }], isError: true }
+      return {
+        content: [{ type: 'text', text: `News search failed: ${err.message}` }],
+        isError: true,
+      }
     }
   }
 
@@ -247,7 +285,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const completion = await groq.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
         messages: [
-          { role: 'system', content: 'You are a concise research assistant. Be brief and accurate.' },
+          {
+            role: 'system',
+            content: 'You are a concise research assistant. Be brief and accurate.',
+          },
           { role: 'user', content: `Please ${instruction} the following:\n\n${text}` },
         ],
         max_tokens: 512,
@@ -267,34 +308,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     try {
       const res = await fetch(`${HORIZON_URL}/accounts/${address}`)
-      if (res.status === 404) throw new Error(`Account not found on Stellar ${STELLAR_NETWORK.split(':')[1]}`)
+      if (res.status === 404)
+        throw new Error(`Account not found on Stellar ${STELLAR_NETWORK.split(':')[1]}`)
       if (!res.ok) throw new Error(`Horizon returned ${res.status}`)
 
       const account = await res.json()
-      let xlm = '0', usdc = '0'
+      let xlm = '0',
+        usdc = '0'
 
       for (const b of account.balances) {
         if (b.asset_type === 'native') xlm = parseFloat(b.balance).toFixed(4)
-        if (b.asset_type === 'credit_alphanum4' && b.asset_code === 'USDC' && b.asset_issuer === USDC_ISSUER) {
+        if (
+          b.asset_type === 'credit_alphanum4' &&
+          b.asset_code === 'USDC' &&
+          b.asset_issuer === USDC_ISSUER
+        ) {
           usdc = parseFloat(b.balance).toFixed(6)
         }
       }
 
       const queries = Math.floor(parseFloat(usdc) / parseFloat(AMOUNT_USDC))
       return {
-        content: [{
-          type: 'text',
-          text: [
-            `💳 Stellar Account: ${address}`,
-            `   USDC: ${usdc} (~${queries.toLocaleString()} searches remaining)`,
-            `   XLM:  ${xlm}`,
-            `   Network: ${STELLAR_NETWORK.split(':')[1]}`,
-            `   Explorer: ${STELLAR_EXPERT_URL}/account/${address}`,
-          ].join('\n'),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: [
+              `💳 Stellar Account: ${address}`,
+              `   USDC: ${usdc} (~${queries.toLocaleString()} searches remaining)`,
+              `   XLM:  ${xlm}`,
+              `   Network: ${STELLAR_NETWORK.split(':')[1]}`,
+              `   Explorer: ${STELLAR_EXPERT_URL}/account/${address}`,
+            ].join('\n'),
+          },
+        ],
       }
     } catch (err: any) {
-      return { content: [{ type: 'text', text: `Balance check failed: ${err.message}` }], isError: true }
+      return {
+        content: [{ type: 'text', text: `Balance check failed: ${err.message}` }],
+        isError: true,
+      }
     }
   }
 
@@ -305,26 +357,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (!res.ok) throw new Error(`Server health check returned ${res.status}`)
 
       const stats = await res.json()
-      
+
       return {
-        content: [{
-          type: 'text',
-          text: [
-            `📊 StellarSearch Server Stats`,
-            `   Status:           ${stats.status.toUpperCase()}`,
-            `   Network:          ${stats.network}`,
-            `   Uptime:           ${stats.uptime}`,
-            `   Total Queries:    ${stats.totalQueries.toLocaleString()}`,
-            `   USDC Settled:     ${stats.totalUsdcSettled} USDC`,
-            `   Avg Latency:      ${stats.avgLatencyMs}ms`,
-            `   Price per Query:  ${stats.pricePerQuery}`,
-            `   Facilitator:      ${stats.facilitator}`,
-            `   APIs Configured:  Serper: ${stats.serperApiConfigured ? '✅' : '❌'}, Groq: ${stats.groqApiConfigured ? '✅' : '❌'}`,
-          ].join('\n'),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: [
+              `📊 StellarSearch Server Stats`,
+              `   Status:           ${stats.status.toUpperCase()}`,
+              `   Network:          ${stats.network}`,
+              `   Uptime:           ${stats.uptime}`,
+              `   Total Queries:    ${stats.totalQueries.toLocaleString()}`,
+              `   USDC Settled:     ${stats.totalUsdcSettled} USDC`,
+              `   Avg Latency:      ${stats.avgLatencyMs}ms`,
+              `   Price per Query:  ${stats.pricePerQuery}`,
+              `   Facilitator:      ${stats.facilitator}`,
+              `   APIs Configured:  Serper: ${stats.serperApiConfigured ? '✅' : '❌'}, Groq: ${stats.groqApiConfigured ? '✅' : '❌'}`,
+            ].join('\n'),
+          },
+        ],
       }
     } catch (err: any) {
-      return { content: [{ type: 'text', text: `Failed to fetch server stats: ${err.message}` }], isError: true }
+      return {
+        content: [{ type: 'text', text: `Failed to fetch server stats: ${err.message}` }],
+        isError: true,
+      }
     }
   }
 

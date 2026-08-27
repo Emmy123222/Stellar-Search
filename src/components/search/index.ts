@@ -1,4 +1,4 @@
-export { SearchBar }              from './SearchBar'
-export { SearchResults }          from './SearchResults'
-export { SearchSuggestions }      from './SearchSuggestions'
-export { PaymentFlowVisualizer }  from './PaymentFlowVisualizer'
+export { SearchBar } from './SearchBar'
+export { SearchResults } from './SearchResults'
+export { SearchSuggestions } from './SearchSuggestions'
+export { PaymentFlowVisualizer } from './PaymentFlowVisualizer'

@@ -5,12 +5,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react'
-import {
-  isConnected,
-  requestAccess,
-  getAddress,
-  getNetwork,
-} from '@stellar/freighter-api'
+import { isConnected, requestAccess, getAddress, getNetwork } from '@stellar/freighter-api'
 import { Horizon } from '@stellar/stellar-sdk'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
 
@@ -89,12 +84,7 @@ export function useFreighterWallet() {
   const fetchTransactions = useCallback(async (publicKey: string) => {
     setTxLoading(true)
     try {
-      const ops = await horizon
-        .operations()
-        .forAccount(publicKey)
-        .order('desc')
-        .limit(15)
-        .call()
+      const ops = await horizon.operations().forAccount(publicKey).order('desc').limit(15).call()
 
       const txs: StellarTransaction[] = ops.records
         .filter((op: any) => op.type === 'payment' || op.type === 'create_account')
@@ -103,10 +93,7 @@ export function useFreighterWallet() {
           hash: op.transaction_hash,
           type: op.type,
           amount: op.amount ? parseFloat(op.amount).toFixed(4) : '—',
-          asset:
-            op.asset_type === 'native'
-              ? 'XLM'
-              : op.asset_code || 'Unknown',
+          asset: op.asset_type === 'native' ? 'XLM' : op.asset_code || 'Unknown',
           from: op.from || op.funder || '',
           to: op.to || op.account || '',
           timestamp: op.created_at,
@@ -128,9 +115,7 @@ export function useFreighterWallet() {
     try {
       const connected = await isConnected()
       if (!connected.isConnected) {
-        throw new Error(
-          'Freighter extension not found. Install it from freighter.app'
-        )
+        throw new Error('Freighter extension not found. Install it from freighter.app')
       }
 
       const accessResult = await requestAccess()

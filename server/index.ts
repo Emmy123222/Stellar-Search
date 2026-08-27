@@ -24,16 +24,11 @@ import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
 import logger from './logger'
-import {
-  STELLAR_NETWORK,
-  HORIZON_URL, 
-  AMOUNT_USDC, 
-  AMOUNT_STROOPS 
-} from '../src/lib/constants'
+import { STELLAR_NETWORK, HORIZON_URL, AMOUNT_USDC, AMOUNT_STROOPS } from '../src/lib/constants'
 
 dotenv.config()
 
-const app  = express()
+const app = express()
 const PORT = process.env.PORT || 3001
 const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE || '30', 10)
 
@@ -88,14 +83,14 @@ const stats = {
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
-const FACILITATOR_URL   = process.env.FACILITATOR_URL   || 'https://www.x402.org/facilitator'
-const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
-const SERPER_API_KEY    = process.env.SERPER_API_KEY!
-const GROQ_API_KEY      = process.env.GROQ_API_KEY!
+const FACILITATOR_URL = process.env.FACILITATOR_URL || 'https://www.x402.org/facilitator'
+const NETWORK = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
+const SERPER_API_KEY = process.env.SERPER_API_KEY!
+const GROQ_API_KEY = process.env.GROQ_API_KEY!
 
 if (!RECEIVING_ADDRESS) console.warn('⚠  STELLAR_RECEIVING_ADDRESS not set')
-if (!SERPER_API_KEY)    console.warn('⚠  SERPER_API_KEY not set')
-if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
+if (!SERPER_API_KEY) console.warn('⚠  SERPER_API_KEY not set')
+if (!GROQ_API_KEY) console.warn('⚠  GROQ_API_KEY not set')
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
 const groq = new Groq({ apiKey: GROQ_API_KEY })
@@ -103,13 +98,15 @@ const groq = new Groq({ apiKey: GROQ_API_KEY })
 // ─── x402 payment guard on /search ───────────────────────────────────────
 // paymentMiddlewareFromConfig is the recommended API per official Stellar docs.
 // It uses the Coinbase public facilitator (no API key needed for testnet).
-const x402Accepts = [{
-  scheme:  'exact',
-  price:   parseFloat(AMOUNT_USDC),
-  amount:  AMOUNT_STROOPS,
-  network: NETWORK,
-  payTo:   RECEIVING_ADDRESS,
-}]
+const x402Accepts = [
+  {
+    scheme: 'exact',
+    price: parseFloat(AMOUNT_USDC),
+    amount: AMOUNT_STROOPS,
+    network: NETWORK,
+    payTo: RECEIVING_ADDRESS,
+  },
+]
 
 const x402Routes = {
   'GET /search': {
@@ -134,24 +131,24 @@ const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }]
 // ─── Payment Logging Middleware ──────────────────────────────────────────
 app.use((req, res, next) => {
   if (req.path === '/search') {
-    const { q } = req.query as Record<string, string>;
-    const truncatedQ = q ? String(q).substring(0, 50) : '';
+    const { q } = req.query as Record<string, string>
+    const truncatedQ = q ? String(q).substring(0, 50) : ''
 
     res.on('finish', () => {
-      let paymentStatus = 'error';
-      if (res.statusCode === 200) paymentStatus = 'paid';
-      else if (res.statusCode === 402) paymentStatus = '402';
+      let paymentStatus = 'error'
+      if (res.statusCode === 200) paymentStatus = 'paid'
+      else if (res.statusCode === 402) paymentStatus = '402'
 
       logger.info('Payment attempt', {
         timestamp: new Date().toISOString(),
         ip: req.ip,
         query: truncatedQ,
         paymentStatus: paymentStatus,
-      });
-    });
+      })
+    })
   }
-  next();
-});
+  next()
+})
 
 app.use(paymentMiddlewareFromConfig(x402Routes, facilitatorClient, schemes))
 
@@ -160,9 +157,7 @@ const MAX_QUERY_LENGTH = 256
 // Validate and sanitize the user-supplied `q` parameter. Returns either the
 // cleaned string or a 400 response body to send back. Centralised so /search
 // and /images share the same rules.
-function validateQuery(
-  q: unknown,
-): { ok: true; cleanQ: string } | { ok: false; error: string } {
+function validateQuery(q: unknown): { ok: true; cleanQ: string } | { ok: false; error: string } {
   if (typeof q !== 'string' || !q.trim()) {
     return { ok: false, error: 'Missing required parameter: q' }
   }
@@ -197,9 +192,9 @@ app.get('/search', async (req: Request, res: Response) => {
     // Add freshness filter if provided (Serper supports date filters)
     if (freshness) {
       const dateFilters: Record<string, string> = {
-        'pd': 'qdr:d',  // past day
-        'pw': 'qdr:w',  // past week
-        'pm': 'qdr:m',  // past month
+        pd: 'qdr:d', // past day
+        pw: 'qdr:w', // past week
+        pm: 'qdr:m', // past month
       }
       if (dateFilters[freshness]) {
         requestBody.tbs = dateFilters[freshness]
@@ -234,7 +229,13 @@ app.get('/search', async (req: Request, res: Response) => {
       title: r.title || 'No title',
       url: r.link,
       description: r.snippet || '',
-      source: (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
+      source: (() => {
+        try {
+          return new URL(r.link).hostname.replace('www.', '')
+        } catch {
+          return r.link
+        }
+      })(),
       relevanceScore: Math.max(0.5, 1 - i * 0.06),
       publishedAt: r.date || undefined,
     }))
@@ -246,13 +247,17 @@ app.get('/search', async (req: Request, res: Response) => {
     let suggestions: string[] = []
     if (req.query.suggestions === '1' && results.length > 0) {
       try {
-        const topSnippets = results.slice(0, 3).map((r: any) => r.description).join(' | ')
+        const topSnippets = results
+          .slice(0, 3)
+          .map((r: any) => r.description)
+          .join(' | ')
         const suggCompletion = await groq.chat.completions.create({
           model: 'llama-3.3-70b-versatile',
           messages: [
             {
               role: 'system',
-              content: 'You are a search assistant. Given a query and top result snippets, return exactly 3 related search queries the user might want to explore next. Output only a JSON array of 3 strings, no explanation.',
+              content:
+                'You are a search assistant. Given a query and top result snippets, return exactly 3 related search queries the user might want to explore next. Output only a JSON array of 3 strings, no explanation.',
             },
             {
               role: 'user',
@@ -330,7 +335,13 @@ app.get('/images', async (req: Request, res: Response) => {
       imageUrl: r.imageUrl,
       thumbnailUrl: r.thumbnailUrl || r.imageUrl,
       sourceUrl: r.link,
-      source: (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
+      source: (() => {
+        try {
+          return new URL(r.link).hostname.replace('www.', '')
+        } catch {
+          return r.link
+        }
+      })(),
       width: r.imageWidth,
       height: r.imageHeight,
     }))
@@ -371,9 +382,9 @@ app.get('/news', async (req: Request, res: Response) => {
 
     if (freshness) {
       const dateFilters: Record<string, string> = {
-        'pd': 'qdr:d',
-        'pw': 'qdr:w',
-        'pm': 'qdr:m',
+        pd: 'qdr:d',
+        pw: 'qdr:w',
+        pm: 'qdr:m',
       }
       if (dateFilters[freshness]) {
         requestBody.tbs = dateFilters[freshness]
@@ -408,7 +419,15 @@ app.get('/news', async (req: Request, res: Response) => {
       title: r.title || 'No title',
       url: r.link,
       snippet: r.snippet || '',
-      source: r.source || (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
+      source:
+        r.source ||
+        (() => {
+          try {
+            return new URL(r.link).hostname.replace('www.', '')
+          } catch {
+            return r.link
+          }
+        })(),
       publishedAt: r.date || undefined,
       imageUrl: r.imageUrl || undefined,
     }))
@@ -445,8 +464,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   }
 
   const wantsStream =
-    (req.headers.accept || '').includes('text/event-stream') ||
-    req.query.stream === '1'
+    (req.headers.accept || '').includes('text/event-stream') || req.query.stream === '1'
 
   const groqMessages = [
     {
@@ -462,7 +480,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
       const completion = await groq.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
         messages: groqMessages,
-        max_tokens:  512,
+        max_tokens: 512,
         temperature: 0.7,
       })
 
@@ -496,11 +514,11 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
       {
         model: 'llama-3.3-70b-versatile',
         messages: groqMessages,
-        max_tokens:  512,
+        max_tokens: 512,
         temperature: 0.7,
         stream: true,
       },
-      { signal: controller.signal },
+      { signal: controller.signal }
     )
 
     for await (const chunk of stream) {
@@ -524,20 +542,21 @@ app.get('/health', (_req: Request, res: Response) => {
     : 0
 
   const up = Math.floor((Date.now() - stats.startTime) / 1000)
-  const uptime = up < 60 ? `${up}s` : up < 3600 ? `${Math.floor(up / 60)}m` : `${Math.floor(up / 3600)}h`
+  const uptime =
+    up < 60 ? `${up}s` : up < 3600 ? `${Math.floor(up / 60)}m` : `${Math.floor(up / 3600)}h`
 
   res.json({
-    status:                    'ok',
-    network:                   NETWORK,
-    pricePerQuery:             '0.001 USDC',
-    protocol:                  'x402',
-    facilitator:               FACILITATOR_URL,
-    totalQueries:              stats.totalQueries,
-    totalUsdcSettled:          stats.totalUsdcSettled.toFixed(4),
-    avgLatencyMs:              avg,
+    status: 'ok',
+    network: NETWORK,
+    pricePerQuery: '0.001 USDC',
+    protocol: 'x402',
+    facilitator: FACILITATOR_URL,
+    totalQueries: stats.totalQueries,
+    totalUsdcSettled: stats.totalUsdcSettled.toFixed(4),
+    avgLatencyMs: avg,
     uptime,
-    serperApiConfigured:       !!SERPER_API_KEY,
-    groqApiConfigured:         !!GROQ_API_KEY,
+    serperApiConfigured: !!SERPER_API_KEY,
+    groqApiConfigured: !!GROQ_API_KEY,
     receivingAddressConfigured: !!RECEIVING_ADDRESS,
   })
 })
@@ -545,15 +564,15 @@ app.get('/health', (_req: Request, res: Response) => {
 // ─── GET / ────────────────────────────────────────────────────────────────
 app.get('/', (_req: Request, res: Response) => {
   res.json({
-    name:        'StellarSearch',
-    version:     '1.0.0',
+    name: 'StellarSearch',
+    version: '1.0.0',
     description: 'Pay-per-query web search for AI agents via x402 on Stellar',
     endpoints: {
       'GET /search?q=<query>': '0.001 USDC via x402',
       'GET /images?q=<query>': '0.001 USDC via x402 — image results',
-      'GET /news?q=<query>':   '0.001 USDC via x402 — news articles',
-      'POST /ai/chat':         'Groq AI — free',
-      'GET /health':           'Live server stats',
+      'GET /news?q=<query>': '0.001 USDC via x402 — news articles',
+      'POST /ai/chat': 'Groq AI — free',
+      'GET /health': 'Live server stats',
     },
   })
 })
@@ -565,7 +584,7 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`   Network:     ${NETWORK}`)
     console.log(`   Facilitator: ${FACILITATOR_URL}`)
     console.log(`   Serper:      ${SERPER_API_KEY ? '✓' : '✗ MISSING'}`)
-    console.log(`   Groq:        ${GROQ_API_KEY  ? '✓' : '✗ MISSING'}`)
+    console.log(`   Groq:        ${GROQ_API_KEY ? '✓' : '✗ MISSING'}`)
     console.log(`   Receiving:   ${RECEIVING_ADDRESS || '✗ MISSING'}`)
     console.log(`   ${getCorsStartupMessage()}\n`)
   })

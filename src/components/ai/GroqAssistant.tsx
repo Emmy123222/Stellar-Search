@@ -23,21 +23,21 @@ const SYSTEM_INTRO: Message = {
     "Hi! I'm your AI research assistant powered by Groq (Llama 3). I can help you craft better search queries, summarise results, or explain topics. Each search costs 0.001 USDC on Stellar. What would you like to research?",
 }
 
-const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
-  typeof window !== 'undefined' && window.location.origin.includes('vercel.app')
+const SERVER_URL =
+  (import.meta as any).env?.VITE_SERVER_URL ??
+  (typeof window !== 'undefined' && window.location.origin.includes('vercel.app')
     ? `${window.location.origin}/api`
-    : 'http://localhost:3001'
-)
+    : 'http://localhost:3001')
 
 // Parse an SSE stream from `/ai/chat` and invoke `onDelta` for each token.
 // Stops cleanly on `event: done` or `event: error`.
 async function consumeSSE(
   body: ReadableStream<Uint8Array>,
-  onDelta: (delta: string) => void,
+  onDelta: (delta: string) => void
 ): Promise<void> {
-  const reader  = body.getReader()
+  const reader = body.getReader()
   const decoder = new TextDecoder('utf-8')
-  let   buffer  = ''
+  let buffer = ''
 
   while (true) {
     const { value, done } = await reader.read()
@@ -51,7 +51,7 @@ async function consumeSSE(
       buffer = buffer.slice(blankLine + 2)
 
       let event = 'message'
-      let data  = ''
+      let data = ''
       for (const line of rawEvent.split('\n')) {
         if (line.startsWith('event:')) event = line.slice(6).trim()
         else if (line.startsWith('data:')) data += line.slice(5).trim()
@@ -62,7 +62,9 @@ async function consumeSSE(
         try {
           const { content } = JSON.parse(data) as { content?: string }
           if (content) onDelta(content)
-        } catch { /* malformed chunk; skip */ }
+        } catch {
+          /* malformed chunk; skip */
+        }
       } else if (event === 'done') {
         return
       } else if (event === 'error') {
@@ -80,9 +82,10 @@ async function consumeSSE(
 // Build a system message that gives Groq context from the user's most recent
 // paid search so follow-up questions can be answered without re-asking.
 function buildSearchContextMessage(s: LastSearch): Message {
-  const top = s.results.slice(0, 3).map((r, i) =>
-    `${i + 1}. ${r.title} — ${r.url}\n   ${r.description}`
-  ).join('\n')
+  const top = s.results
+    .slice(0, 3)
+    .map((r, i) => `${i + 1}. ${r.title} — ${r.url}\n   ${r.description}`)
+    .join('\n')
   return {
     role: 'system',
     content:
@@ -94,12 +97,12 @@ function buildSearchContextMessage(s: LastSearch): Message {
 }
 
 export function GroqAssistant({ lastSearch }: Props = {}) {
-  const [open, setOpen]         = useState(false)
+  const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([SYSTEM_INTRO])
-  const [input, setInput]       = useState('')
-  const [loading, setLoading]   = useState(false)
-  const bottomRef               = useRef<HTMLDivElement>(null)
-  const contextInjectedFor      = useRef<string | null>(null)
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const contextInjectedFor = useRef<string | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -216,7 +219,9 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               <div className="flex items-center gap-2">
                 <Bot className="w-4 h-4 text-neon-cyan" />
                 <span className="font-display text-xs text-neon-cyan tracking-wider">GROQ AI</span>
-                <span className="font-display text-xs text-white/25 hidden sm:inline">· Llama 3</span>
+                <span className="font-display text-xs text-white/25 hidden sm:inline">
+                  · Llama 3
+                </span>
               </div>
               <button
                 onClick={() => setOpen(false)}
@@ -228,29 +233,31 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
-              {messages.filter(m => m.role !== 'system').map((msg, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className="max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed"
-                    style={{
-                      background: msg.role === 'user'
-                        ? 'rgba(0,245,255,0.15)'
-                        : 'rgba(255,255,255,0.05)',
-                      border: msg.role === 'user'
-                        ? '1px solid rgba(0,245,255,0.3)'
-                        : '1px solid rgba(255,255,255,0.07)',
-                      color: msg.role === 'user' ? '#00f5ff' : 'rgba(255,255,255,0.7)',
-                    }}
+              {messages
+                .filter(m => m.role !== 'system')
+                .map((msg, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    {msg.content}
-                  </div>
-                </motion.div>
-              ))}
+                    <div
+                      className="max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed"
+                      style={{
+                        background:
+                          msg.role === 'user' ? 'rgba(0,245,255,0.15)' : 'rgba(255,255,255,0.05)',
+                        border:
+                          msg.role === 'user'
+                            ? '1px solid rgba(0,245,255,0.3)'
+                            : '1px solid rgba(255,255,255,0.07)',
+                        color: msg.role === 'user' ? '#00f5ff' : 'rgba(255,255,255,0.7)',
+                      }}
+                    >
+                      {msg.content}
+                    </div>
+                  </motion.div>
+                ))}
 
               {loading && (
                 <div className="flex justify-start">
