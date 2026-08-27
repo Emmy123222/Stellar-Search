@@ -93,6 +93,35 @@ Browser (Freighter) → GET /search?q=...
 5. OpenZeppelin facilitator at `channels.openzeppelin.com/x402/testnet` verifies the signature and settles 0.001 USDC on Stellar testnet
 6. Server receives confirmation and returns search results
 
+### Sequence diagram
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User / Agent
+    participant Browser as Browser
+    participant Freighter as Freighter Wallet
+    participant Server as StellarSearch Server
+    participant Facilitator as x402 Facilitator
+    participant Horizon as Stellar Horizon
+    participant Serper as Serper.dev
+
+    User->>Browser: Enter search query
+    Browser->>Server: GET /search?q=...
+    Server-->>Browser: 402 Payment Required<br/>(price, network, payTo)
+    Browser->>Freighter: Request signature of<br/>Soroban auth entry
+    Freighter-->>Browser: Signed payment payload
+    Browser->>Server: GET /search?q=...<br/>+ X-Payment header
+    Server->>Facilitator: Verify X-Payment (HTTPFacilitatorClient)
+    Facilitator->>Horizon: Submit & settle 0.001 USDC tx
+    Horizon-->>Facilitator: Transaction confirmed (tx hash)
+    Facilitator-->>Server: Verification + X-Payment-Response
+    Server->>Serper: POST https://google.serper.dev/search
+    Serper-->>Server: Real Google search results
+    Server-->>Browser: 200 OK + results + txHash
+    Browser-->>User: Display paid search results
+```
+
 ---
 
 ## Project structure
