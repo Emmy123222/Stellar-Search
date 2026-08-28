@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { TrendingUp, Zap, Clock, Shield } from 'lucide-react'
 import { fetchServerStats } from '../../lib/stellar'
@@ -19,7 +19,12 @@ const CARDS = [
   { key: 'uptime',           label: 'Uptime',        Icon: Shield,     color: '#7dd3fc', fmt: (v: unknown) => String(v) },
 ]
 
-export function StatsGrid() {
+interface StatsGridProps {
+  /** Polling interval in milliseconds. Defaults to 10 seconds. */
+  pollingIntervalMs?: number
+}
+
+export function StatsGrid({ pollingIntervalMs = 10_000 }: StatsGridProps) {
   const [stats, setStats] = useState<ServerStats>({
     totalQueries: 0,
     totalUsdcSettled: '0.00',
@@ -28,25 +33,27 @@ export function StatsGrid() {
     status: 'offline',
   })
 
-  useEffect(() => {
-    const load = async () => {
+  const load = useCallback(async () => {
       const data = await fetchServerStats()
       if (data) {
-        setStats({
+        const next: ServerStats = {
           totalQueries:     data.totalQueries     ?? 0,
           totalUsdcSettled: data.totalUsdcSettled ?? '0.00',
           avgLatencyMs:     data.avgLatencyMs     ?? 0,
           uptime:           data.uptime           ?? '—',
           status: 'online',
-        })
+        }
+        setStats(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next)
       } else {
         setStats(prev => ({ ...prev, status: 'offline' }))
       }
-    }
-    load()
-    const id = setInterval(load, 10_000)
-    return () => clearInterval(id)
   }, [])
+
+  useEffect(() => {
+    load()
+    const id = setInterval(load, pollingIntervalMs)
+    return () => clearInterval(id)
+  }, [load, pollingIntervalMs])
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

@@ -69,13 +69,42 @@ export function useSearch(walletAddress: string | null = null) {
     query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
   })
 
-  const search = useCallback(async (query: string, count = 5) => {
-    if (!query.trim()) return
+  const search = useCallback(
+    async (
+      query: string,
+      freshnessOrCount?: string | number,
+      countOverride = 5
+    ) => {
+      if (!query.trim()) return
 
-    setSession({ query, results: [], txHash: null, paidAmount: null, status: 'searching', step: 1, suggestions: [] })
+      let freshness = ''
+      let count = countOverride
 
-    const t0     = Date.now()
-    const params = new URLSearchParams({ q: query, count: String(count), suggestions: '1' })
+      if (typeof freshnessOrCount === 'string') {
+        freshness = freshnessOrCount
+      } else if (typeof freshnessOrCount === 'number') {
+        count = freshnessOrCount
+      }
+
+      setSession({
+        query,
+        results: [],
+        txHash: null,
+        paidAmount: null,
+        status: 'searching',
+        step: 1,
+        suggestions: [],
+      })
+
+      const t0 = Date.now()
+      const params = new URLSearchParams({
+        q: query,
+        count: String(count),
+        suggestions: '1',
+      })
+      if (freshness) {
+        params.set('freshness', freshness)
+      }
 
     const advance = (step: PaymentStep) =>
       setSession(prev => ({ ...prev, step }))

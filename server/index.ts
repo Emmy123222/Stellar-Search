@@ -16,6 +16,8 @@
 import express, { Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
 import { buildCorsOptions, getCorsStartupMessage } from './corsConfig.js'
 import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
@@ -33,6 +35,48 @@ dotenv.config()
 
 const app  = express()
 const PORT = process.env.PORT || 3001
+const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE || '30', 10)
+
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: RATE_LIMIT_PER_MINUTE,
+  standardHeaders: true,
+  legacyHeaders: true,
+  handler: (_req: Request, res: Response) => {
+    res.setHeader('Retry-After', '60')
+    res.status(429).json({ error: 'Too many requests, please try again later.' })
+  },
+})
+
+// ─── Security Headers & Middleware ────────────────────────────────────────
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        connectSrc: [
+          "'self'",
+          'https://horizon-testnet.stellar.org',
+          'https://horizon.stellar.org',
+          'https://soroban-testnet.stellar.org',
+          'https://soroban-rpc.mainnet.stellar.org',
+          'https://google.serper.dev',
+          'https://www.x402.org',
+          'https://channels.openzeppelin.com',
+          'http://localhost:*',
+          'ws://localhost:*',
+        ],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+      },
+    },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+)
+app.use(cors(buildCorsOptions()))
+app.use(express.json())
+app.use(limiter)
 
 // ─── In-memory stats ──────────────────────────────────────────────────────
 const stats = {
@@ -55,10 +99,6 @@ if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
 const groq = new Groq({ apiKey: GROQ_API_KEY })
-
-// ─── Middleware ───────────────────────────────────────────────────────────
-app.use(cors(buildCorsOptions()))
-app.use(express.json())
 
 // ─── x402 payment guard on /search ───────────────────────────────────────
 // paymentMiddlewareFromConfig is the recommended API per official Stellar docs.
@@ -501,6 +541,108 @@ app.get('/health', (_req: Request, res: Response) => {
     receivingAddressConfigured: !!RECEIVING_ADDRESS,
   })
 })
+
+// ─── POST /ai/chat ────────────────────────────────────────────────────────
+// Streams responses as Server-Sent Events when the client sends
+// `Accept: text/event-stream`; otherwise returns the full completion as JSON
+// (back-compat fallback for callers that don't support SSE).
+app.post('/ai/chat', async (req: Request, res: Response) => {
+  const { messages, model: requestedModel } = req.body as {
+    messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+    model?: string
+  }
+
+  if (!messages?.length) {
+    return res.status(400).json({ error: 'messages array required' })
+  }
+
+  // Available models whitelist
+  const AVAILABLE_MODELS = [
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
+    'mixtral-8x7b-32768',
+  ]
+  
+  // Use requested model if valid, otherwise fall back to default
+  const model = requestedModel && AVAILABLE_MODELS.includes(requestedModel)
+    ? requestedModel
+    : 'llama-3.3-70b-versatile'
+
+  const wantsStream =
+    (req.headers.accept || '').includes('text/event-stream') ||
+    req.query.stream === '1'
+
+  const groqMessages = [
+    {
+      role: 'system' as const,
+      content:
+        'You are StellarSearch AI, a concise research assistant. Help users craft better search queries and understand results. Keep responses under 200 words.',
+    },
+    ...messages,
+  ]
+
+  if (!wantsStream) {
+    try {
+      const completion = await groq.chat.completions.create({
+        model,
+        messages: groqMessages,
+        max_tokens:  512,
+        temperature: 0.7,
+      })
+
+      const content = completion.choices[0]?.message?.content || 'No response.'
+      return res.json({ content, model: completion.model })
+    } catch (err: any) {
+      console.error('[groq error]', err.message)
+      return res.status(500).json({ error: `Groq AI error: ${err.message}` })
+    }
+  }
+
+  // SSE path
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  // Disable proxy buffering (e.g. nginx) so chunks flush immediately
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders?.()
+
+  const sendEvent = (event: string, data: Record<string, unknown>) => {
+    res.write(`event: ${event}\n`)
+    res.write(`data: ${JSON.stringify(data)}\n\n`)
+  }
+
+  // Abort the Groq stream if the client disconnects mid-response.
+  const controller = new AbortController()
+  req.on('close', () => controller.abort())
+
+  try {
+    const stream = await groq.chat.completions.create(
+      {
+        model,
+        messages: groqMessages,
+        max_tokens:  512,
+        temperature: 0.7,
+        stream: true,
+      },
+      { signal: controller.signal },
+    )
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content
+      if (delta) sendEvent('delta', { content: delta })
+    }
+    sendEvent('done', { model })
+    res.end()
+  } catch (err: any) {
+    if (controller.signal.aborted) return res.end()
+    console.error('[groq stream error]', err.message)
+    sendEvent('error', { error: `Groq AI error: ${err.message}` })
+    res.end()
+  }
+})
+
+
+
 
 // ─── GET / ────────────────────────────────────────────────────────────────
 app.get('/', (_req: Request, res: Response) => {

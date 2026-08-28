@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles, Search } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
+import { explorerTxUrl, truncateHash } from '../../lib/stellar'
 
 interface Props {
   results: SearchResult[]
   query: string
   isLoading?: boolean
+  txHash?: string | null
 }
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
@@ -15,10 +17,47 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
     : 'http://localhost:3001'
 )
 
-export function SearchResults({ results, query, isLoading }: Props) {
+export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
+  const [copiedUrl, setCopiedUrl]           = useState<string | null>(null)
+
+  const copyToClipboard = async (url: string, e: React.MouseEvent) => {
+    // Prevent the anchor tag from navigating when clicking copy button
+    e.preventDefault()
+    e.stopPropagation()
+    
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopiedUrl(url)
+      
+      // Reset copied state after 1.5 seconds
+      setTimeout(() => {
+        setCopiedUrl(prev => prev === url ? null : prev)
+      }, 1500)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+      
+      // Fallback for older browsers
+      try {
+        const textArea = document.createElement('textarea')
+        textArea.value = url
+        textArea.style.position = 'fixed'
+        textArea.style.opacity = '0'
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+        setCopiedUrl(url)
+        setTimeout(() => {
+          setCopiedUrl(prev => prev === url ? null : prev)
+        }, 1500)
+      } catch (fallbackErr) {
+        console.error('Fallback copy failed:', fallbackErr)
+      }
+    }
+  }
 
   if (isLoading) {
     return (
@@ -123,10 +162,78 @@ export function SearchResults({ results, query, isLoading }: Props) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="font-display text-xs text-white/35 tracking-widest" aria-live="polite">
-          {results.length} RESULTS · SERPER.DEV · PAID VIA x402
-        </p>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <p className="font-display text-xs text-white/35 tracking-widest" aria-live="polite">
+            {results.length} RESULTS · SERPER.DEV · PAID VIA x402
+          </p>
+          {txHash && (
+            <a
+              href={explorerTxUrl(txHash)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="View transaction on Stellar Expert"
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs text-neon-cyan hover:underline transition-all"
+              style={{
+                background: 'rgba(0,245,255,0.08)',
+                border: '1px solid rgba(0,245,255,0.25)',
+              }}
+            >
+              <span>Tx: {truncateHash(txHash)}</span>
+              <ExternalLink className="w-3 h-3 flex-shrink-0" />
+            </a>
+          )}
+        </div>
         <div className="flex items-center gap-3">
+          {/* Export Button with Format Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-white/70 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-colors"
+              style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)' }}
+              aria-label="Export search results"
+            >
+              <Download className="w-3 h-3" />
+              EXPORT
+            </button>
+
+            {/* Export Format Dropdown */}
+            <AnimatePresence>
+              {showExportMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -5 }}
+                  className="absolute top-full right-0 mt-1 w-48 rounded-lg overflow-hidden z-50"
+                  style={{
+                    background: 'rgba(6,13,20,0.98)',
+                    border: '1px solid rgba(0,245,255,0.2)',
+                  }}
+                >
+                  <button
+                    onClick={exportAsJSON}
+                    className="w-full px-3 py-2.5 text-left hover:bg-white/5 transition-colors flex items-center gap-2"
+                  >
+                    <FileJson className="w-4 h-4 text-neon-cyan" />
+                    <div>
+                      <div className="text-xs text-white">JSON Format</div>
+                      <div className="text-[10px] text-white/40">Structured data export</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={exportAsCSV}
+                    className="w-full px-3 py-2.5 text-left hover:bg-white/5 transition-colors flex items-center gap-2"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-neon-green" />
+                    <div>
+                      <div className="text-xs text-white">CSV Format</div>
+                      <div className="text-[10px] text-white/40">Spreadsheet compatible</div>
+                    </div>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           <button
             onClick={summarize}
             disabled={summarizing}
@@ -195,7 +302,7 @@ export function SearchResults({ results, query, isLoading }: Props) {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: i * 0.06 }}
-          className="block group rounded-xl p-4 hover:border-neon-cyan/25 transition-all"
+          className="block group rounded-xl p-4 hover:border-neon-cyan/25 transition-all relative"
           style={{
             background: 'rgba(6,13,20,0.6)',
             border: '1px solid rgba(255,255,255,0.06)',
@@ -233,9 +340,47 @@ export function SearchResults({ results, query, isLoading }: Props) {
                 {r.title}
               </h3>
 
-              <p className="font-mono text-xs mb-2 truncate" style={{ color: 'rgba(0,245,255,0.35)' }}>
-                {r.url}
-              </p>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="font-mono text-xs truncate" style={{ color: 'rgba(0,245,255,0.35)' }}>
+                  {r.url}
+                </p>
+                {/* Copy button */}
+                <button
+                  onClick={(e) => copyToClipboard(r.url, e)}
+                  className="relative flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10"
+                  style={{
+                    border: copiedUrl === r.url ? '1px solid rgba(0,255,0,0.3)' : '1px solid rgba(255,255,255,0.1)',
+                    color: copiedUrl === r.url ? '#00ff00' : 'rgba(255,255,255,0.4)',
+                  }}
+                  aria-label="Copy URL to clipboard"
+                  title="Copy URL"
+                >
+                  {copiedUrl === r.url ? (
+                    <Check className="w-3 h-3" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
+                  
+                  {/* Tooltip */}
+                  <AnimatePresence>
+                    {copiedUrl === r.url && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 5, scale: 0.8 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 5, scale: 0.8 }}
+                        className="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap pointer-events-none"
+                        style={{
+                          background: 'rgba(0,0,0,0.9)',
+                          border: '1px solid rgba(0,255,0,0.3)',
+                          color: '#00ff00',
+                        }}
+                      >
+                        Copied!
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </button>
+              </div>
 
               <p className="text-white/45 text-xs leading-relaxed line-clamp-2">
                 {r.description}
@@ -247,7 +392,6 @@ export function SearchResults({ results, query, isLoading }: Props) {
             </div>
           </div>
 
-          {/* Relevance bar */}
           <div className="mt-3 h-px bg-white/5 rounded-full overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
