@@ -64,6 +64,12 @@ export interface SearchSession {
   suggestions: string[]
 }
 
+/**
+ * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
+ *
+ * @param walletAddress - The Stellar public key address of the connected wallet, or `null` if unauthenticated.
+ * @returns Object containing search session state (`session`), search execution function (`search`), and session reset function (`reset`).
+ */
 export function useSearch(walletAddress: string | null = null) {
   const [session, setSession] = useState<SearchSession>({
     query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],

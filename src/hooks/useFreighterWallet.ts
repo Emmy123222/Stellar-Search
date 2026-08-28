@@ -38,6 +38,12 @@ export interface StellarTransaction {
 
 const horizon = new Horizon.Server(HORIZON_URL)
 
+/**
+ * Custom React hook to manage connection, balances (XLM & USDC), and recent transaction history for the Freighter wallet on Stellar.
+ *
+ * @returns Object containing the current wallet state (`wallet`), list of recent transactions (`transactions`),
+ * transaction loading state (`txLoading`), and action callbacks (`connect`, `disconnect`, `refresh`).
+ */
 export function useFreighterWallet() {
   const [wallet, setWallet] = useState<WalletState>({
     publicKey: null,

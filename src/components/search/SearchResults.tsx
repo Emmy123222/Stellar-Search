@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
 
@@ -22,6 +22,40 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
   const [copiedUrl, setCopiedUrl]           = useState<string | null>(null)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+
+  const exportAsJSON = () => {
+    if (!results.length) return
+    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `search-results-${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    setShowExportMenu(false)
+  }
+
+  const exportAsCSV = () => {
+    if (!results.length) return
+    const headers = ['Title', 'URL', 'Description', 'Source', 'Relevance Score']
+    const rows = results.map(r => [
+      `"${r.title.replace(/"/g, '""')}"`,
+      `"${r.url.replace(/"/g, '""')}"`,
+      `"${r.description.replace(/"/g, '""')}"`,
+      `"${r.source.replace(/"/g, '""')}"`,
+      r.relevanceScore
+    ])
+    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `search-results-${Date.now()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    setShowExportMenu(false)
+  }
 
   const copyToClipboard = async (url: string, e: React.MouseEvent) => {
     // Prevent the anchor tag from navigating when clicking copy button
