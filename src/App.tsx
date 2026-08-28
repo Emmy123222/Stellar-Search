@@ -1,10 +1,13 @@
-import { useState, useMemo }                   from 'react'
+import { lazy, Suspense, useState, useMemo }  from 'react'
 import { motion, AnimatePresence }             from 'framer-motion'
 import { AnimatedBackground, Navbar, LiveTicker, Footer } from './components/layout'
-import { GroqAssistant }                       from './components/ai'
 import { SearchPage, DocsPage, DashboardPage } from './pages'
 import { useFreighterWallet, useSearch }       from './hooks'
 import { Toaster }                             from 'sonner'
+
+const GroqAssistant = lazy(() =>
+  import('./components/ai/GroqAssistant').then(m => ({ default: m.GroqAssistant })),
+)
 
 type Page = 'search' | 'docs' | 'dashboard'
 
@@ -89,8 +92,17 @@ export default function App() {
         <Footer />
       </div>
 
-      {/* Floating Groq AI assistant */}
-      <GroqAssistant lastSearch={lastSearch} />
+      {/* Floating Groq AI assistant — lazy-loaded on first render */}
+      <Suspense fallback={
+        <div className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full flex items-center justify-center"
+          style={{ background: 'rgba(0,245,255,0.15)', border: '1px solid rgba(0,245,255,0.4)' }}>
+          <motion.div className="w-2 h-2 rounded-full bg-neon-cyan"
+            animate={{ opacity: [0.3, 1, 0.3] }}
+            transition={{ duration: 0.8, repeat: Infinity }} />
+        </div>
+      }>
+        <GroqAssistant lastSearch={lastSearch} />
+      </Suspense>
 
       <Toaster position="bottom-right" theme="dark" duration={4000} richColors />
     </div>

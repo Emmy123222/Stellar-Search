@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bot, Send, X } from 'lucide-react'
+import { Bot, Send, X, ChevronDown } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 
 interface Message {
   role: 'system' | 'user' | 'assistant'
   content: string
+  model?: string // Add model info to messages
 }
 
 interface LastSearch {
@@ -17,10 +18,19 @@ interface Props {
   lastSearch?: LastSearch | null
 }
 
+// Available Groq models
+const AVAILABLE_MODELS = [
+  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B', description: 'Most capable' },
+  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B', description: 'Fastest' },
+  { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B', description: 'Balanced' },
+] as const
+
+type ModelId = typeof AVAILABLE_MODELS[number]['id']
+
 const SYSTEM_INTRO: Message = {
   role: 'assistant',
   content:
-    "Hi! I'm your AI research assistant powered by Groq (Llama 3). I can help you craft better search queries, summarise results, or explain topics. Each search costs 0.001 USDC on Stellar. What would you like to research?",
+    "Hi! I'm your AI research assistant powered by Groq. I can help you craft better search queries, summarise results, or explain topics. Each search costs 0.001 USDC on Stellar. What would you like to research?",
 }
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
@@ -34,6 +44,7 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
 async function consumeSSE(
   body: ReadableStream<Uint8Array>,
   onDelta: (delta: string) => void,
+  onModel?: (model: string) => void,
 ): Promise<void> {
   const reader  = body.getReader()
   const decoder = new TextDecoder('utf-8')
@@ -64,6 +75,10 @@ async function consumeSSE(
           if (content) onDelta(content)
         } catch { /* malformed chunk; skip */ }
       } else if (event === 'done') {
+        try {
+          const { model } = JSON.parse(data) as { model?: string }
+          if (model && onModel) onModel(model)
+        } catch { /* ignore malformed done event */ }
         return
       } else if (event === 'error') {
         try {
@@ -98,6 +113,8 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
   const [messages, setMessages] = useState<Message[]>([SYSTEM_INTRO])
   const [input, setInput]       = useState('')
   const [loading, setLoading]   = useState(false)
+  const [selectedModel, setSelectedModel] = useState<ModelId>('llama-3.3-70b-versatile')
+  const [showModelDropdown, setShowModelDropdown] = useState(false)
   const bottomRef               = useRef<HTMLDivElement>(null)
   const contextInjectedFor      = useRef<string | null>(null)
 
@@ -123,10 +140,11 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
     setLoading(true)
 
     // Insert a placeholder assistant message we'll stream tokens into.
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+    setMessages(prev => [...prev, { role: 'assistant', content: '', model: selectedModel }])
 
     const payload = JSON.stringify({
       messages: history.map(m => ({ role: m.role, content: m.content })),
+      model: selectedModel,
     })
 
     try {
@@ -142,22 +160,40 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
 
       const isSSE = res.headers.get('content-type')?.includes('text/event-stream')
       if (isSSE && res.body) {
-        await consumeSSE(res.body, delta => {
-          setMessages(prev => {
-            const next = [...prev]
-            const last = next[next.length - 1]
-            if (last?.role === 'assistant') {
-              next[next.length - 1] = { ...last, content: last.content + delta }
-            }
-            return next
-          })
-        })
+        await consumeSSE(
+          res.body,
+          delta => {
+            setMessages(prev => {
+              const next = [...prev]
+              const last = next[next.length - 1]
+              if (last?.role === 'assistant') {
+                next[next.length - 1] = { ...last, content: last.content + delta }
+              }
+              return next
+            })
+          },
+          model => {
+            // Update the model info in the last message
+            setMessages(prev => {
+              const next = [...prev]
+              const last = next[next.length - 1]
+              if (last?.role === 'assistant') {
+                next[next.length - 1] = { ...last, model }
+              }
+              return next
+            })
+          }
+        )
       } else {
         // Non-streaming fallback: server returned JSON.
         const data = await res.json()
         setMessages(prev => {
           const next = [...prev]
-          next[next.length - 1] = { role: 'assistant', content: data.content ?? 'No response.' }
+          next[next.length - 1] = { 
+            role: 'assistant', 
+            content: data.content ?? 'No response.',
+            model: data.model || selectedModel
+          }
           return next
         })
       }
@@ -167,12 +203,18 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
         next[next.length - 1] = {
           role: 'assistant',
           content: `⚠️ Could not reach AI server: ${err.message}. Make sure the backend is running with GROQ_API_KEY set.`,
+          model: selectedModel,
         }
         return next
       })
     } finally {
       setLoading(false)
     }
+  }
+
+  const getModelLabel = (modelId: string) => {
+    const model = AVAILABLE_MODELS.find(m => m.id === modelId)
+    return model?.label || modelId
   }
 
   return (
@@ -203,9 +245,9 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="fixed bottom-20 right-6 z-40 w-80 rounded-2xl overflow-hidden flex flex-col"
+            className="fixed bottom-20 right-6 z-40 w-96 rounded-2xl overflow-hidden flex flex-col"
             style={{
-              height: '420px',
+              height: '480px',
               background: 'rgba(6,13,20,0.96)',
               border: '1px solid rgba(0,245,255,0.2)',
               backdropFilter: 'blur(20px)',
@@ -216,7 +258,56 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               <div className="flex items-center gap-2">
                 <Bot className="w-4 h-4 text-neon-cyan" />
                 <span className="font-display text-xs text-neon-cyan tracking-wider">GROQ AI</span>
-                <span className="font-display text-xs text-white/25 hidden sm:inline">· Llama 3</span>
+                {/* Model Selector Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowModelDropdown(!showModelDropdown)}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
+                    style={{
+                      background: 'rgba(0,245,255,0.1)',
+                      border: '1px solid rgba(0,245,255,0.2)',
+                      color: 'rgba(255,255,255,0.8)',
+                    }}
+                  >
+                    <span>{getModelLabel(selectedModel)}</span>
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                  
+                  {/* Dropdown Menu */}
+                  <AnimatePresence>
+                    {showModelDropdown && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -5 }}
+                        className="absolute top-full left-0 mt-1 w-48 rounded-lg overflow-hidden z-50"
+                        style={{
+                          background: 'rgba(6,13,20,0.98)',
+                          border: '1px solid rgba(0,245,255,0.2)',
+                        }}
+                      >
+                        {AVAILABLE_MODELS.map(model => (
+                          <button
+                            key={model.id}
+                            onClick={() => {
+                              setSelectedModel(model.id)
+                              setShowModelDropdown(false)
+                            }}
+                            className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-white">{model.label}</span>
+                              {selectedModel === model.id && (
+                                <span className="text-neon-cyan text-xs">✓</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-white/40 mt-0.5">{model.description}</div>
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
               <button
                 onClick={() => setOpen(false)}
@@ -233,7 +324,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                   key={i}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                 >
                   <div
                     className="max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed"
@@ -249,6 +340,12 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                   >
                     {msg.content}
                   </div>
+                  {/* Show model metadata for assistant messages */}
+                  {msg.role === 'assistant' && msg.model && (
+                    <div className="text-[10px] text-white/30 mt-1 px-1">
+                      {getModelLabel(msg.model)}
+                    </div>
+                  )}
                 </motion.div>
               ))}
 
