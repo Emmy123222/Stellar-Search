@@ -6,4 +6,9 @@ export interface ApiStat {
   totalUsdcSettled: string
   avgLatencyMs: number
   uptime: string
+  // New observability fields (bounded percentiles, readiness)
+  latency?: { avgMs: number; p50Ms: number | null; p95Ms: number | null; p99Ms: number | null; samples: number }
+  timings?: Record<string, { count: number; avgMs: number; p50Ms: number | null; p95Ms: number | null }>
+  status?: 'ok' | 'degraded' | 'unavailable'
+  checks?: Record<string, { status: string; configured: boolean; reachable: boolean | null }>
 }

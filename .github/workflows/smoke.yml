@@ -1,0 +1,193 @@
+name: Smoke — Observability & Reliability
+
+on:
+  schedule:
+    # Daily at 03:17 UTC — validates deployment regressions in routing, 402, CORS, health, AI
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Override BASE_URL to smoke (e.g. https://your-app.vercel.app)'
+        required: false
+        default: ''
+      funded:
+        description: 'Run capped funded settlement (requires secrets)'
+        type: boolean
+        required: false
+        default: false
+  push:
+    branches: [ main, observability-reliability ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Local smoke — starts the Express server and validates no-charge 402/CORS/health without spending ──
+  local-smoke:
+    name: Local smoke (root/health/402/CORS/AI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build check
+        run: npm run typecheck
+
+      - name: Start server (background)
+        env:
+          # Dummy keys to let health show configured vs reachable — smoke tests 402/CORS without needing real keys
+          SERPER_API_KEY: dummy-serper-key-for-smoke-1234567890abcdef
+          GROQ_API_KEY: gsk_dummy_key_for_smoke_test_only_1234567890
+          STELLAR_RECEIVING_ADDRESS: GBXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+          STELLAR_NETWORK: stellar:testnet
+          FACILITATOR_URL: https://www.x402.org/facilitator
+          PORT: 3001
+        run: |
+          nohup npx tsx server/index.ts > server.log 2>&1 &
+          echo $! > server.pid
+          for i in {1..30}; do
+            if curl -sf http://localhost:3001/health >/dev/null 2>&1; then
+              echo "Server ready"
+              cat server.log | head -n 50
+              break
+            fi
+            sleep 1
+          done
+          curl -s http://localhost:3001/health | head -c 500
+          echo ""
+
+      - name: Smoke — no-charge checks
+        env:
+          BASE_URL: http://localhost:3001
+        run: npx tsx scripts/verify-deployment.ts
+
+      - name: Print smoke artifacts
+        if: always()
+        run: |
+          echo "--- smoke-report.md ---"
+          cat smoke-report.md 2>/dev/null || cat artifacts/smoke-report.md 2>/dev/null || echo "no report"
+          echo "--- server.log tail ---"
+          tail -n 100 server.log 2>/dev/null || true
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-local-${{ github.run_id }}
+          path: |
+            smoke-report.json
+            smoke-report.md
+            artifacts/smoke-report.json
+            artifacts/smoke-report.md
+            server.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop server
+        if: always()
+        run: |
+          kill $(cat server.pid) 2>/dev/null || true
+          sleep 1
+          cat server.log 2>/dev/null | tail -n 50 || true
+
+  # ── Deployed smoke — hits the live deployment (Vercel/Express) when BASE_URL is known ──
+  deployed-smoke:
+    name: Deployed smoke (if BASE_URL known)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'schedule' || github.event.inputs.base_url != '' || vars.SMOKE_BASE_URL != ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Smoke — deployed
+        env:
+          BASE_URL: ${{ github.event.inputs.base_url || vars.SMOKE_BASE_URL || secrets.SMOKE_BASE_URL }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "No BASE_URL set (vars.SMOKE_BASE_URL / secrets.SMOKE_BASE_URL / inputs.base_url) — skipping deployed smoke"
+            echo "To enable: set repository Variable SMOKE_BASE_URL to your deployment URL (e.g. https://your-app.vercel.app)"
+            exit 0
+          fi
+          echo "Smoking deployed: $BASE_URL"
+          npx tsx scripts/verify-deployment.ts
+
+      - name: Upload deployed smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-deployed-${{ github.run_id }}
+          path: |
+            smoke-report.json
+            smoke-report.md
+            artifacts/smoke-report.json
+            artifacts/smoke-report.md
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ── Optional funded settlement — capped, requires secrets, publishes actionable artifacts ──
+  funded-smoke:
+    name: Funded settlement (capped, opt-in)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.funded == 'true' || vars.SMOKE_FUND_ENABLED == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Funded smoke (capped)
+        env:
+          BASE_URL: ${{ vars.SMOKE_BASE_URL || secrets.SMOKE_BASE_URL || 'http://localhost:3001' }}
+          SMOKE_FUND_WALLET: '1'
+          SMOKE_MAX_USDC: '0.001'
+          # Capped credentials — must be set as secrets for this job to do anything real.
+          # If not set, the script gracefully skips the spendy path and still publishes artifacts.
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          echo "Running capped funded settlement smoke (max $SMOKE_MAX_USDC USDC) against $BASE_URL"
+          npx tsx scripts/verify-deployment.ts || true
+          echo "Funded smoke finished — check artifacts for actionable details"
+
+      - name: Upload funded artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-funded-${{ github.run_id }}
+          path: |
+            smoke-report.json
+            smoke-report.md
+            artifacts/smoke-report.json
+            artifacts/smoke-report.md
+          if-no-files-found: warn
+          retention-days: 30

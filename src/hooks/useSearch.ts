@@ -18,6 +18,8 @@ import { signAuthEntry, getNetworkDetails }    from '@stellar/freighter-api'
 import { Networks }                            from '@stellar/stellar-sdk'
 import { Buffer }                              from 'buffer'
 import { HORIZON_URL, IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
+import { TIMING_PHASES } from '../lib/timing'
+import { redact } from '../lib/redactor'
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
   typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
@@ -61,6 +63,8 @@ export interface SearchSession {
   step?: PaymentStep
   error?: string
   durationMs?: number
+  // Phase timings with shared vocabulary — explains end-to-end performance (mirrors server/metrics.ts)
+  timings?: Record<string, { durationMs: number; outcome: string }>
   suggestions: string[]
 }
 
@@ -97,6 +101,10 @@ export function useSearch(walletAddress: string | null = null) {
       })
 
       const t0 = Date.now()
+      const phaseTimings: Record<string, { durationMs: number; outcome: string }> = {}
+      const recordPhase = (phase: string, durationMs: number, outcome: string) => {
+        phaseTimings[phase] = { durationMs, outcome }
+      }
       const params = new URLSearchParams({
         q: query,
         count: String(count),
@@ -112,14 +120,21 @@ export function useSearch(walletAddress: string | null = null) {
     try {
       if (!walletAddress) throw new Error('Connect your Freighter wallet first.')
 
-      console.log('🔍 Starting search with wallet:', walletAddress)
+      // Use redactor for logging to avoid capturing wallet addresses
+      console.log('🔍 Starting search', redact({ walletAddress: walletAddress.slice(0, 6) + '…' }))
 
       // Step 1 — verify Freighter is on correct network
+      const tValidation0 = Date.now()
       const net = await getNetworkDetails()
-      if (net.error)              throw new Error(net.error.message)
+      if (net.error) {
+        recordPhase(TIMING_PHASES.VALIDATION, Date.now() - tValidation0, 'error')
+        throw new Error(net.error.message)
+      }
       if (net.network !== EXPECTED_WALLET_NETWORK) {
+        recordPhase(TIMING_PHASES.VALIDATION, Date.now() - tValidation0, 'error')
         throw new Error(`Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`)
       }
+      recordPhase(TIMING_PHASES.VALIDATION, Date.now() - tValidation0, 'success')
       console.log('✅ Network verified:', net.network)
 
       // Step 2 — build the signer
@@ -162,16 +177,24 @@ export function useSearch(walletAddress: string | null = null) {
 
       // Flow step 1 — initial request, expect 402
       advance(1)
-      console.log('🚀 Initial request:', `${SERVER_URL}/search?${params}`)
+      const tFetch0 = Date.now()
       const firstRes = await fetch(`${SERVER_URL}/search?${params}`)
-      console.log('📡 Status:', firstRes.status)
+      recordPhase(TIMING_PHASES.BROWSER_FETCH, Date.now() - tFetch0, firstRes.status === 402 ? 'success' : firstRes.ok ? 'success' : 'error')
 
       if (firstRes.status !== 402) {
         if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`)
         const data = await firstRes.json()
+        recordPhase(TIMING_PHASES.TOTAL, Date.now() - t0, 'success')
+        // Merge server timings if available
+        const serverTimings = (data as any).timings
+        if (serverTimings) {
+          for (const [k, v] of Object.entries(serverTimings)) {
+            if (typeof v === 'number') recordPhase(`server_${k}`, v, 'success')
+          }
+        }
         return setSession({
           query, results: data.results ?? [], txHash: null,
-          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
+          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, timings: { ...phaseTimings }, suggestions: data.suggestions ?? [],
         })
       }
 
@@ -185,16 +208,15 @@ export function useSearch(walletAddress: string | null = null) {
 
       // Flow step 3 — createPaymentPayload() triggers the Freighter popup (signs auth entry)
       advance(3)
-      console.log('🔐 Triggering Freighter popup via createPaymentPayload...')
+      const tSign0 = Date.now()
       const paymentPayload = await client.createPaymentPayload(paymentRequired)
-      console.log('✅ Freighter approved, payload created')
+      recordPhase(TIMING_PHASES.WALLET_SIGN, Date.now() - tSign0, 'success')
 
       const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload)
-      console.log('✅ Payment headers encoded')
 
       // Flow step 4 — retry with X-PAYMENT header
       advance(4)
-      console.log('🔄 Retrying with payment...')
+      const tPaidFetch0 = Date.now()
       const paidResPromise = fetch(`${SERVER_URL}/search?${params}`, {
         headers: paymentHeaders,
       })
@@ -202,7 +224,7 @@ export function useSearch(walletAddress: string | null = null) {
       // Flow step 5 — facilitator settles on Stellar while the retry is in flight
       advance(5)
       const paidRes = await paidResPromise
-      console.log('📡 Paid response status:', paidRes.status)
+      recordPhase(TIMING_PHASES.X402, Date.now() - tPaidFetch0, paidRes.ok ? 'success' : 'error')
 
       if (!paidRes.ok) {
         const text = await paidRes.text()
@@ -210,7 +232,13 @@ export function useSearch(walletAddress: string | null = null) {
       }
 
       const data = await paidRes.json()
-      console.log('✅ Search complete!')
+      // Merge server phase timings into browser timings for end-to-end explanation
+      const srvTimings: Record<string, number> = (data as any).timings ?? {}
+      for (const [k, v] of Object.entries(srvTimings)) {
+        if (typeof v === 'number') recordPhase(`server_${k}`, v, 'success')
+      }
+      recordPhase(TIMING_PHASES.TOTAL, Date.now() - t0, 'success')
+      recordPhase(TIMING_PHASES.BROWSER_FETCH, Date.now() - tFetch0 + (Date.now() - tPaidFetch0), 'success')
 
       // Flow step 6 — result received and rendered
       setSession({
@@ -221,6 +249,7 @@ export function useSearch(walletAddress: string | null = null) {
         status:      'complete',
         step:        6,
         durationMs:  Date.now() - t0,
+        timings: { ...phaseTimings },
         suggestions: data.suggestions ?? [],
       })
 
@@ -258,13 +287,15 @@ export function useSearch(walletAddress: string | null = null) {
       }
 
     } catch (err: any) {
-      console.error('❌ Search failed:', err)
+      recordPhase(TIMING_PHASES.TOTAL, Date.now() - t0, 'error')
+      console.error('❌ Search failed:', redact({ error: err.message || String(err) }))
       const msg = err.message || 'Search failed.'
       toast.error('Search Payment Failed', { description: msg })
       setSession(prev => ({
         ...prev,
         status: 'error',
         error:  msg,
+        timings: { ...phaseTimings },
       }))
     }
   }, [walletAddress])

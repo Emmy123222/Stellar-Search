@@ -23,13 +23,16 @@ import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
-import logger from './logger'
+import logger from './logger.js'
+import { getReadiness } from './readiness.js'
+import { recordTiming, getMetrics, getAvgLatencyMs } from './metrics.js'
+import { TIMING_PHASES } from '../src/lib/timing.js'
 import {
   STELLAR_NETWORK,
   HORIZON_URL, 
   AMOUNT_USDC, 
   AMOUNT_STROOPS 
-} from '../src/lib/constants'
+} from '../src/lib/constants.js'
 
 dotenv.config()
 
@@ -79,10 +82,11 @@ app.use(express.json())
 app.use(limiter)
 
 // ─── In-memory stats ──────────────────────────────────────────────────────
+// Latencies are now tracked via bounded metrics (circular buffers) in server/metrics.ts
+// to avoid unbounded in-memory arrays and to expose p50/p95/p99 per phase.
 const stats = {
   totalQueries: 0,
   totalUsdcSettled: 0,
-  latencies: [] as number[],
   startTime: Date.now(),
 }
 
@@ -131,9 +135,10 @@ const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }]
 
 // Apply middleware to all routes, not just /search
 
-// ─── Payment Logging Middleware ──────────────────────────────────────────
+// ─── Payment Logging Middleware (redacted) ─────────────────────────────────
+// Logger's redactor ensures query / payment headers are not persisted raw.
 app.use((req, res, next) => {
-  if (req.path === '/search') {
+  if (req.path === '/search' || req.path === '/images' || req.path === '/news') {
     const { q } = req.query as Record<string, string>;
     const truncatedQ = q ? String(q).substring(0, 50) : '';
 
@@ -146,6 +151,7 @@ app.use((req, res, next) => {
         timestamp: new Date().toISOString(),
         ip: req.ip,
         query: truncatedQ,
+        path: req.path,
         paymentStatus: paymentStatus,
       });
     });
@@ -180,13 +186,17 @@ function validateQuery(
 
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {
-  const { q, count = '5', freshness } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) return res.status(400).json({ error: v.error })
+  const tTotal0 = Date.now()
+  const tVal0 = Date.now()
+  const v = validateQuery((req.query as Record<string, string>).q)
+  const valMs = Date.now() - tVal0
+  recordTiming(TIMING_PHASES.VALIDATION, valMs, v.ok ? 'success' : 'error')
+  if (!v.ok) {
+    recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
+    return res.status(400).json({ error: v.error })
+  }
   const cleanQ = v.cleanQ
-
-  const t0 = Date.now()
+  const { count = '5', freshness } = req.query as Record<string, string>
 
   try {
     const requestBody: any = {
@@ -206,6 +216,7 @@ app.get('/search', async (req: Request, res: Response) => {
       }
     }
 
+    const tSerper0 = Date.now()
     const serperRes = await fetch('https://google.serper.dev/search', {
       method: 'POST',
       headers: {
@@ -214,21 +225,24 @@ app.get('/search', async (req: Request, res: Response) => {
       },
       body: JSON.stringify(requestBody),
     })
+    const serperMs = Date.now() - tSerper0
 
     if (!serperRes.ok) {
       const err = await serperRes.text()
-      console.error('[serper]', serperRes.status, err)
+      logger.warn('serper error', { status: serperRes.status, error: err.slice(0, 500) })
+      recordTiming(TIMING_PHASES.SERPER, serperMs, 'error')
+      recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
+    recordTiming(TIMING_PHASES.SERPER, serperMs, 'success')
+
     const data = await serperRes.json()
-    const latencyMs = Date.now() - t0
+    const latencyMs = Date.now() - tTotal0
 
     stats.totalQueries++
     stats.totalUsdcSettled += 0.001
-    stats.latencies.push(latencyMs)
-    if (stats.latencies.length > 200) stats.latencies.shift()
-
+    // latencyMs is total so far (without suggestions); suggestions timing is separate phase
     const results = (data.organic || []).map((r: any, i: number) => ({
       id: String(i + 1),
       title: r.title || 'No title',
@@ -244,7 +258,9 @@ app.get('/search', async (req: Request, res: Response) => {
 
     // ── Optional AI suggestions via Groq ──────────────────────────────────
     let suggestions: string[] = []
+    let suggMs: number | null = null
     if (req.query.suggestions === '1' && results.length > 0) {
+      const tSugg0 = Date.now()
       try {
         const topSnippets = results.slice(0, 3).map((r: any) => r.description).join(' | ')
         const suggCompletion = await groq.chat.completions.create({
@@ -265,10 +281,17 @@ app.get('/search', async (req: Request, res: Response) => {
         const raw = suggCompletion.choices[0]?.message?.content || '[]'
         const match = raw.match(/\[[\s\S]*\]/)
         if (match) suggestions = JSON.parse(match[0]).slice(0, 3)
+        suggMs = Date.now() - tSugg0
+        recordTiming(TIMING_PHASES.GROQ_SUGGESTIONS, suggMs, 'success')
       } catch (err: any) {
-        console.warn('[suggestions] Groq error:', err.message)
+        suggMs = Date.now() - tSugg0
+        recordTiming(TIMING_PHASES.GROQ_SUGGESTIONS, suggMs, 'error')
+        logger.warn('suggestions Groq error', { error: err.message })
       }
     }
+
+    const totalMs = Date.now() - tTotal0
+    recordTiming(TIMING_PHASES.TOTAL, totalMs, 'success')
 
     return res.json({
       query: cleanQ,
@@ -278,26 +301,39 @@ app.get('/search', async (req: Request, res: Response) => {
       paidAmount: AMOUNT_USDC,
       currency: 'USDC',
       txHash,
-      latencyMs,
+      latencyMs: totalMs,
+      // Phase timings with shared vocabulary — explains end-to-end performance
+      timings: {
+        validationMs: valMs,
+        serperMs,
+        suggestionsMs: suggMs,
+        totalMs,
+      },
       suggestions,
     })
   } catch (err: any) {
-    console.error('[search error]', err.message)
+    recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
+    logger.error('search error', { error: err.message })
     return res.status(500).json({ error: 'Search failed. Check server logs.' })
   }
 })
 
 // ─── GET /images ──────────────────────────────────────────────────────────
 app.get('/images', async (req: Request, res: Response) => {
-  const { q, count = '10' } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) return res.status(400).json({ error: v.error })
+  const tTotal0 = Date.now()
+  const tVal0 = Date.now()
+  const v = validateQuery((req.query as Record<string, string>).q)
+  const valMs = Date.now() - tVal0
+  recordTiming(TIMING_PHASES.VALIDATION, valMs, v.ok ? 'success' : 'error')
+  if (!v.ok) {
+    recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
+    return res.status(400).json({ error: v.error })
+  }
   const cleanQ = v.cleanQ
-
-  const t0 = Date.now()
+  const { count = '10' } = req.query as Record<string, string>
 
   try {
+    const tSerper0 = Date.now()
     const serperRes = await fetch('https://google.serper.dev/images', {
       method: 'POST',
       headers: {
@@ -309,20 +345,22 @@ app.get('/images', async (req: Request, res: Response) => {
         num: Math.min(parseInt(count) || 10, 10),
       }),
     })
+    const serperMs = Date.now() - tSerper0
 
     if (!serperRes.ok) {
       const err = await serperRes.text()
-      console.error('[serper images]', serperRes.status, err)
+      logger.warn('serper images error', { status: serperRes.status, error: err.slice(0, 500) })
+      recordTiming(TIMING_PHASES.SERPER, serperMs, 'error')
+      recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
+    recordTiming(TIMING_PHASES.SERPER, serperMs, 'success')
+
     const data = await serperRes.json()
-    const latencyMs = Date.now() - t0
 
     stats.totalQueries++
     stats.totalUsdcSettled += parseFloat(AMOUNT_USDC)
-    stats.latencies.push(latencyMs)
-    if (stats.latencies.length > 200) stats.latencies.shift()
 
     const results = (data.images || []).map((r: any, i: number) => ({
       id: String(i + 1),
@@ -336,6 +374,8 @@ app.get('/images', async (req: Request, res: Response) => {
     }))
 
     const txHash = (req.headers['x-payment-response'] as string) || null
+    const totalMs = Date.now() - tTotal0
+    recordTiming(TIMING_PHASES.TOTAL, totalMs, 'success')
 
     return res.json({
       query: cleanQ,
@@ -345,23 +385,29 @@ app.get('/images', async (req: Request, res: Response) => {
       paidAmount: AMOUNT_USDC,
       currency: 'USDC',
       txHash,
-      latencyMs,
+      latencyMs: totalMs,
+      timings: { validationMs: valMs, serperMs, totalMs },
     })
   } catch (err: any) {
-    console.error('[images error]', err.message)
+    recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
+    logger.error('images error', { error: err.message })
     return res.status(500).json({ error: 'Image search failed. Check server logs.' })
   }
 })
 
 // ─── GET /news ────────────────────────────────────────────────────────────
 app.get('/news', async (req: Request, res: Response) => {
-  const { q, count = '10', freshness } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) return res.status(400).json({ error: v.error })
+  const tTotal0 = Date.now()
+  const tVal0 = Date.now()
+  const v = validateQuery((req.query as Record<string, string>).q)
+  const valMs = Date.now() - tVal0
+  recordTiming(TIMING_PHASES.VALIDATION, valMs, v.ok ? 'success' : 'error')
+  if (!v.ok) {
+    recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
+    return res.status(400).json({ error: v.error })
+  }
   const cleanQ = v.cleanQ
-
-  const t0 = Date.now()
+  const { count = '10', freshness } = req.query as Record<string, string>
 
   try {
     const requestBody: any = {
@@ -380,6 +426,7 @@ app.get('/news', async (req: Request, res: Response) => {
       }
     }
 
+    const tSerper0 = Date.now()
     const serperRes = await fetch('https://google.serper.dev/news', {
       method: 'POST',
       headers: {
@@ -388,20 +435,22 @@ app.get('/news', async (req: Request, res: Response) => {
       },
       body: JSON.stringify(requestBody),
     })
+    const serperMs = Date.now() - tSerper0
 
     if (!serperRes.ok) {
       const err = await serperRes.text()
-      console.error('[serper news]', serperRes.status, err)
+      logger.warn('serper news error', { status: serperRes.status, error: err.slice(0, 500) })
+      recordTiming(TIMING_PHASES.SERPER, serperMs, 'error')
+      recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
+    recordTiming(TIMING_PHASES.SERPER, serperMs, 'success')
+
     const data = await serperRes.json()
-    const latencyMs = Date.now() - t0
 
     stats.totalQueries++
     stats.totalUsdcSettled += parseFloat(AMOUNT_USDC)
-    stats.latencies.push(latencyMs)
-    if (stats.latencies.length > 200) stats.latencies.shift()
 
     const results = (data.news || []).map((r: any, i: number) => ({
       id: String(i + 1),
@@ -414,6 +463,8 @@ app.get('/news', async (req: Request, res: Response) => {
     }))
 
     const txHash = (req.headers['x-payment-response'] as string) || null
+    const totalMs = Date.now() - tTotal0
+    recordTiming(TIMING_PHASES.TOTAL, totalMs, 'success')
 
     return res.json({
       query: cleanQ,
@@ -423,10 +474,12 @@ app.get('/news', async (req: Request, res: Response) => {
       paidAmount: AMOUNT_USDC,
       currency: 'USDC',
       txHash,
-      latencyMs,
+      latencyMs: totalMs,
+      timings: { validationMs: valMs, serperMs, totalMs },
     })
   } catch (err: any) {
-    console.error('[news error]', err.message)
+    recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
+    logger.error('news error', { error: err.message })
     return res.status(500).json({ error: 'News search failed. Check server logs.' })
   }
 })
@@ -434,136 +487,24 @@ app.get('/news', async (req: Request, res: Response) => {
 // ─── POST /ai/chat ────────────────────────────────────────────────────────
 // Streams responses as Server-Sent Events when the client sends
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
-// (back-compat fallback for callers that don't support SSE).
+// Supports model selection via { model } whitelist. Records phase timings with shared vocabulary.
 app.post('/ai/chat', async (req: Request, res: Response) => {
-  const { messages } = req.body as {
-    messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
-  }
-
-  if (!messages?.length) {
-    return res.status(400).json({ error: 'messages array required' })
-  }
-
-  const wantsStream =
-    (req.headers.accept || '').includes('text/event-stream') ||
-    req.query.stream === '1'
-
-  const groqMessages = [
-    {
-      role: 'system' as const,
-      content:
-        'You are StellarSearch AI, a concise research assistant. Help users craft better search queries and understand results. Keep responses under 200 words.',
-    },
-    ...messages,
+  const tTotal0 = Date.now()
+  const AVAILABLE_MODELS = [
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
+    'mixtral-8x7b-32768',
   ]
-
-  if (!wantsStream) {
-    try {
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: groqMessages,
-        max_tokens:  512,
-        temperature: 0.7,
-      })
-
-      const content = completion.choices[0]?.message?.content || 'No response.'
-      return res.json({ content, model: completion.model })
-    } catch (err: any) {
-      console.error('[groq error]', err.message)
-      return res.status(500).json({ error: `Groq AI error: ${err.message}` })
-    }
-  }
-
-  // SSE path
-  res.setHeader('Content-Type', 'text/event-stream')
-  res.setHeader('Cache-Control', 'no-cache, no-transform')
-  res.setHeader('Connection', 'keep-alive')
-  // Disable proxy buffering (e.g. nginx) so chunks flush immediately
-  res.setHeader('X-Accel-Buffering', 'no')
-  res.flushHeaders?.()
-
-  const sendEvent = (event: string, data: Record<string, unknown>) => {
-    res.write(`event: ${event}\n`)
-    res.write(`data: ${JSON.stringify(data)}\n\n`)
-  }
-
-  // Abort the Groq stream if the client disconnects mid-response.
-  const controller = new AbortController()
-  req.on('close', () => controller.abort())
-
-  try {
-    const stream = await groq.chat.completions.create(
-      {
-        model: 'llama-3.3-70b-versatile',
-        messages: groqMessages,
-        max_tokens:  512,
-        temperature: 0.7,
-        stream: true,
-      },
-      { signal: controller.signal },
-    )
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content
-      if (delta) sendEvent('delta', { content: delta })
-    }
-    sendEvent('done', { model: 'llama-3.3-70b-versatile' })
-    res.end()
-  } catch (err: any) {
-    if (controller.signal.aborted) return res.end()
-    console.error('[groq stream error]', err.message)
-    sendEvent('error', { error: `Groq AI error: ${err.message}` })
-    res.end()
-  }
-})
-
-// ─── GET /health ──────────────────────────────────────────────────────────
-app.get('/health', (_req: Request, res: Response) => {
-  const avg = stats.latencies.length
-    ? Math.round(stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length)
-    : 0
-
-  const up = Math.floor((Date.now() - stats.startTime) / 1000)
-  const uptime = up < 60 ? `${up}s` : up < 3600 ? `${Math.floor(up / 60)}m` : `${Math.floor(up / 3600)}h`
-
-  res.json({
-    status:                    'ok',
-    network:                   NETWORK,
-    pricePerQuery:             '0.001 USDC',
-    protocol:                  'x402',
-    facilitator:               FACILITATOR_URL,
-    totalQueries:              stats.totalQueries,
-    totalUsdcSettled:          stats.totalUsdcSettled.toFixed(4),
-    avgLatencyMs:              avg,
-    uptime,
-    serperApiConfigured:       !!SERPER_API_KEY,
-    groqApiConfigured:         !!GROQ_API_KEY,
-    receivingAddressConfigured: !!RECEIVING_ADDRESS,
-  })
-})
-
-// ─── POST /ai/chat ────────────────────────────────────────────────────────
-// Streams responses as Server-Sent Events when the client sends
-// `Accept: text/event-stream`; otherwise returns the full completion as JSON
-// (back-compat fallback for callers that don't support SSE).
-app.post('/ai/chat', async (req: Request, res: Response) => {
   const { messages, model: requestedModel } = req.body as {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string
   }
 
   if (!messages?.length) {
+    recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
     return res.status(400).json({ error: 'messages array required' })
   }
 
-  // Available models whitelist
-  const AVAILABLE_MODELS = [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
-    'mixtral-8x7b-32768',
-  ]
-  
-  // Use requested model if valid, otherwise fall back to default
   const model = requestedModel && AVAILABLE_MODELS.includes(requestedModel)
     ? requestedModel
     : 'llama-3.3-70b-versatile'
@@ -582,6 +523,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   ]
 
   if (!wantsStream) {
+    const tGroq0 = Date.now()
     try {
       const completion = await groq.chat.completions.create({
         model,
@@ -589,11 +531,16 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
         max_tokens:  512,
         temperature: 0.7,
       })
-
+      recordTiming(TIMING_PHASES.GROQ, Date.now() - tGroq0, 'success')
+      recordTiming(TIMING_PHASES.AI_CHAT, Date.now() - tTotal0, 'success')
+      recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'success')
       const content = completion.choices[0]?.message?.content || 'No response.'
-      return res.json({ content, model: completion.model })
+      return res.json({ content, model: completion.model, timings: { groqMs: Date.now() - tGroq0, totalMs: Date.now() - tTotal0 } })
     } catch (err: any) {
-      console.error('[groq error]', err.message)
+      recordTiming(TIMING_PHASES.GROQ, Date.now() - tGroq0, 'error')
+      recordTiming(TIMING_PHASES.AI_CHAT, Date.now() - tTotal0, 'error')
+      recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
+      logger.error('groq error', { error: err.message })
       return res.status(500).json({ error: `Groq AI error: ${err.message}` })
     }
   }
@@ -615,6 +562,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   const controller = new AbortController()
   req.on('close', () => controller.abort())
 
+  const tGroq0 = Date.now()
   try {
     const stream = await groq.chat.completions.create(
       {
@@ -631,17 +579,99 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
       const delta = chunk.choices[0]?.delta?.content
       if (delta) sendEvent('delta', { content: delta })
     }
+    recordTiming(TIMING_PHASES.GROQ, Date.now() - tGroq0, 'success')
+    recordTiming(TIMING_PHASES.AI_CHAT, Date.now() - tTotal0, 'success')
+    recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'success')
     sendEvent('done', { model })
     res.end()
   } catch (err: any) {
-    if (controller.signal.aborted) return res.end()
-    console.error('[groq stream error]', err.message)
+    if (controller.signal.aborted) {
+      recordTiming(TIMING_PHASES.GROQ, Date.now() - tGroq0, 'error')
+      return res.end()
+    }
+    recordTiming(TIMING_PHASES.GROQ, Date.now() - tGroq0, 'error')
+    recordTiming(TIMING_PHASES.AI_CHAT, Date.now() - tTotal0, 'error')
+    recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
+    logger.error('groq stream error', { error: err.message })
     sendEvent('error', { error: `Groq AI error: ${err.message}` })
     res.end()
   }
 })
 
+// ─── GET /health & /ready ───────────────────────────────────────────────
+// Health now performs cached, low-cost dependency checks with strict timeouts
+// and distinguishes configured / reachable / degraded / unavailable via the
+// shared readiness module. Metrics expose percentiles without unbounded arrays.
+async function healthHandler(_req: Request, res: Response) {
+  const up = Math.floor((Date.now() - stats.startTime) / 1000)
+  const uptime = up < 60 ? `${up}s` : up < 3600 ? `${Math.floor(up / 60)}m` : `${Math.floor(up / 3600)}h`
+  const metrics = getMetrics()
+  const avg = getAvgLatencyMs()
 
+  let readiness
+  try {
+    readiness = await getReadiness()
+  } catch (err: any) {
+    logger.warn('readiness failed', { error: err.message })
+    readiness = {
+      status: 'degraded' as const,
+      checks: {},
+      cached: false,
+      cacheAgeMs: 0,
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  // Overall status is readiness status unless no checks (fallback to ok)
+  const status = (readiness.status === 'unavailable' ? 'unavailable' : readiness.status === 'degraded' ? 'degraded' : 'ok') as string
+
+  const latency = metrics.total ? {
+    avgMs: avg,
+    p50Ms: metrics.total.p50Ms,
+    p95Ms: metrics.total.p95Ms,
+    p99Ms: metrics.total.p99Ms,
+    samples: metrics.phases['total']?.count ?? 0,
+  } : {
+    avgMs: avg,
+    p50Ms: null,
+    p95Ms: null,
+    p99Ms: null,
+    samples: 0,
+  }
+
+  res.json({
+    status,
+    network: NETWORK,
+    pricePerQuery: '0.001 USDC',
+    protocol: 'x402',
+    facilitator: FACILITATOR_URL,
+    totalQueries: stats.totalQueries,
+    totalUsdcSettled: stats.totalUsdcSettled.toFixed(4),
+    // deprecated but preserved for compatibility
+    avgLatencyMs: avg,
+    latency,
+    // per-phase percentiles (bounded circular buffers)
+    timings: metrics.phases,
+    uptime,
+    // legacy booleans preserved for compatibility
+    serperApiConfigured: !!SERPER_API_KEY,
+    groqApiConfigured: !!GROQ_API_KEY,
+    receivingAddressConfigured: !!RECEIVING_ADDRESS,
+    // new detailed checks
+    checks: readiness.checks,
+    readiness: {
+      cached: readiness.cached,
+      cacheAgeMs: readiness.cacheAgeMs,
+      timestamp: readiness.timestamp,
+    },
+  })
+}
+
+app.get('/health', healthHandler)
+app.get('/ready', healthHandler)
+app.get('/metrics', (_req: Request, res: Response) => {
+  res.json(getMetrics())
+})
 
 
 // ─── GET / ────────────────────────────────────────────────────────────────

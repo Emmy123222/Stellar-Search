@@ -142,6 +142,66 @@ sequenceDiagram
 
 ---
 
+## Observability & reliability
+
+StellarSearch keeps Express, Vercel, browser, and MCP aligned and preserves verified x402 settlement for paid routes.
+
+### Health, readiness, and metrics
+
+- `GET /health` (Express) and `GET /api/health` (Vercel) return **cached, low-cost readiness** checks with strict **2000 ms** timeouts and a **30 s** TTL. Each dependency reports `configured` (env present), `reachable` (network), and `status: ok | degraded | unavailable | not_configured`.
+  - `serper` — HEAD reachability (or `HEALTH_CHECK_SERPER_DEEP=true` for a `num:1` probe that validates credentials; off by default to avoid billing).
+  - `groq` — `GET https://api.groq.com/openai/v1/models` validates key and reachability without spending tokens.
+  - `facilitator` / `horizon` — GET probe with timeout.
+  - Overall `status: ok` when all reachable; `degraded` when any `degraded`/`not_configured` or single `unavailable`; `unavailable` when ≥2 unavailable. Cached flag `readiness.cached` + `cacheAgeMs` is exposed.
+- `GET /ready` is an alias for readiness (useful for k8s / Vercel checks).
+- `GET /metrics` (Express) exposes **bounded percentiles** without unbounded arrays — per-phase circular buffers (500 samples) via `server/metrics.ts`:
+  ```json
+  {
+    "latency": { "avgMs": 42, "p50Ms": 38, "p95Ms": 120, "p99Ms": 210, "samples": 12 },
+    "timings": {
+      "total": { "count": 12, "avgMs": 42, "p50Ms": 38, "p95Ms": 120, "p99Ms": 210 }
+    },
+    "checks": { "serper": { "status": "ok" }, "groq": { "status": "unavailable" } }
+  }
+  ```
+  `totalQueries` / `totalUsdcSettled` and legacy `avgLatencyMs` are preserved for compatibility.
+
+### Phase timings (shared vocabulary)
+
+Every request records **per-phase `durationMs` + `outcome`** with a single vocabulary (`src/lib/timing.ts` → `server/metrics.ts` → `src/hooks/useSearch.ts` → `mcp-server`):
+
+`validation` → `serper` → `groq_suggestions` (optional, `groq`/`ai_chat`) → `total`; browser/MCP also record `wallet_sign` / `browser_fetch` / `x402`. Server responses include `timings: { validationMs, serperMs, totalMs }`; browser `useSearch` merges `server_*` timings into `session.timings` for end-to-end explanation. Health/Metrics surface `p50/p95/p99` from the bounded buffers.
+
+### Redactor (privacy)
+
+`src/lib/redactor.ts` + `server/logger.ts` + `mcp-server` use a **recursive, case-insensitive** redactor covering headers (`Authorization`, `X-Payment`, `payment-signature`, `X-API-KEY`), keys (`SERPER_API_KEY`, `GROQ_API_KEY`, `token`), addresses (`walletAddress`, `receivingAddress`, `payTo`), and query/content fields (`q`, `query`, `text`, `content`, `messages`, `prompt`). Nested objects/arrays and standalone sensitive values (Stellar `G…` 56-char, `gsk_…`, `Bearer …`) are replaced with `[REDACTED]`. Tests prove nested and case-variant coverage.
+
+### Smoke — scheduled deployment guard
+
+`.github/workflows/smoke.yml` runs **scheduled** (03:17 UTC daily), on push/PR, and on manual dispatch:
+
+- Starts the Express server locally with dummy keys and runs `scripts/verify-deployment.ts` (`npm run test:smoke`) — validates `GET /`, `GET /health` (status + checks + latency), `GET /ready`, `GET /metrics` (no unbounded arrays), **no-charge `402` challenge** (`PAYMENT-REQUIRED` asset is Soroban `C…`, `amount: 10000`, `payTo` set, CORS `Access-Control-Expose-Headers` includes `PAYMENT-REQUIRED`), `OPTIONS` CORS preflight, and `POST /ai/chat` negotiation.
+- When `vars.SMOKE_BASE_URL` / `secrets.SMOKE_BASE_URL` or `inputs.base_url` is set, repeats the same checks against the deployed URL (Vercel `…/api` aware).
+- **Optional funded settlement** — when `SMOKE_FUND_WALLET=1` (workflow input `funded: true` or `vars.SMOKE_FUND_ENABLED=true`) uses capped credentials (`SMOKE_MAX_USDC` default `0.001`, hard cap `0.01`) and verifies facilitator/horizon reachability. Whether funded or not, the job publishes **actionable artifacts** (`smoke-report.json` + `smoke-report.md` + server log) via `actions/upload-artifact`.
+
+Run locally:
+
+```bash
+npm run test:smoke                 # hits http://localhost:3001 — start server first
+BASE_URL=https://your-app.vercel.app/api npm run test:smoke
+SMOKE_FUND_WALLET=1 SMOKE_MAX_USDC=0.001 npm run test:smoke  # capped funded path
+```
+
+### Environment additions
+
+| Variable | Purpose |
+|---|---|
+| `HEALTH_CHECK_SERPER_DEEP` | `true` → validate Serper key with a `num:1` probe (costs 1 query per TTL); default `false` (cheap HEAD). |
+| `SMOKE_BASE_URL` | Repository Variable/Secret for deployed smoke target. |
+| `SMOKE_FUND_WALLET` / `SMOKE_MAX_USDC` | Opt-in funded smoke cap (workflow only). |
+
+---
+
 ## Project structure
 
 ```
@@ -163,11 +223,27 @@ stellar-search/
 │   │   └── DashboardPage.tsx       # Live Horizon tx history
 │   └── lib/stellar.ts              # Horizon helpers
 ├── server/
-│   └── index.ts                # Express + @x402/express + Serper.dev + Groq
+│   ├── index.ts                # Express + @x402/express + Serper.dev + Groq + timing/metrics/readiness
+│   ├── readiness.ts            # Cached low-cost checks (2000ms timeouts, 30s TTL)
+│   ├── metrics.ts              # Bounded circular buffers, p50/p95/p99 exposure
+│   ├── logger.ts               # Winston + recursive redactor
+│   └── corsConfig.ts
 ├── mcp-server/
-│   └── index.ts                # MCP tools: web_search, ai_summarize, check_balance
+│   └── index.ts                # MCP tools: web_search, ai_summarize, check_balance (redacted + timing)
+├── api/
+│   ├── health.ts               # Vercel health (mirrors server readiness)
+│   ├── search.ts               # Vercel x402 (preserves settlement semantics, CORS)
+│   └── ai/chat.ts
 ├── scripts/
-│   └── test-search.ts          # End-to-end test script
+│   ├── test-search.ts          # End-to-end x402 test
+│   └── verify-deployment.ts    # Smoke: root/health/402/CORS/AI + capped funded artifacts
+├── src/lib/
+│   ├── redactor.ts             # Shared recursive redactor (headers/keys/addresses/query)
+│   ├── timing.ts               # Shared timing vocabulary
+│   └── stellar.ts
+├── .github/workflows/
+│   ├── ci.yml
+│   └── smoke.yml               # Scheduled smoke (local + deployed + optional funded)
 ├── .env.example
 ├── claude_mcp.json
 └── README.md

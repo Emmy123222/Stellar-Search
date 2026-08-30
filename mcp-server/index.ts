@@ -21,12 +21,23 @@ import {
   STELLAR_NETWORK,
   STELLAR_EXPERT_URL,
   AMOUNT_USDC
-} from '../src/lib/constants'
+} from '../src/lib/constants.js'
+import { redact } from '../src/lib/redactor.js'
+import { TIMING_PHASES } from '../src/lib/timing.js'
 
 dotenv.config()
 
 const SERVER_URL = process.env.SEARCH_API_URL || 'http://localhost:3001'
 const GROQ_API_KEY = process.env.GROQ_API_KEY!
+
+// Lightweight MCP-side metrics (bounded): mirrors server/metrics.ts vocabulary without unbounded arrays
+const mcpMetrics = new Map<string, number[]>()
+function recordMcpTiming(phase: string, ms: number) {
+  const buf = mcpMetrics.get(phase) ?? []
+  buf.push(ms)
+  if (buf.length > 100) buf.shift()
+  mcpMetrics.set(phase, buf)
+}
 
 const groq = new Groq({ apiKey: GROQ_API_KEY })
 
@@ -122,6 +133,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── web_search ────────────────────────────────────────────────────────
   if (name === 'web_search') {
     const { query, count = 5, freshness } = args as { query: string; count?: number; freshness?: string }
+    const t0 = Date.now()
 
     try {
       const params = new URLSearchParams({ q: query, count: String(count) })
@@ -134,34 +146,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
+        recordMcpTiming(TIMING_PHASES.BROWSER_FETCH, Date.now() - t0)
         throw new Error(e.error || `HTTP ${res.status}`)
       }
 
       const data = await res.json()
+      recordMcpTiming(TIMING_PHASES.BROWSER_FETCH, Date.now() - t0)
+      if (data.timings) {
+        for (const [k, v] of Object.entries(data.timings)) {
+          if (typeof v === 'number') recordMcpTiming(`server_${k}`, v)
+        }
+      }
       const formatted = data.results
         .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
         .join('\n\n')
 
+      const timingsStr = data.timings ? ` (server: validation ${data.timings.validationMs ?? '?'}ms, serper ${data.timings.serperMs ?? '?'}ms)` : ''
       return {
         content: [{
           type: 'text',
           text: [
             `🔍 Results for: "${query}"`,
             `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
-            `⚡ Latency: ${data.latencyMs}ms`,
+            `⚡ Latency: ${data.latencyMs}ms${timingsStr}`,
             `📊 ${data.count} results\n`,
             formatted,
           ].join('\n'),
         }],
       }
     } catch (err: any) {
-      return { content: [{ type: 'text', text: `Search failed: ${err.message}` }], isError: true }
+      // Redact query / headers from error propagation
+      const safe = redact({ query, error: err.message }) as any
+      return { content: [{ type: 'text', text: `Search failed: ${safe.error}` }], isError: true }
     }
   }
 
   // ── image_search ──────────────────────────────────────────────────────
   if (name === 'image_search') {
     const { query, count = 5 } = args as { query: string; count?: number }
+    const t0 = Date.now()
 
     try {
       const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 10)
@@ -171,10 +194,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (!res.ok) {
         const e: any = await res.json().catch(() => ({}))
+        recordMcpTiming(TIMING_PHASES.BROWSER_FETCH, Date.now() - t0)
         throw new Error(e.error || `HTTP ${res.status}`)
       }
 
       const data: any = await res.json()
+      recordMcpTiming(TIMING_PHASES.BROWSER_FETCH, Date.now() - t0)
       const formatted = data.results
         .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   Image: ${r.imageUrl}\n   Source: ${r.sourceUrl} (${r.source})`)
         .join('\n\n')
@@ -192,7 +217,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }],
       }
     } catch (err: any) {
-      return { content: [{ type: 'text', text: `Image search failed: ${err.message}` }], isError: true }
+      const safe = redact({ query, error: err.message }) as any
+      return { content: [{ type: 'text', text: `Image search failed: ${safe.error}` }], isError: true }
     }
   }
 
@@ -201,6 +227,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { query, count = 10, freshness } = args as {
       query: string; count?: number; freshness?: string
     }
+    const t0 = Date.now()
 
     try {
       const safeCount = Math.min(Math.max(parseInt(String(count)) || 10, 1), 20)
@@ -211,10 +238,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (!res.ok) {
         const e: any = await res.json().catch(() => ({}))
+        recordMcpTiming(TIMING_PHASES.BROWSER_FETCH, Date.now() - t0)
         throw new Error(e.error || `HTTP ${res.status}`)
       }
 
       const data: any = await res.json()
+      recordMcpTiming(TIMING_PHASES.BROWSER_FETCH, Date.now() - t0)
       const formatted = data.results
         .map((r: any, i: number) => {
           const date = r.publishedAt ? ` · ${r.publishedAt}` : ''
@@ -235,13 +264,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }],
       }
     } catch (err: any) {
-      return { content: [{ type: 'text', text: `News search failed: ${err.message}` }], isError: true }
+      const safe = redact({ query, error: err.message }) as any
+      return { content: [{ type: 'text', text: `News search failed: ${safe.error}` }], isError: true }
     }
   }
 
   // ── ai_summarize ──────────────────────────────────────────────────────
   if (name === 'ai_summarize') {
     const { text, instruction = 'summarise' } = args as { text: string; instruction?: string }
+    const t0 = Date.now()
 
     try {
       const completion = await groq.chat.completions.create({
@@ -253,11 +284,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         max_tokens: 512,
         temperature: 0.5,
       })
+      recordMcpTiming(TIMING_PHASES.GROQ, Date.now() - t0)
 
       const content = completion.choices[0]?.message?.content || 'No response.'
       return { content: [{ type: 'text', text: content }] }
     } catch (err: any) {
-      return { content: [{ type: 'text', text: `Groq error: ${err.message}` }], isError: true }
+      recordMcpTiming(TIMING_PHASES.GROQ, Date.now() - t0)
+      const safe = redact({ text: text.slice(0, 20), error: err.message }) as any
+      return { content: [{ type: 'text', text: `Groq error: ${safe.error}` }], isError: true }
     }
   }
 
@@ -266,6 +300,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { address } = args as { address: string }
 
     try {
+      // Redact address in logs but keep for fetch
       const res = await fetch(`${HORIZON_URL}/accounts/${address}`)
       if (res.status === 404) throw new Error(`Account not found on Stellar ${STELLAR_NETWORK.split(':')[1]}`)
       if (!res.ok) throw new Error(`Horizon returned ${res.status}`)
@@ -294,7 +329,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }],
       }
     } catch (err: any) {
-      return { content: [{ type: 'text', text: `Balance check failed: ${err.message}` }], isError: true }
+      const safe = redact({ address, error: err.message }) as any
+      return { content: [{ type: 'text', text: `Balance check failed: ${safe.error}` }], isError: true }
     }
   }
 
@@ -306,6 +342,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const stats = await res.json()
       
+      // Health now includes latency percentiles and checks — surface them
+      const latencyLine = stats.latency
+        ? `   Latency p50/p95:  ${stats.latency.p50Ms ?? '?'}ms / ${stats.latency.p95Ms ?? '?'}ms (avg ${stats.latency.avgMs}ms, n=${stats.latency.samples ?? stats.totalQueries})`
+        : `   Avg Latency:      ${stats.avgLatencyMs}ms`
+      const checksLine = stats.checks
+        ? `   Checks:           ${Object.entries(stats.checks).map(([k, v]: any) => `${k}:${v.status}`).join(', ')}${stats.readiness?.cached ? ' (cached)' : ''}`
+        : `   APIs Configured:  Serper: ${stats.serperApiConfigured ? '✅' : '❌'}, Groq: ${stats.groqApiConfigured ? '✅' : '❌'}`
+
       return {
         content: [{
           type: 'text',
@@ -316,10 +360,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `   Uptime:           ${stats.uptime}`,
             `   Total Queries:    ${stats.totalQueries.toLocaleString()}`,
             `   USDC Settled:     ${stats.totalUsdcSettled} USDC`,
-            `   Avg Latency:      ${stats.avgLatencyMs}ms`,
+            latencyLine,
             `   Price per Query:  ${stats.pricePerQuery}`,
             `   Facilitator:      ${stats.facilitator}`,
-            `   APIs Configured:  Serper: ${stats.serperApiConfigured ? '✅' : '❌'}, Groq: ${stats.groqApiConfigured ? '✅' : '❌'}`,
+            checksLine,
           ].join('\n'),
         }],
       }

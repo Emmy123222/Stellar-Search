@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles, Copy, Check, Download, FileJson, FileSpreadsheet } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
 
@@ -22,6 +22,73 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
   const [copiedUrl, setCopiedUrl]           = useState<string | null>(null)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+
+  const getExportFilename = (format: 'json' | 'csv') => {
+    const date = new Date()
+    const dateStr = date.toISOString().split('T')[0]
+    const safeQuery = query.replace(/[^a-z0-9]/gi, '_').toLowerCase().substring(0, 50)
+    return `stellarsearch_${safeQuery}_${dateStr}.${format}`
+  }
+
+  const exportAsJSON = () => {
+    const exportData = {
+      query,
+      exportedAt: new Date().toISOString(),
+      count: results.length,
+      results: results.map(r => ({
+        title: r.title,
+        url: r.url,
+        description: r.description,
+        source: r.source,
+        relevanceScore: r.relevanceScore,
+        ...(r.publishedAt ? { publishedAt: r.publishedAt } : {}),
+      })),
+    }
+    const jsonString = JSON.stringify(exportData, null, 2)
+    const blob = new Blob([jsonString], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = getExportFilename('json')
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    setTimeout(() => URL.revokeObjectURL(url), 100)
+    setShowExportMenu(false)
+  }
+
+  const exportAsCSV = () => {
+    const headers = ['title', 'url', 'description', 'source', 'relevanceScore']
+    const escapeCSV = (value: string | number) => {
+      const stringValue = String(value ?? '')
+      if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n') || stringValue.includes('\r')) {
+        return `"${stringValue.replace(/"/g, '""')}"`
+      }
+      return stringValue
+    }
+    const csvRows = [
+      headers.join(','),
+      ...results.map(r => [
+        escapeCSV(r.title),
+        escapeCSV(r.url),
+        escapeCSV(r.description),
+        escapeCSV(r.source),
+        escapeCSV(r.relevanceScore),
+      ].join(','))
+    ]
+    const csvString = csvRows.join('\n')
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = getExportFilename('csv')
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    setTimeout(() => URL.revokeObjectURL(url), 100)
+    setShowExportMenu(false)
+  }
 
   const copyToClipboard = async (url: string, e: React.MouseEvent) => {
     // Prevent the anchor tag from navigating when clicking copy button
