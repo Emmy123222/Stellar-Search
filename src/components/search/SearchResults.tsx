@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
 
@@ -22,6 +22,38 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
   const [copiedUrl, setCopiedUrl]           = useState<string | null>(null)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+
+  const exportAsJSON = () => {
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(results, null, 2))
+    const downloadAnchor = document.createElement('a')
+    downloadAnchor.setAttribute('href', dataStr)
+    downloadAnchor.setAttribute('download', `search-results-${query.replace(/\s+/g, '-')}.json`)
+    document.body.appendChild(downloadAnchor)
+    downloadAnchor.click()
+    downloadAnchor.remove()
+    setShowExportMenu(false)
+  }
+
+  const exportAsCSV = () => {
+    const headers = ['id', 'title', 'url', 'source', 'relevanceScore', 'description']
+    const rows = results.map(r => [
+      r.id,
+      `"${r.title.replace(/"/g, '""')}"`,
+      `"${r.url}"`,
+      `"${r.source}"`,
+      r.relevanceScore,
+      `"${r.description.replace(/"/g, '""')}"`
+    ])
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n')
+    const downloadAnchor = document.createElement('a')
+    downloadAnchor.setAttribute('href', encodeURI(csvContent))
+    downloadAnchor.setAttribute('download', `search-results-${query.replace(/\s+/g, '-')}.csv`)
+    document.body.appendChild(downloadAnchor)
+    downloadAnchor.click()
+    downloadAnchor.remove()
+    setShowExportMenu(false)
+  }
 
   const copyToClipboard = async (url: string, e: React.MouseEvent) => {
     // Prevent the anchor tag from navigating when clicking copy button

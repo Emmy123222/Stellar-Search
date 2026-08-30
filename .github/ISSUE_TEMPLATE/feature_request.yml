@@ -1,0 +1,60 @@
+name: Feature Request
+description: Suggest an enhancement or new capability for StellarSearch.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature! Please provide details to help us evaluate the request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem or limitation? Describe it clearly.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution or feature you would like to see implemented.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: runtime_impact
+    attributes:
+      label: Runtime & Component Impact
+      description: Which components will be affected by this feature?
+      options:
+        - label: Express Backend (`server/`)
+        - label: Vercel Serverless (`api/`)
+        - label: Browser Frontend (`src/`)
+        - label: MCP Server (`mcp-server/`)
+
+  - type: textarea
+    id: x402_wallet_impact
+    attributes:
+      label: x402 & Wallet Integration Considerations
+      description: Does this feature touch x402 payment headers, settlement semantics, or `@stellar/freighter-api` integration?
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: List measurable criteria to consider this feature complete.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission Checks
+      options:
+        - label: I searched existing open and closed feature requests to ensure this is not a duplicate.
+          required: true

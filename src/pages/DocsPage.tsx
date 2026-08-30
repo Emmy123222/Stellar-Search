@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { ExternalLink, GitBranch, Globe, Shield, Zap, Code2, Server } from 'lucide-react'
+import { ExternalLink, GitBranch, Globe, Shield, Zap, Server } from 'lucide-react'
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, HORIZON_URL } from '../lib/stellar'
 
 const getSteps = () => [
@@ -12,28 +12,28 @@ const getSteps = () => [
   {
     num: '02', icon: Zap, color: '#ffb800',
     title: 'Server returns HTTP 402',
-    desc:  'The @x402/express middleware responds with 402 Payment Required and a payment specification.',
-    code:  `HTTP 402 · X-Payment-Required: {"amount":"10000","currency":"USDC","network":"${STELLAR_NETWORK}"}`,
+    desc:  'The @x402/express middleware responds with 402 Payment Required and x402 v2 specifications.',
+    code:  `HTTP 402 · PAYMENT-REQUIRED: {"x402Version":2,"amount":"10000","network":"${STELLAR_NETWORK}"}`,
   },
   {
     num: '03', icon: Shield, color: '#7dd3fc',
     title: 'Sign Soroban auth entry',
     desc:  'The x402 client signs a Soroban authorization entry via Freighter — no private key exposure.',
-    code:  'signAuthEntry(authEntry) → X-Payment: <base64-sig>',
+    code:  'signAuthEntry(authEntry) → X-Payment: <base64-payload>',
   },
   {
     num: '04', icon: Server, color: '#39ff14',
     title: 'Settle on Stellar + get results',
-    desc:  `OpenZeppelin facilitator verifies the signature, settles ${AMOUNT_USDC} USDC on-chain, and the server returns search results.`,
-    code:  'GET /search + X-Payment: <sig> → 200 OK + results',
+    desc:  `x402 facilitator verifies the signature, settles ${AMOUNT_USDC} USDC on-chain, and the server returns search results.`,
+    code:  'GET /search + X-Payment: <base64> → 200 OK + results',
   },
 ]
 
 const getStack = () => [
-  { label: 'Payment protocol', value: 'x402 (@x402/express + @x402/stellar)',              href: 'https://x402.org' },
+  { label: 'Payment protocol', value: 'x402 v2 (@x402/express + @x402/stellar)',           href: 'https://x402.org' },
   { label: 'Blockchain',       value: IS_MAINNET ? 'Stellar Mainnet' : 'Stellar Testnet',    href: 'https://developers.stellar.org' },
   { label: 'Smart contracts',  value: 'Soroban auth entry signing',                        href: 'https://developers.stellar.org/docs/smart-contracts' },
-  { label: 'Facilitator',      value: 'OpenZeppelin x402 (channels.openzeppelin.com)',     href: 'https://docs.openzeppelin.com/relayer/1.4.x/guides/stellar-x402-facilitator-guide' },
+  { label: 'Facilitator',      value: 'x402 Facilitator (www.x402.org)',                   href: 'https://www.x402.org/facilitator' },
   { label: 'Wallet',           value: 'Freighter (@stellar/freighter-api)',                href: 'https://freighter.app' },
   { label: 'Balances / tx',    value: 'Stellar Horizon REST API (live)',                   href: HORIZON_URL },
   { label: 'Search backend',   value: 'Serper.dev API',                                   href: 'https://serper.dev' },

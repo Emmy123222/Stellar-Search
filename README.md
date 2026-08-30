@@ -17,9 +17,9 @@ StellarSearch is a pay-per-query web search API for autonomous AI agents. Every 
 
 | Layer | Real package / service |
 |---|---|
-| Payment protocol | `@x402/express` + `@x402/stellar` + `@x402/core` |
+| Payment protocol | `@x402/express` + `@x402/stellar` + `@x402/core` (x402 v2 spec) |
 | Blockchain | Stellar Testnet (via Horizon API) |
-| Facilitator | OpenZeppelin x402 (`channels.openzeppelin.com`) |
+| Facilitator | Coinbase x402 Facilitator (`https://www.x402.org/facilitator`) |
 | Wallet connect | `@stellar/freighter-api` (real Freighter extension) |
 | Balances / tx | Stellar Horizon REST API (live, not mocked) |
 | Search results | Serper.dev API (real Google search results) |
@@ -87,9 +87,20 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 | `STELLAR_RECEIVING_ADDRESS` | **Yes** | — | Stellar public key that receives 0.001 USDC per query. Without this, the x402 payment middleware has no `payTo` address and payments fail. Server prints `Receiving: ✗ MISSING` on startup. | `GDXA3V2LI3VN3GBH5BMOF25QSFJV7S7ZOWMHHQMJRPP4BVORDDRTIIMU` |
 | `STELLAR_NETWORK` | No | `stellar:testnet` | Stellar network for the server-side x402 middleware. Accepts `stellar:testnet` or `stellar:mainnet`. Falls back to testnet if missing. | `stellar:testnet` |
 | `VITE_STELLAR_NETWORK` | No | `stellar:testnet` | Frontend copy of `STELLAR_NETWORK` (must be prefixed `VITE_` for browser access). Falls back to testnet if missing. | `stellar:testnet` |
-| `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Falls back to the public OpenZeppelin facilitator if missing. | `https://www.x402.org/facilitator` |
+| `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Defaults to public Coinbase facilitator (no API key needed). | `https://www.x402.org/facilitator` |
 | `PORT` | No | `3001` | Express server listen port. Falls back to `3001` if missing. | `3001` |
 | `VITE_SERVER_URL` | No | `http://localhost:3001` | Frontend URL for AI chat backend calls. On Vercel deployments auto-detects `${origin}/api`; locally falls back to `http://localhost:3001`. | `http://localhost:3001` |
+
+---
+
+## x402 v2 Header Conventions & Legacy Aliases
+
+StellarSearch uses canonical x402 v2 protocol headers with backward-compatibility support for legacy aliases:
+
+- **Canonical 402 Response Header**: `PAYMENT-REQUIRED` (base64 JSON containing `x402Version: 2`, `resource`, `accepts`).
+  - *Legacy Response Alias*: `X-Payment-Required`
+- **Canonical Payment Request Header**: `X-Payment` (base64 JSON payload with `x402Version: 2` and signed Soroban auth entry).
+  - *Legacy Request Aliases*: `payment-signature`, `x-payment`, `X-PAYMENT`
 
 ---
 
@@ -97,18 +108,18 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 
 ```
 Browser (Freighter) → GET /search?q=...
-                     ← HTTP 402 + payment requirements
-                     → Sign Soroban auth entry (Freighter prompt)
-                     → GET /search + X-Payment: <signature>
-                     ← OpenZeppelin facilitator verifies + settles 0.001 USDC
+                     ← HTTP 402 + PAYMENT-REQUIRED: <base64 requirements>
+                     → Sign Soroban auth entry via @stellar/freighter-api
+                     → GET /search + X-Payment: <base64 payment payload>
+                     ← Facilitator (x402.org) verifies + settles 0.001 USDC
                      ← 200 OK + Search results
 ```
 
 1. Agent hits `/search` — the `@x402/express` middleware intercepts
-2. Returns `HTTP 402 Payment Required` with price + network + payTo address
-3. The x402 client signs a Soroban authorization entry via Freighter wallet
-4. Retries with `X-Payment` header containing the signed entry
-5. OpenZeppelin facilitator at `channels.openzeppelin.com/x402/testnet` verifies the signature and settles 0.001 USDC on Stellar testnet
+2. Returns `HTTP 402 Payment Required` with `PAYMENT-REQUIRED` header containing price + network + payTo address
+3. The x402 client signs a Soroban authorization entry via Freighter wallet (`@stellar/freighter-api`)
+4. Retries request with `X-Payment` header containing the signed payment payload
+5. Facilitator at `https://www.x402.org/facilitator` verifies signature and settles 0.001 USDC on Stellar testnet
 6. Server receives confirmation and returns search results
 
 ### Sequence diagram
@@ -126,10 +137,10 @@ sequenceDiagram
 
     User->>Browser: Enter search query
     Browser->>Server: GET /search?q=...
-    Server-->>Browser: 402 Payment Required<br/>(price, network, payTo)
-    Browser->>Freighter: Request signature of<br/>Soroban auth entry
+    Server-->>Browser: 402 Payment Required<br/>PAYMENT-REQUIRED: <base64>
+    Browser->>Freighter: Request signature of Soroban auth entry<br/>(via @stellar/freighter-api)
     Freighter-->>Browser: Signed payment payload
-    Browser->>Server: GET /search?q=...<br/>+ X-Payment header
+    Browser->>Server: GET /search?q=...<br/>X-Payment: <base64>
     Server->>Facilitator: Verify X-Payment (HTTPFacilitatorClient)
     Facilitator->>Horizon: Submit & settle 0.001 USDC tx
     Horizon-->>Facilitator: Transaction confirmed (tx hash)
