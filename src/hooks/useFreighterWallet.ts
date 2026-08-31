@@ -131,14 +131,6 @@ export async function preflightPayment({
           }
         }
 
-        if (!publicKey) {
-          return {
-            ok: false,
-            reason: 'No active Stellar account.',
-            recoveryAction: 'Connect a Freighter wallet first.',
-          }
-        }
-
         if (publicKey && publicKey !== address.address) {
           return {
             ok: false,
@@ -174,6 +166,17 @@ export async function preflightPayment({
         }
 
         const account = await horizon.loadAccount(address.address)
+        const signerAvailable = (account as any).signers?.some(
+          (signer: any) =>
+            signer.address === address.address && Number(signer.weight) > 0
+        )
+        if (!signerAvailable) {
+          return {
+            ok: false,
+            reason: 'Freighter account cannot sign for the active Stellar account.',
+            recoveryAction: 'Select a Freighter account with signing authority.',
+          }
+        }
         let xlmBalance = '0'
         let usdcBalance = '0'
         let availableXlm = 0
@@ -418,6 +421,9 @@ export function useFreighterWallet() {
       if (result.ok) {
         setWallet((prev: WalletState) => ({
           ...prev,
+          publicKey: result.publicKey,
+          connected: true,
+          network: result.network,
           error: null,
           xlmBalance: result.xlmBalance,
           usdcBalance: result.usdcBalance,
