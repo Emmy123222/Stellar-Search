@@ -89,7 +89,7 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 | `VITE_STELLAR_NETWORK` | No | `stellar:testnet` | Frontend copy of `STELLAR_NETWORK` (must be prefixed `VITE_` for browser access). Falls back to testnet if missing. | `stellar:testnet` |
 | `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Falls back to the public OpenZeppelin facilitator if missing. | `https://www.x402.org/facilitator` |
 | `PORT` | No | `3001` | Express server listen port. Falls back to `3001` if missing. | `3001` |
-| `VITE_SERVER_URL` | No | `http://localhost:3001` | Frontend URL for AI chat backend calls. On Vercel deployments auto-detects `${origin}/api`; locally falls back to `http://localhost:3001`. | `http://localhost:3001` |
+| `VITE_SERVER_URL` | No | `http://localhost:3001` | Frontend URL for AI chat and API backend calls. In browser/production auto-resolves to `${origin}/api` without hostname heuristics; in local development falls back to `http://localhost:3001` (proxied by Vite). | `http://localhost:3001` |
 
 ---
 
@@ -162,12 +162,18 @@ stellar-search/
 │   │   ├── DocsPage.tsx
 │   │   └── DashboardPage.tsx       # Live Horizon tx history
 │   └── lib/stellar.ts              # Horizon helpers
+├── api/                        # Vercel serverless function endpoints
+│   ├── search.ts               # x402-metered search endpoint
+│   ├── health.ts               # Health & telemetry endpoint
+│   ├── index.ts                # Service metadata
+│   └── ai/chat.ts              # Groq AI assistant handler
 ├── server/
 │   └── index.ts                # Express + @x402/express + Serper.dev + Groq
 ├── mcp-server/
 │   └── index.ts                # MCP tools: web_search, ai_summarize, check_balance
 ├── scripts/
 │   └── test-search.ts          # End-to-end test script
+├── vercel.json                 # Vercel deployment manifest (rewrites + security headers)
 ├── .env.example
 ├── claude_mcp.json
 └── README.md
@@ -175,25 +181,14 @@ stellar-search/
 
 ---
 
-## Claude Code / MCP integration
+## Deployment & Vercel Configuration
 
-```json
-// claude_mcp.json
-{
-  "mcpServers": {
-    "stellar-search": {
-      "command": "npx",
-      "args": ["tsx", "./mcp-server/index.ts"],
-      "env": {
-        "GROQ_API_KEY": "your_groq_api_key",
-        "SEARCH_API_URL": "http://localhost:3001"
-      }
-    }
-  }
-}
-```
+Production deployments are managed with a checked-in `vercel.json` deployment manifest:
 
-Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.
+- **SPA Rewrites**: Client-side navigation (`/`, `/docs`, `/dashboard`, `/search`) rewrites to `/index.html` via negative lookahead (`/((?!api/|api$).*)`) without shadowing `/api/*` serverless functions.
+- **Security Headers**: Standard defense-in-depth headers configured globally (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`, CSP).
+- **Cache Headers**: Long-term immutable caching (`public, max-age=31536000, immutable`) for `/assets/(.*)` static assets and `no-store` for dynamic `/api/(.*)` endpoints.
+- **x402 CORS Headers**: `/api/(.*)` routes expose `PAYMENT-REQUIRED` and `X-Payment-Response` headers with permissive CORS to preserve verified x402 settlement semantics.
 
 ---
 
@@ -214,14 +209,16 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 
 | Scope | Statements | Branches | Functions | Lines |
 |---|---:|---:|---:|---:|
-| **Global** | 25% | 23% | 20% | 26% |
-| `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
-| `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
+| **Global** | 28% | 25% | 23% | 28% |
+| `src/lib/constants.ts` | 95% | 75% | 100% | 95% |
+| `src/lib/stellar.ts` | 95% | 90% | 95% | 95% |
 | `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
-| `server/index.ts` | 35% | 30% | 35% | 35% |
+| `server/index.ts` | 40% | 32% | 40% | 40% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
-| `api/health.ts` | 80% | 50% | 100% | 80% |
+| `api/health.ts` | 95% | 90% | 100% | 95% |
+| `api/index.ts` | 95% | 90% | 100% | 95% |
+| `api/ai/chat.ts` | 95% | 80% | 100% | 95% |
 | `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
 | `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
 

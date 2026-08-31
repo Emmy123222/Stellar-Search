@@ -79,24 +79,44 @@ describe('GET /health and GET /', () => {
     expect(typeof res.body.facilitator).toBe('string')
     expect(res.body.facilitator.length).toBeGreaterThan(0)
   })
+
+  it('GET /api returns service metadata identical to GET /', async () => {
+    const res = await request(app).get('/api')
+    expect(res.status).toBe(200)
+    expect(res.body.name).toBe('StellarSearch')
+    expect(res.body.version).toBe('1.0.0')
+  })
+
+  it('GET /api/health returns ok with settlement config', async () => {
+    const res = await request(app).get('/api/health')
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('ok')
+    expect(res.body.protocol).toBe('x402')
+  })
 })
 
-describe('POST /ai/chat validation', () => {
+describe('POST /ai/chat & /api/ai/chat validation', () => {
   it('returns 400 when messages missing', async () => {
     const res = await request(app).post('/ai/chat').send({}).set('Content-Type', 'application/json')
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/messages array required/)
   })
 
-  it('returns 400 when messages empty', async () => {
-    const res = await request(app).post('/ai/chat').send({ messages: [] }).set('Content-Type', 'application/json')
+  it('returns 400 when messages empty on /api/ai/chat', async () => {
+    const res = await request(app).post('/api/ai/chat').send({ messages: [] }).set('Content-Type', 'application/json')
     expect(res.status).toBe(400)
   })
 })
 
-describe('GET /search validation (x402 middleware bypassed via mock)', () => {
-  it('returns 400 when q missing', async () => {
+describe('GET /search & /api/search validation (x402 middleware bypassed via mock)', () => {
+  it('returns 400 when q missing on /search', async () => {
     const res = await request(app).get('/search')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/Missing required parameter/)
+  })
+
+  it('returns 400 when q missing on /api/search', async () => {
+    const res = await request(app).get('/api/search')
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/Missing required parameter/)
   })
@@ -113,3 +133,30 @@ describe('GET /search validation (x402 middleware bypassed via mock)', () => {
     expect(res.body.error).toMatch(/Query too long/)
   })
 })
+
+describe('GET /images, /api/images, /news, /api/news validation', () => {
+  it('GET /images returns 400 when q is missing', async () => {
+    const res = await request(app).get('/images')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/Missing required parameter/)
+  })
+
+  it('GET /api/images returns 400 when q is missing', async () => {
+    const res = await request(app).get('/api/images')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/Missing required parameter/)
+  })
+
+  it('GET /news returns 400 when q is missing', async () => {
+    const res = await request(app).get('/news')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/Missing required parameter/)
+  })
+
+  it('GET /api/news returns 400 when q is missing', async () => {
+    const res = await request(app).get('/api/news')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/Missing required parameter/)
+  })
+})
+

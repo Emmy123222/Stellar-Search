@@ -2,7 +2,7 @@
  * stellar.ts — Real Stellar Horizon helpers (no mock data)
  */
 
-import { STELLAR_EXPERT_URL } from './constants'
+import { STELLAR_EXPERT_URL, getServerUrl } from './constants'
 
 export * from './constants'
 
@@ -74,13 +74,8 @@ export function formatTimeAgo(isoString: string): string {
  */
 export async function fetchServerStats() {
   try {
-    const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
-      typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
-        ? `${window.location.origin}/api`
-        : 'http://localhost:3001'
-    )
-    
-    const res = await fetch(`${SERVER_URL}/health`)
+    const serverUrl = getServerUrl()
+    const res = await fetch(`${serverUrl}/health`)
     if (!res.ok) return null
     return await res.json()
   } catch {

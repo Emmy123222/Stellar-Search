@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
-import { explorerTxUrl, truncateHash } from '../../lib/stellar'
+import { explorerTxUrl, truncateHash, SERVER_URL } from '../../lib/stellar'
 
 interface Props {
   results: SearchResult[]
@@ -10,12 +10,6 @@ interface Props {
   isLoading?: boolean
   txHash?: string | null
 }
-
-const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
-  typeof window !== 'undefined' && window.location.origin.includes('vercel.app')
-    ? `${window.location.origin}/api`
-    : 'http://localhost:3001'
-)
 
 export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summary, setSummary]               = useState<string>('')

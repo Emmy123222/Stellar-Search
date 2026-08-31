@@ -115,11 +115,23 @@ const x402Routes = {
     accepts: x402Accepts,
     description: `StellarSearch: pay-per-query web search — ${AMOUNT_USDC} USDC on Stellar`,
   },
+  'GET /api/search': {
+    accepts: x402Accepts,
+    description: `StellarSearch: pay-per-query web search — ${AMOUNT_USDC} USDC on Stellar`,
+  },
   'GET /images': {
     accepts: x402Accepts,
     description: `StellarSearch: pay-per-query image search — ${AMOUNT_USDC} USDC on Stellar`,
   },
+  'GET /api/images': {
+    accepts: x402Accepts,
+    description: `StellarSearch: pay-per-query image search — ${AMOUNT_USDC} USDC on Stellar`,
+  },
   'GET /news': {
+    accepts: x402Accepts,
+    description: `StellarSearch: pay-per-query news search — ${AMOUNT_USDC} USDC on Stellar`,
+  },
+  'GET /api/news': {
     accepts: x402Accepts,
     description: `StellarSearch: pay-per-query news search — ${AMOUNT_USDC} USDC on Stellar`,
   },
@@ -132,7 +144,7 @@ const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }]
 
 // ─── Payment Logging Middleware ──────────────────────────────────────────
 app.use((req, res, next) => {
-  if (req.path === '/search') {
+  if (req.path === '/search' || req.path === '/api/search') {
     const { q } = req.query as Record<string, string>;
     const truncatedQ = q ? String(q).substring(0, 50) : '';
 
@@ -177,8 +189,8 @@ export function validateQuery(
   return { ok: true, cleanQ }
 }
 
-// ─── GET /search ──────────────────────────────────────────────────────────
-app.get('/search', async (req: Request, res: Response) => {
+// ─── GET /search & GET /api/search ────────────────────────────────────────
+app.get(['/search', '/api/search'], async (req: Request, res: Response) => {
   const { q, count = '5', freshness } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -286,8 +298,8 @@ app.get('/search', async (req: Request, res: Response) => {
   }
 })
 
-// ─── GET /images ──────────────────────────────────────────────────────────
-app.get('/images', async (req: Request, res: Response) => {
+// ─── GET /images & GET /api/images ────────────────────────────────────────
+app.get(['/images', '/api/images'], async (req: Request, res: Response) => {
   const { q, count = '10' } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -352,8 +364,8 @@ app.get('/images', async (req: Request, res: Response) => {
   }
 })
 
-// ─── GET /news ────────────────────────────────────────────────────────────
-app.get('/news', async (req: Request, res: Response) => {
+// ─── GET /news & GET /api/news ────────────────────────────────────────────
+app.get(['/news', '/api/news'], async (req: Request, res: Response) => {
   const { q, count = '10', freshness } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -430,8 +442,8 @@ app.get('/news', async (req: Request, res: Response) => {
   }
 })
 
-// ─── GET /health ──────────────────────────────────────────────────────────
-app.get('/health', (_req: Request, res: Response) => {
+// ─── GET /health & GET /api/health ────────────────────────────────────────
+app.get(['/health', '/api/health'], (_req: Request, res: Response) => {
   const avg = stats.latencies.length
     ? Math.round(stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length)
     : 0
@@ -455,11 +467,11 @@ app.get('/health', (_req: Request, res: Response) => {
   })
 })
 
-// ─── POST /ai/chat ────────────────────────────────────────────────────────
+// ─── POST /ai/chat & POST /api/ai/chat ────────────────────────────────────
 // Streams responses as Server-Sent Events when the client sends
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
 // (back-compat fallback for callers that don't support SSE).
-app.post('/ai/chat', async (req: Request, res: Response) => {
+app.post(['/ai/chat', '/api/ai/chat'], async (req: Request, res: Response) => {
   const { messages, model: requestedModel } = req.body as {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string
@@ -557,8 +569,8 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
 
 
 
-// ─── GET / ────────────────────────────────────────────────────────────────
-app.get('/', (_req: Request, res: Response) => {
+// ─── GET / & GET /api ─────────────────────────────────────────────────────
+app.get(['/', '/api'], (_req: Request, res: Response) => {
   res.json({
     name:        'StellarSearch',
     version:     '1.0.0',
@@ -574,7 +586,7 @@ app.get('/', (_req: Request, res: Response) => {
 })
 
 // ─── Start ────────────────────────────────────────────────────────────────
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`\n🚀 StellarSearch on http://localhost:${PORT}`)
     console.log(`   Network:     ${NETWORK}`)

@@ -43,3 +43,26 @@ export const USDC_CONTRACT = IS_MAINNET ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_
 // Payments
 export const AMOUNT_STROOPS = '10000' // 0.001 USDC
 export const AMOUNT_USDC = '0.001'
+
+/**
+ * Resolves the base URL for backend API requests across development, production, and Vercel environments
+ * without relying on brittle hostname matching.
+ */
+export function getServerUrl(): string {
+  const envUrl = getEnv('SERVER_URL', '')
+  if (envUrl) {
+    return envUrl
+  }
+  if (typeof window !== 'undefined') {
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    // @ts-ignore
+    const isProd = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.PROD
+    if (!isLocalhost || isProd) {
+      return `${window.location.origin}/api`
+    }
+  }
+  return 'http://localhost:3001'
+}
+
+export const SERVER_URL = getServerUrl()
+
