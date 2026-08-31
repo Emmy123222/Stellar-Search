@@ -30,6 +30,13 @@ import {
   AMOUNT_STROOPS
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import {
+  normalizeUrl,
+  normalizeSource,
+  normalizeTitle,
+  normalizeDescription,
+  normalizeDate
+} from '../src/lib/normalize'
 
 dotenv.config()
 
@@ -252,12 +259,12 @@ app.get('/search', async (req: Request, res: Response) => {
 
     const results = (data.organic || []).map((r: any, i: number) => ({
       id: String(i + 1),
-      title: r.title || 'No title',
-      url: r.link,
-      description: r.snippet || '',
-      source: (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
+      title: normalizeTitle(r.title),
+      url: normalizeUrl(r.link),
+      description: normalizeDescription(r.snippet),
+      source: normalizeSource(r.link),
       relevanceScore: Math.max(0.5, 1 - i * 0.06),
-      publishedAt: r.date || undefined,
+      publishedAt: normalizeDate(r.date),
     }))
 
     // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
@@ -347,11 +354,11 @@ app.get('/images', async (req: Request, res: Response) => {
 
     const results = (data.images || []).map((r: any, i: number) => ({
       id: String(i + 1),
-      title: r.title || 'No title',
-      imageUrl: r.imageUrl,
-      thumbnailUrl: r.thumbnailUrl || r.imageUrl,
-      sourceUrl: r.link,
-      source: (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
+      title: normalizeTitle(r.title),
+      imageUrl: normalizeUrl(r.imageUrl) || r.imageUrl, // keep original if not strictly valid since it might be relative, but usually Serper gives absolute
+      thumbnailUrl: normalizeUrl(r.thumbnailUrl || r.imageUrl) || (r.thumbnailUrl || r.imageUrl),
+      sourceUrl: normalizeUrl(r.link),
+      source: normalizeSource(r.link),
       width: r.imageWidth,
       height: r.imageHeight,
     }))
@@ -426,12 +433,12 @@ app.get('/news', async (req: Request, res: Response) => {
 
     const results = (data.news || []).map((r: any, i: number) => ({
       id: String(i + 1),
-      title: r.title || 'No title',
-      url: r.link,
-      snippet: r.snippet || '',
-      source: r.source || (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
-      publishedAt: r.date || undefined,
-      imageUrl: r.imageUrl || undefined,
+      title: normalizeTitle(r.title),
+      url: normalizeUrl(r.link),
+      snippet: normalizeDescription(r.snippet),
+      source: r.source ? normalizeTitle(r.source) : normalizeSource(r.link),
+      publishedAt: normalizeDate(r.date),
+      imageUrl: r.imageUrl ? normalizeUrl(r.imageUrl) : undefined,
     }))
 
     const txHash = (req.headers['x-payment-response'] as string) || null

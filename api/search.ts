@@ -6,6 +6,13 @@ import {
   AMOUNT_USDC
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import {
+  normalizeUrl,
+  normalizeSource,
+  normalizeTitle,
+  normalizeDescription,
+  normalizeDate
+} from '../src/lib/normalize'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -130,15 +137,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const results = (data.organic || []).map((r: any, i: number) => ({
       id:             String(i + 1),
-      title:          r.title   || 'No title',
-      url:            r.link,
-      description:    r.snippet || '',
-      source:         (() => {
-        try { return new URL(r.link).hostname.replace('www.', '') }
-        catch { return r.link }
-      })(),
+      title:          normalizeTitle(r.title),
+      url:            normalizeUrl(r.link),
+      description:    normalizeDescription(r.snippet),
+      source:         normalizeSource(r.link),
       relevanceScore: Math.max(0.5, 1 - i * 0.06),
-      publishedAt:    r.date || undefined,
+      publishedAt:    normalizeDate(r.date),
     }))
 
     return res.json({
