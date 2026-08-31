@@ -109,7 +109,13 @@ Browser (Freighter) → GET /search?q=...
 3. The x402 client signs a Soroban authorization entry via Freighter wallet
 4. Retries with `X-Payment` header containing the signed entry
 5. OpenZeppelin facilitator at `channels.openzeppelin.com/x402/testnet` verifies the signature and settles 0.001 USDC on Stellar testnet
-6. Server receives confirmation and returns search results
+6. Server enforces payment integrity (`src/lib/paymentIntegrity.ts`), rejecting replayed or duplicate payloads within the 300-second validity window, and returns search results
+
+### Payment Integrity & Replay Protection
+
+To guarantee that each payment identifier authorizes **exactly one provider call**, StellarSearch tracks consumed payment identifiers across Express (`server/index.ts`) and Vercel (`api/search.ts`) runtimes:
+- **Payload Invalidation:** Extracts transaction hashes (or SHA-256 fallback hashes of payment headers) and invalidates consumed payloads for a 300-second window.
+- **Concurrency Throttling:** Rapid parallel requests using identical payment payloads are throttled so only one search query proceeds; concurrent duplicates immediately receive HTTP 402 (`Payment payload already consumed`).
 
 ### Sequence diagram
 
@@ -217,13 +223,14 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 
 | Scope | Statements | Branches | Functions | Lines |
 |---|---:|---:|---:|---:|
-| **Global** | 30% | 28% | 24% | 30% |
+| **Global** | 35% | 30% | 28% | 35% |
 | `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
 | `src/lib/facilitatorValidation.ts` | 85% | 70% | 75% | 85% |
 | `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
+| `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
 | `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
-| `server/index.ts` | 40% | 40% | 38% | 40% |
+| `server/index.ts` | 65% | 60% | 65% | 65% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
 | `api/health.ts` | 95% | 90% | 100% | 95% |
 | `mcp-server/index.ts` | 30% | 20% | 20% | 30% |

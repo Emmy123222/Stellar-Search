@@ -23,8 +23,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run TypeScript typecheck
-        run: npm run typecheck
+      - name: Run TypeScript typecheck (frontend, server, serverless, MCP, scripts)
+        run: npm run typecheck:all
 
   lint:
     name: Lint
@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run ESLint
+      - name: Run ESLint (enforces zero warnings baseline --max-warnings=0)
         run: npm run lint
 
   test:

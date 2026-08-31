@@ -9,3 +9,4 @@ coverage/
 
 # Local scripts
 create_issues.py
+coverage/

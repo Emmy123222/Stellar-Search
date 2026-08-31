@@ -147,7 +147,7 @@ export async function discoverFacilitatorCapabilities(
       return { ok: true }
     }
 
-    const data = await res.json()
+    const data = (await res.json()) as any
     const capabilities: FacilitatorCapabilities = {
       networks: Array.isArray(data.networks) ? data.networks : Array.isArray(data.supportedNetworks) ? data.supportedNetworks : undefined,
       schemes: Array.isArray(data.schemes) ? data.schemes : Array.isArray(data.supportedSchemes) ? data.supportedSchemes : undefined,

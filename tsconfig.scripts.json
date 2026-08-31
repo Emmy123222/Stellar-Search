@@ -4,7 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2020"],
-    "outDir": "./dist/server",
+    "outDir": "./dist/scripts",
     "rootDir": ".",
     "strict": true,
     "skipLibCheck": true,
@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["server/**/*", "src/lib/constants.ts", "src/lib/paymentIntegrity.ts", "src/lib/facilitatorValidation.ts"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "include": ["scripts/**/*", "src/lib/constants.ts"],
+  "exclude": ["node_modules", "dist"]
 }

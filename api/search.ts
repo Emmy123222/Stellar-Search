@@ -6,6 +6,7 @@ import {
   AMOUNT_USDC,
   validateFacilitatorConfig,
 } from '../src/lib/constants'
+import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -94,6 +95,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(402).json({ error: 'Payment required' })
   }
 
+  // ─── Payment Replay Protection ───────────────────────────────────────────
+  const consumption = consumePaymentPayload(paymentHeader)
+  if (!consumption.ok) {
+    return res.status(402).json({ error: consumption.error })
+  }
+
   // ─── Payment present — proceed with search ────────────────────────────────
   console.log('✅ Payment header received')
 
@@ -139,7 +146,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data      = await serperRes.json()
+    const data      = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     const results = (data.organic || []).map((r: any, i: number) => ({
