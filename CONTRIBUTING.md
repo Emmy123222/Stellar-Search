@@ -284,6 +284,11 @@ Closes #9
 docs: add CONTRIBUTING.md
 ```
 
+### GitHub Actions security & dependency maintenance
+
+- **Immutable action pinning:** All third-party GitHub Actions in `.github/workflows/ci.yml` are pinned to immutable, reviewed full commit SHAs with inline version comments to ensure supply-chain reproducibility.
+- **Automated SHA updates (Dependabot):** Dependabot (`.github/dependabot.yml`) is configured to monitor and propose updates for both GitHub Actions commit SHAs and npm packages on a weekly schedule.
+
 ---
 
 ## Submitting a Pull Request
