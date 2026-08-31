@@ -233,4 +233,29 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
     expect(successes).toHaveLength(1)
     expect(rejections).toHaveLength(numConcurrent - 1)
   })
+
+  it('safely normalizes malformed Serper payloads by filtering out rows with invalid links', async () => {
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_malformed_vercel' })).toString('base64')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        organic: [
+          { title: 'Bad Link', link: 'not-a-valid-http-url' },
+          { title: 'Valid Vercel Result', link: 'https://vercel.com/docs' },
+        ],
+      }),
+    } as any)
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'vercel' },
+      headers: { 'x-payment': fakeTx },
+    })
+
+    await handler(req, res)
+    expect(res._json.results).toHaveLength(1)
+    expect(res._json.results[0].title).toBe('Valid Vercel Result')
+    expect(res._json.results[0].url).toBe('https://vercel.com/docs')
+  })
 })
+

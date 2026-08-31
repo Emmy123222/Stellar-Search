@@ -284,6 +284,12 @@ Closes #9
 docs: add CONTRIBUTING.md
 ```
 
+### Dependency updates (Dependabot)
+
+Dependabot is configured in `.github/dependabot.yml` to automatically propose weekly updates with sensible open PR limits:
+- **Grouped updates:** Minor/patch dependencies for tooling, linting, testing, and UI are grouped into single PRs to reduce notification noise.
+- **Deliberate review for payment & runtime:** Major upgrades for `@x402/*`, `@stellar/*`, `@modelcontextprotocol/*`, AI SDKs (`groq-sdk`), and server runtime packages are kept as isolated PRs to ensure deliberate review, preventing regressions across runtime boundaries (Express, Vercel, browser, and MCP) and safeguarding x402 settlement semantics.
+
 ---
 
 ## Submitting a Pull Request
