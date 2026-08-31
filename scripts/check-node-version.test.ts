@@ -6,7 +6,7 @@ import {
   satisfiesRange,
   checkNodeVersion,
   SUPPORTED_RANGE,
-} from './check-node-version'
+} from './check-node-version.js'
 
 describe('parseVersion', () => {
   it('parses a standard semver string', () => {

@@ -303,7 +303,7 @@ docs: add CONTRIBUTING.md
 
 4. Make sure:
    - [ ] `npx tsc --noEmit` passes with no errors.
-   - [ ] `node scripts/check-node-version.ts` passes (validates Node version against engines).
+   - [ ] `node scripts/check-node-version.js` passes (validates Node version against engines).
    - [ ] The app starts and the affected feature works manually.
    - [ ] No new `console.log` / debug statements left in.
    - [ ] No secrets or `.env` values committed.
@@ -403,7 +403,7 @@ Vitest + @vitest/coverage-v8 enforces **coverage thresholds for statements, bran
 ```bash
 npm run test              # run tests without coverage
 npm run test:coverage     # run with coverage + thresholds (CI gate)
-node scripts/check-node-version.ts  # validate Node version against engines
+node scripts/check-node-version.js  # validate Node version against engines
 # reports in coverage/ (text, json, html, lcov)
 open coverage/index.html  # view HTML report
 ```
@@ -455,7 +455,7 @@ CI runs typecheck, lint, and test jobs across a matrix of Node versions to ensur
 | **18** | Minimum supported (per `package.json` engines) |
 | **22** | Current LTS |
 
-Each job includes a `node scripts/check-node-version.ts` step that validates the running version against the `engines` field before any build or test steps run. Unsupported versions fail early with a clear error message.
+Each job includes a `node scripts/check-node-version.js` step that validates the running version against the `engines` field before any build or test steps run. Unsupported versions fail early with a clear error message.
 
 ### Running the TypeScript compiler
 

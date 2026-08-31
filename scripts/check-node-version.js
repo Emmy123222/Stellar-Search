@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * check-node-version.ts
+ * check-node-version.js
  *
  * Validates the running Node.js version against the `engines.node` field
  * in package.json. Exits 1 with a clear message when the version is
@@ -18,8 +18,8 @@ export const SUPPORTED_RANGE = ">=18.0.0";
  * Parse a major.minor.patch string into a comparable tuple.
  * Returns null when the string is not a valid version.
  */
-export function parseVersion(v: string): [number, number, number] | null {
-  const cleaned = v.replace(/^v/i, '');
+export function parseVersion(v) {
+  const cleaned = v.replace(/^v/i, "");
   const match = cleaned.match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!match) return null;
   return [Number(match[1]), Number(match[2]), Number(match[3])];
@@ -28,10 +28,7 @@ export function parseVersion(v: string): [number, number, number] | null {
 /**
  * Compare two version tuples. Returns -1, 0, or 1.
  */
-export function compareVersions(
-  a: [number, number, number],
-  b: [number, number, number],
-): number {
+export function compareVersions(a, b) {
   if (a[0] !== b[0]) return a[0] < b[0] ? -1 : 1;
   if (a[1] !== b[1]) return a[1] < b[1] ? -1 : 1;
   if (a[2] !== b[2]) return a[2] < b[2] ? -1 : 1;
@@ -42,7 +39,7 @@ export function compareVersions(
  * Coerce a Node version string (e.g. "v18.17.1", "18.17.1") into a
  * clean "MAJOR.MINOR.PATCH" string, or null on failure.
  */
-export function coerceVersion(raw: string): string | null {
+export function coerceVersion(raw) {
   const cleaned = raw.replace(/^v/i, "");
   const parts = parseVersion(cleaned);
   if (!parts) return null;
@@ -57,11 +54,11 @@ export function coerceVersion(raw: string): string | null {
  *   - "^20.19.0"          (caret — same major, >= minor.patch)
  *   - ">=22.12.0"         (minimum)
  *   - "20.x" / "20"       (major match)
- *   - "* || >=14"         (ignored the `*` — always true)
+ *   - "* || >=14"         (the `*` always matches)
  *   - ">=18.0.0 <23"      (range — both bounds must hold)
  *   - "^20.19.0 || >=22.12.0"  (disjunction)
  */
-export function satisfiesRange(version: string, range: string): boolean {
+export function satisfiesRange(version, range) {
   const v = parseVersion(version);
   if (!v) return false;
 
@@ -74,11 +71,7 @@ export function satisfiesRange(version: string, range: string): boolean {
   return false;
 }
 
-function testSingleRange(
-  v: [number, number, number],
-  range: string,
-): boolean {
-  // Strip whitespace
+function testSingleRange(v, range) {
   range = range.trim();
 
   // * matches everything
@@ -96,11 +89,13 @@ function testSingleRange(
     return v[0] === Number(xMatch[1]);
   }
 
-  // Handle >= / > / <= / < / = ranges with full semver or major-only
+  // Handle >= / > / <= / < / = ranges with full semver
   const opFullMatch = range.match(/^([><=]+)\s*(\d+)\.(\d+)\.(\d+)$/);
   if (opFullMatch) {
     const op = opFullMatch[1];
-    const target = parseVersion(opFullMatch[2] + "." + opFullMatch[3] + "." + opFullMatch[4]);
+    const target = parseVersion(
+      opFullMatch[2] + "." + opFullMatch[3] + "." + opFullMatch[4],
+    );
     if (!target) return false;
     const cmp = compareVersions(v, target);
     switch (op) {
@@ -150,8 +145,8 @@ function testSingleRange(
     const minor = Number(caretMatch[2]);
     const patch = Number(caretMatch[3]);
     // ^X.Y.Z means >= X.Y.Z and < (X+1).0.0
-    const lower: [number, number, number] = [major, minor, patch];
-    const upper: [number, number, number] = [major + 1, 0, 0];
+    const lower = [major, minor, patch];
+    const upper = [major + 1, 0, 0];
     return compareVersions(v, lower) >= 0 && compareVersions(v, upper) < 0;
   }
 
@@ -162,8 +157,8 @@ function testSingleRange(
     const minor = Number(tildeMatch[2]);
     const patch = Number(tildeMatch[3]);
     // ~X.Y.Z means >= X.Y.Z and < X.(Y+1).0
-    const lower: [number, number, number] = [major, minor, patch];
-    const upper: [number, number, number] = [major, minor + 1, 0];
+    const lower = [major, minor, patch];
+    const upper = [major, minor + 1, 0];
     return compareVersions(v, lower) >= 0 && compareVersions(v, upper) < 0;
   }
 
@@ -177,22 +172,10 @@ function testSingleRange(
 }
 
 /**
- * Result of a version check.
- */
-export interface VersionCheckResult {
-  ok: boolean;
-  current: string;
-  required: string;
-  message?: string;
-}
-
-/**
  * Validate the running Node version against the engines range.
+ * @returns {{ ok: boolean, current: string, required: string, message?: string }}
  */
-export function checkNodeVersion(
-  currentVersion: string,
-  enginesRange: string,
-): VersionCheckResult {
+export function checkNodeVersion(currentVersion, enginesRange) {
   const coerced = coerceVersion(currentVersion);
   if (!coerced) {
     return {
@@ -226,8 +209,8 @@ export function checkNodeVersion(
 // When run directly (not imported), perform the check and exit.
 const isDirectRun =
   process.argv[1] &&
-  (process.argv[1].endsWith("check-node-version.ts") ||
-    process.argv[1].endsWith("check-node-version.js"));
+  (process.argv[1].endsWith("check-node-version.js") ||
+    process.argv[1].endsWith("check-node-version.ts"));
 
 if (isDirectRun) {
   let enginesRange = SUPPORTED_RANGE;
