@@ -40,6 +40,11 @@ export const USDC_CONTRACT_TESTNET = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEI
 export const USDC_CONTRACT_MAINNET = 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7EJJUST'
 export const USDC_CONTRACT = IS_MAINNET ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_TESTNET
 
+// Maximum search query length (characters) — enforced client-side and by the API.
+// Advanced operators (site:, filetype:, exact phrases, -exclude) are allowed;
+// they do not change the per-query payment amount.
+export const MAX_QUERY_LENGTH = 2048
+
 // Payments
 export const AMOUNT_STROOPS = '10000' // 0.001 USDC
 export const AMOUNT_USDC = '0.001'
