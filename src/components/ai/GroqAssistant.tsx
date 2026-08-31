@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bot, Send, X, ChevronDown } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
@@ -117,6 +117,65 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const bottomRef               = useRef<HTMLDivElement>(null)
   const contextInjectedFor      = useRef<string | null>(null)
+  const triggerButtonRef        = useRef<HTMLButtonElement>(null)
+  const dialogRef               = useRef<HTMLDivElement>(null)
+  const inputRef                = useRef<HTMLInputElement>(null)
+
+  const handleClose = useCallback(() => {
+    setOpen(false)
+    setShowModelDropdown(false)
+    // Restore focus to trigger button
+    setTimeout(() => {
+      triggerButtonRef.current?.focus()
+    }, 0)
+  }, [])
+
+  // Auto-focus input on open
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => {
+        inputRef.current?.focus()
+      }, 50)
+    }
+  }, [open])
+
+  // Escape key handler & focus trap
+  useEffect(() => {
+    if (!open) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        handleClose()
+        return
+      }
+
+      if (e.key === 'Tab' && dialogRef.current) {
+        const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+        const focusableElements = Array.from(focusable).filter(
+          (el) => !el.hasAttribute('disabled') && el.offsetParent !== null
+        )
+
+        if (focusableElements.length === 0) return
+
+        const first = focusableElements[0]
+        const last = focusableElements[focusableElements.length - 1]
+
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open, handleClose])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -219,10 +278,14 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating trigger button */}
       <motion.button
+        ref={triggerButtonRef}
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full flex items-center justify-center"
+        aria-label="Open AI Research Assistant"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-neon-cyan focus:ring-offset-2 focus:ring-offset-black"
         style={{ background: 'rgba(0,245,255,0.15)', border: '1px solid rgba(0,245,255,0.4)' }}
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
@@ -238,14 +301,19 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
         <Bot className="w-5 h-5 text-neon-cyan" />
       </motion.button>
 
-      {/* Chat panel */}
+      {/* Chat dialog panel */}
       <AnimatePresence>
         {open && (
           <motion.div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="groq-assistant-title"
+            aria-describedby="groq-assistant-desc"
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="fixed bottom-20 right-6 z-40 w-96 rounded-2xl overflow-hidden flex flex-col"
+            className="fixed bottom-20 right-6 z-40 w-96 rounded-2xl overflow-hidden flex flex-col shadow-2xl"
             style={{
               height: '480px',
               background: 'rgba(6,13,20,0.96)',
@@ -253,16 +321,25 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               backdropFilter: 'blur(20px)',
             }}
           >
+            <span id="groq-assistant-desc" className="sr-only">
+              Interactive AI research assistant powered by Groq Llama models.
+            </span>
+
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
               <div className="flex items-center gap-2">
                 <Bot className="w-4 h-4 text-neon-cyan" />
-                <span className="font-display text-xs text-neon-cyan tracking-wider">GROQ AI</span>
+                <span id="groq-assistant-title" className="font-display text-xs text-neon-cyan tracking-wider">
+                  GROQ AI
+                </span>
                 {/* Model Selector Dropdown */}
                 <div className="relative">
                   <button
                     onClick={() => setShowModelDropdown(!showModelDropdown)}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
+                    aria-haspopup="listbox"
+                    aria-expanded={showModelDropdown}
+                    aria-label="Select AI Model"
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors focus:outline-none focus:ring-1 focus:ring-neon-cyan"
                     style={{
                       background: 'rgba(0,245,255,0.1)',
                       border: '1px solid rgba(0,245,255,0.2)',
@@ -277,10 +354,12 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                   <AnimatePresence>
                     {showModelDropdown && (
                       <motion.div
+                        role="listbox"
+                        aria-label="Available Groq AI Models"
                         initial={{ opacity: 0, y: -5 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -5 }}
-                        className="absolute top-full left-0 mt-1 w-48 rounded-lg overflow-hidden z-50"
+                        className="absolute top-full left-0 mt-1 w-48 rounded-lg overflow-hidden z-50 shadow-xl"
                         style={{
                           background: 'rgba(6,13,20,0.98)',
                           border: '1px solid rgba(0,245,255,0.2)',
@@ -289,11 +368,13 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                         {AVAILABLE_MODELS.map(model => (
                           <button
                             key={model.id}
+                            role="option"
+                            aria-selected={selectedModel === model.id}
                             onClick={() => {
                               setSelectedModel(model.id)
                               setShowModelDropdown(false)
                             }}
-                            className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors"
+                            className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors focus:outline-none focus:bg-white/10"
                           >
                             <div className="flex items-center justify-between">
                               <span className="text-xs text-white">{model.label}</span>
@@ -310,15 +391,16 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                 </div>
               </div>
               <button
-                onClick={() => setOpen(false)}
-                className="text-white/30 hover:text-white/60 transition-colors"
+                onClick={handleClose}
+                aria-label="Close AI Research Assistant"
+                className="text-white/30 hover:text-white/60 transition-colors focus:outline-none focus:text-white p-1 rounded"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            <div className="flex-1 overflow-y-auto p-3 space-y-3" role="log" aria-live="polite">
               {messages.filter(m => m.role !== 'system').map((msg, i) => (
                 <motion.div
                   key={i}
@@ -350,7 +432,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               ))}
 
               {loading && (
-                <div className="flex justify-start">
+                <div className="flex justify-start" aria-label="AI is generating response">
                   <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/7">
                     {[0, 1, 2].map(j => (
                       <motion.div
@@ -366,15 +448,17 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               <div ref={bottomRef} />
             </div>
 
-            {/* Input */}
+            {/* Input form */}
             <div className="p-3 border-t border-white/5">
               <div className="flex items-center gap-2">
                 <input
+                  ref={inputRef}
                   type="text"
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
                   placeholder="Ask anything..."
+                  aria-label="Message to AI Research Assistant"
                   disabled={loading}
                   className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-white/25 outline-none focus:border-neon-cyan/30 disabled:opacity-50"
                   style={{ caretColor: '#00f5ff' }}
@@ -382,7 +466,8 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                 <button
                   onClick={send}
                   disabled={!input.trim() || loading}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all disabled:opacity-30"
+                  aria-label="Send message"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all disabled:opacity-30 focus:outline-none focus:ring-1 focus:ring-neon-cyan"
                   style={{
                     background: 'rgba(0,245,255,0.15)',
                     border: '1px solid rgba(0,245,255,0.3)',
