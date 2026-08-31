@@ -14,7 +14,7 @@ import { useState, useCallback }              from 'react'
 import { toast }                               from 'sonner'
 import { x402Client, x402HTTPClient }          from '@x402/fetch'
 import { ExactStellarScheme }                  from '@x402/stellar/exact/client'
-import { signAuthEntry, getNetworkDetails }    from '@stellar/freighter-api'
+import { signAuthEntry, getNetworkDetails, getPublicKey } from '@stellar/freighter-api'
 import { Networks, Horizon, StrKey }           from '@stellar/stellar-sdk'
 import { Buffer }                              from 'buffer'
 import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
@@ -46,6 +46,16 @@ async function preflightStellarAccount(address: string, requiredAmount?: string)
   }
   if (typeof signAuthEntry !== 'function') {
     throw new Error('Freighter signer unavailable. Install or unlock Freighter.')
+  }
+
+  let activeAccount: string
+  try {
+    activeAccount = await getPublicKey()
+  } catch {
+    throw new Error('Freighter signer unavailable. Unlock Freighter and try again.')
+  }
+  if (activeAccount !== address) {
+    throw new Error('Freighter active account changed. Reconnect the expected wallet.')
   }
 
   let account: any
@@ -140,7 +150,7 @@ export function useSearch(walletAddress: string | null = null) {
       console.log('🔍 Starting search with wallet:', walletAddress)
 
       // Step 1 — verify Freighter is on correct network
-      const net = await getNetworkDetails()
+      const net = await withTimeout(getNetworkDetails(), 8000)
       if (net.error)              throw new Error(net.error.message)
       if (net.network !== EXPECTED_WALLET_NETWORK) {
         throw new Error(`Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`)
