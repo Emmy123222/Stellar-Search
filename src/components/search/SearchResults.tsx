@@ -81,7 +81,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
     }
     const metaLines = Object.entries(metadata).map(([key, value]) => {
       const str = value === undefined ? '' : (typeof value === 'object' ? (JSON.stringify(value) ?? '') : String(value))
-      return `# ${key}: ${str.replace(/"/g, '""')}`
+      return `# ${key}: ${str.replace(/"/g, '""').replace(/\r?\n/g, '\\n')}`
     })
     const headers = ['Title', 'URL', 'Description', 'Source', 'Relevance Score']
     const rows = selectedResults.map(r => [
@@ -265,6 +265,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={selectAll}
               aria-pressed={allSelected}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-white/70 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-colors"
@@ -274,7 +275,9 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
               ALL
             </button>
             <button
+              type="button"
               onClick={selectNone}
+              aria-pressed={selectedCount === 0}
               disabled={selectedCount === 0}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-white/70 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-colors disabled:opacity-40"
               style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)' }}
@@ -286,10 +289,13 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
           {/* Export Button with Format Selector */}
           <div className="relative">
             <button
+              type="button"
               onClick={() => setShowExportMenu(!showExportMenu)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-white/70 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-colors"
               style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)' }}
               aria-label="Export search results"
+              aria-expanded={showExportMenu}
+              aria-haspopup="menu"
             >
               <Download className="w-3 h-3" />
               EXPORT
