@@ -91,6 +91,7 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 | `PORT` | No | `3001` | Express server listen port. Falls back to `3001` if missing. | `3001` |
 | `VITE_SERVER_URL` | No | `http://localhost:3001` | Frontend URL for AI chat backend calls. On Vercel deployments auto-detects `${origin}/api`; locally falls back to `http://localhost:3001`. | `http://localhost:3001` |
 | `MCP_ENABLE_RECEIPTS` | No | `0` | Set `1` to opt-in MCP local receipt storage for `stellar-search://receipts/recent` (in-memory capped at 50) | `1` |
+| `RECONCILIATION_LOG_PATH` | No | `logs/reconciliation.jsonl` | Path to the append-only settlement reconciliation log (see [Settlement reconciliation](#settlement-reconciliation)). | `/var/log/stellarsearch/reconciliation.jsonl` |
 
 ---
 
@@ -145,6 +146,31 @@ sequenceDiagram
     Serper-->>Server: Real Google search results
     Server-->>Browser: 200 OK + results + txHash
     Browser-->>User: Display paid search results
+```
+
+### Settlement reconciliation
+
+Every paid `/search`, `/images`, and `/news` request writes a
+`ReconciliationRecord` (`src/lib/reconciliation.ts`) to an append-only JSON
+Lines log (`server/reconciliationStore.ts`, default `logs/reconciliation.jsonl`,
+configurable via `RECONCILIATION_LOG_PATH`). Each record links the request's
+idempotency key (the payment identifier from `src/lib/paymentIntegrity.ts`),
+its settlement receipt (tx hash), and whether a provider response was
+delivered — **never the query text itself** — so operators can catch two
+kinds of drift:
+
+- `settled_no_delivery` — payment was consumed but no search response was
+  delivered (upstream Serper error, a validation failure after the payment
+  gate, etc.)
+- `delivered_no_settlement` — a response was returned without a captured
+  payment identifier (shouldn't happen given the x402 gate; catches
+  regressions)
+
+Run the repeatable reconciliation job to report unmatched or inconsistent
+records (exits non-zero when any are found, so it can run on a schedule):
+
+```bash
+npm run reconcile:report
 ```
 
 ---

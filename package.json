@@ -25,6 +25,7 @@
     "server": "tsx server/index.ts",
     "mcp": "tsx mcp-server/index.ts",
     "dev:all": "concurrently \"npm run server\" \"npm run dev\"",
+    "reconcile:report": "tsx scripts/reconcile-report.ts",
     "test:search": "tsx scripts/test-search.ts",
     "test:suggestions": "tsx scripts/test-search.ts \"Stellar blockchain\" --count 3",
     "deploy": "npm run build && vercel --prod"

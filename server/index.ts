@@ -51,6 +51,9 @@ import type {
   SearchJob,
   JobStatus,
 } from '../src/types/index.js'
+import { randomUUID } from 'crypto'
+import { buildReconciliationRecord, type ReconciliationRoute } from '../src/lib/reconciliation.js'
+import { appendReconciliationRecord } from './reconciliationStore.js'
 
 dotenv.config()
 
@@ -346,10 +349,43 @@ app.use((req, res, next) => {
       if (!consumption.ok) {
         return res.status(402).json({ error: consumption.error })
       }
+      // Captured for reconciliation — links this request to the settled
+      // payment identifier without ever touching query content.
+      ;(req as any).paymentId = consumption.paymentId
     }
   }
   next()
 })
+
+// Builds and persists a ReconciliationRecord for a paid route. Never throws —
+// a logging failure must not affect the response already sent to the client.
+function recordReconciliation(params: {
+  req: Request
+  route: ReconciliationRoute
+  requestId: string
+  providerDelivered: boolean
+  resultCount: number
+  txHash: string | null
+}): void {
+  try {
+    const idempotencyKey = (params.req as any).paymentId ?? null
+    // Nothing to reconcile: no payment was captured and nothing was
+    // delivered (e.g. a bad `q` rejected before any payment attempt).
+    if (idempotencyKey === null && !params.providerDelivered) return
+
+    const record = buildReconciliationRecord({
+      requestId: params.requestId,
+      idempotencyKey,
+      route: params.route,
+      receiptTxHash: params.txHash,
+      providerDelivered: params.providerDelivered,
+      resultCount: params.resultCount,
+    })
+    appendReconciliationRecord(record)
+  } catch (err: any) {
+    console.error('[reconciliation] failed to record:', err.message)
+  }
+}
 
 export const MAX_QUERY_LENGTH = 256
 
@@ -376,18 +412,23 @@ export function validateQuery(
 
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {
-  const { q, count = '5', freshness } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) {
-    const errorBody: ApiErrorResponse = { error: v.error }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-
-  const t0 = Date.now()
+  const requestId = randomUUID()
+  let providerDelivered = false
+  let resultCount = 0
+  let txHash: string | null = null
 
   try {
+    const { q, count = '5', freshness } = req.query as Record<string, string>
+
+    const v = validateQuery(q)
+    if (!v.ok) {
+      const errorBody: ApiErrorResponse = { error: v.error }
+      return res.status(400).json(errorBody)
+    }
+    const cleanQ = v.cleanQ
+
+    const t0 = Date.now()
+
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
       num: Math.min(parseInt(count) || 5, 20),
@@ -432,7 +473,7 @@ app.get('/search', async (req: Request, res: Response) => {
     const results = normalizeOrganicResults(data)
 
     // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    txHash = (req.headers['x-payment-response'] as string) || null
 
     // ── Optional AI suggestions via Groq ──────────────────────────────────
     let suggestions: string[] = []
@@ -487,28 +528,37 @@ app.get('/search', async (req: Request, res: Response) => {
       addRecentReceipt({ id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, query: cleanQ, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
     } catch {}
 
+    providerDelivered = true
+    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[search error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.' }
     return res.status(500).json(errorBody)
+  } finally {
+    recordReconciliation({ req, route: '/search', requestId, providerDelivered, resultCount, txHash })
   }
 })
 
 // ─── GET /images ──────────────────────────────────────────────────────────
 app.get('/images', async (req: Request, res: Response) => {
-  const { q, count = '10' } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) {
-    const errorBody: ApiErrorResponse = { error: v.error }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-
-  const t0 = Date.now()
+  const requestId = randomUUID()
+  let providerDelivered = false
+  let resultCount = 0
+  let txHash: string | null = null
 
   try {
+    const { q, count = '10' } = req.query as Record<string, string>
+
+    const v = validateQuery(q)
+    if (!v.ok) {
+      const errorBody: ApiErrorResponse = { error: v.error }
+      return res.status(400).json(errorBody)
+    }
+    const cleanQ = v.cleanQ
+
+    const t0 = Date.now()
+
     const serperRes = await fetch('https://google.serper.dev/images', {
       method: 'POST',
       headers: {
@@ -538,7 +588,7 @@ app.get('/images', async (req: Request, res: Response) => {
 
     const results = normalizeImageResults(data)
 
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    txHash = (req.headers['x-payment-response'] as string) || null
 
     const responseBody: ImageSearchResponse = {
       query: cleanQ,
@@ -551,28 +601,37 @@ app.get('/images', async (req: Request, res: Response) => {
       latencyMs,
     }
 
+    providerDelivered = true
+    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[images error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.' }
     return res.status(500).json(errorBody)
+  } finally {
+    recordReconciliation({ req, route: '/images', requestId, providerDelivered, resultCount, txHash })
   }
 })
 
 // ─── GET /news ────────────────────────────────────────────────────────────
 app.get('/news', async (req: Request, res: Response) => {
-  const { q, count = '10', freshness } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) {
-    const errorBody: ApiErrorResponse = { error: v.error }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-
-  const t0 = Date.now()
+  const requestId = randomUUID()
+  let providerDelivered = false
+  let resultCount = 0
+  let txHash: string | null = null
 
   try {
+    const { q, count = '10', freshness } = req.query as Record<string, string>
+
+    const v = validateQuery(q)
+    if (!v.ok) {
+      const errorBody: ApiErrorResponse = { error: v.error }
+      return res.status(400).json(errorBody)
+    }
+    const cleanQ = v.cleanQ
+
+    const t0 = Date.now()
+
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
       num: Math.min(parseInt(count) || 10, 20),
@@ -615,7 +674,7 @@ app.get('/news', async (req: Request, res: Response) => {
 
     const results = normalizeNewsResults(data)
 
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    txHash = (req.headers['x-payment-response'] as string) || null
 
     const responseBody: NewsSearchResponse = {
       query: cleanQ,
@@ -628,11 +687,15 @@ app.get('/news', async (req: Request, res: Response) => {
       latencyMs,
     }
 
+    providerDelivered = true
+    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[news error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.' }
     return res.status(500).json(errorBody)
+  } finally {
+    recordReconciliation({ req, route: '/news', requestId, providerDelivered, resultCount, txHash })
   }
 })
 
