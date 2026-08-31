@@ -133,11 +133,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const res = await fetch(`${SERVER_URL}/search?${params}`)
 
       if (!res.ok) {
-        const e = await res.json().catch(() => ({}))
+        const e = await res.json().catch(() => ({}) as any) as any
         throw new Error(e.error || `HTTP ${res.status}`)
       }
 
-      const data = await res.json()
+      const data = await res.json() as any
       const formatted = data.results
         .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
         .join('\n\n')
@@ -270,7 +270,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (res.status === 404) throw new Error(`Account not found on Stellar ${STELLAR_NETWORK.split(':')[1]}`)
       if (!res.ok) throw new Error(`Horizon returned ${res.status}`)
 
-      const account = await res.json()
+      const account = await res.json() as any
       let xlm = '0', usdc = '0'
 
       for (const b of account.balances) {
@@ -304,7 +304,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const res = await fetch(`${SERVER_URL}/health`)
       if (!res.ok) throw new Error(`Server health check returned ${res.status}`)
 
-      const stats = await res.json()
+      const stats = await res.json() as any
       
       return {
         content: [{

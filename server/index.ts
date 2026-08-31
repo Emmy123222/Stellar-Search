@@ -31,6 +31,7 @@ import {
   AMOUNT_USDC,
   AMOUNT_STROOPS
 } from '../src/lib/constants'
+import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 
 dotenv.config()
 
@@ -156,6 +157,27 @@ app.use((req, res, next) => {
 
 app.use(paymentMiddlewareFromConfig(x402Routes, facilitatorClient, schemes))
 
+// ─── Payment Replay Protection Middleware ─────────────────────────────────
+app.use((req, res, next) => {
+  const paidRoutes = ['/search', '/images', '/news']
+  if (paidRoutes.includes(req.path)) {
+    const paymentHeader =
+      req.headers['payment-signature'] ||
+      req.headers['x-payment'] ||
+      req.headers['X-PAYMENT'] ||
+      req.headers['x-payment-response'] ||
+      req.headers['authorization']
+
+    if (paymentHeader) {
+      const consumption = consumePaymentPayload(paymentHeader)
+      if (!consumption.ok) {
+        return res.status(402).json({ error: consumption.error })
+      }
+    }
+  }
+  next()
+})
+
 export const MAX_QUERY_LENGTH = 256
 
 // Validate and sanitize the user-supplied `q` parameter. Returns either the
@@ -222,7 +244,7 @@ app.get('/search', async (req: Request, res: Response) => {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data = await serperRes.json()
+    const data = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     stats.totalQueries++
@@ -317,7 +339,7 @@ app.get('/images', async (req: Request, res: Response) => {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data = await serperRes.json()
+    const data = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     stats.totalQueries++
@@ -396,7 +418,7 @@ app.get('/news', async (req: Request, res: Response) => {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data = await serperRes.json()
+    const data = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     stats.totalQueries++

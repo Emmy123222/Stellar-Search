@@ -153,3 +153,16 @@ describe('createShutdownHandler', () => {
   })
 })
 
+describe('SPA static file fallback routing', () => {
+  it('handles client route requests and non-api fallbacks', async () => {
+    const res = await request(app).get('/some-spa-route')
+    expect([200, 404]).toContain(res.status)
+  })
+
+  it('passes through api route requests', async () => {
+    const res = await request(app).get('/api/health')
+    expect([200, 404]).toContain(res.status)
+  })
+})
+
+

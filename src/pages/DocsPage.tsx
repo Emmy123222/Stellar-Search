@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { ExternalLink, GitBranch, Globe, Shield, Zap, Code2, Server } from 'lucide-react'
+import { ExternalLink, GitBranch, Globe, Shield, Zap, Server } from 'lucide-react'
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, HORIZON_URL } from '../lib/stellar'
 
 const getSteps = () => [
