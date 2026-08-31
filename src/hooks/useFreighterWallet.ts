@@ -120,7 +120,7 @@ export function useFreighterWallet() {
         }))
 
       setTransactions(txs)
-    } catch (_) {
+    } catch {
       setTransactions([])
     } finally {
       setTxLoading(false)

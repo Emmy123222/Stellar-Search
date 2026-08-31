@@ -125,7 +125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data      = await serperRes.json()
+    const data      = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     const results = (data.organic || []).map((r: any, i: number) => ({

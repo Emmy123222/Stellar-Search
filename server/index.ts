@@ -242,7 +242,7 @@ app.get('/search', async (req: Request, res: Response) => {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data = await serperRes.json()
+    const data = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     stats.totalQueries++
@@ -337,7 +337,7 @@ app.get('/images', async (req: Request, res: Response) => {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data = await serperRes.json()
+    const data = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     stats.totalQueries++
@@ -416,7 +416,7 @@ app.get('/news', async (req: Request, res: Response) => {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data = await serperRes.json()
+    const data = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     stats.totalQueries++

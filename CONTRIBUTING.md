@@ -284,10 +284,11 @@ Closes #9
 docs: add CONTRIBUTING.md
 ```
 
-### GitHub Actions security & dependency maintenance
+### Dependency updates (Dependabot)
 
-- **Immutable action pinning:** All third-party GitHub Actions in `.github/workflows/ci.yml` are pinned to immutable, reviewed full commit SHAs with inline version comments to ensure supply-chain reproducibility.
-- **Automated SHA updates (Dependabot):** Dependabot (`.github/dependabot.yml`) is configured to monitor and propose updates for both GitHub Actions commit SHAs and npm packages on a weekly schedule.
+Dependabot is configured in `.github/dependabot.yml` to automatically propose weekly updates with sensible open PR limits:
+- **Grouped updates:** Minor/patch dependencies for tooling, linting, testing, and UI are grouped into single PRs to reduce notification noise.
+- **Deliberate review for payment & runtime:** Major upgrades for `@x402/*`, `@stellar/*`, `@modelcontextprotocol/*`, AI SDKs (`groq-sdk`), and server runtime packages are kept as isolated PRs to ensure deliberate review, preventing regressions across runtime boundaries (Express, Vercel, browser, and MCP) and safeguarding x402 settlement semantics.
 
 ---
 
@@ -308,6 +309,7 @@ docs: add CONTRIBUTING.md
 
 4. Make sure:
    - [ ] `npx tsc --noEmit` passes with no errors.
+   - [ ] `npm run lint` passes with zero errors and zero warnings (`eslint . --max-warnings=0`).
    - [ ] The app starts and the affected feature works manually.
    - [ ] No new `console.log` / debug statements left in.
    - [ ] No secrets or `.env` values committed.
