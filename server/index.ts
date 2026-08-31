@@ -199,13 +199,36 @@ export function validateQuery(
   return { ok: true, cleanQ }
 }
 
+export function getPayer(req: Request): string {
+  const header =
+    req.headers['payment-signature'] ||
+    req.headers['x-payment'] ||
+    req.headers['X-PAYMENT'] ||
+    req.headers['x-payment-response'] ||
+    req.headers['authorization']
+  if (!header) return 'unknown'
+  try {
+    const rawString = typeof header === 'string' ? header.trim() : JSON.stringify(header)
+    let obj: any = null
+    try { obj = JSON.parse(rawString) } catch {
+      try { obj = JSON.parse(Buffer.from(rawString, 'base64').toString('utf8')) } catch {}
+    }
+    if (obj && typeof obj === 'object') {
+      return obj.payer || obj.account || obj.signerAddress || obj.publicKey || obj.sourceAccount || 'unknown'
+    }
+  } catch {}
+  return 'unknown'
+}
+
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {
-  const { q, count = '5', freshness } = req.query as Record<string, string>
+  const { q, count = '5', freshness, safeSearch = 'moderate' } = req.query as Record<string, string>
 
   const v = validateQuery(q)
   if (!v.ok) return res.status(400).json({ error: v.error })
   const cleanQ = v.cleanQ
+
+  const validSafeSearch = ['strict', 'moderate', 'off'].includes(safeSearch) ? safeSearch : 'moderate'
 
   const t0 = Date.now()
 
@@ -213,6 +236,7 @@ app.get('/search', async (req: Request, res: Response) => {
     const requestBody: any = {
       q: cleanQ,
       num: Math.min(parseInt(count) || 5, 20),
+      safeSearch: validSafeSearch === 'strict' ? 'active' : (validSafeSearch === 'off' ? 'off' : 'moderate')
     }
 
     // Add freshness filter if provided (Serper supports date filters)
@@ -260,8 +284,18 @@ app.get('/search', async (req: Request, res: Response) => {
       publishedAt: r.date || undefined,
     }))
 
-    // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
     const txHash = (req.headers['x-payment-response'] as string) || null
+
+    const receipt = {
+      version: '1.0',
+      amount: AMOUNT_USDC,
+      asset: 'USDC',
+      network: NETWORK,
+      payer: getPayer(req),
+      payee: RECEIVING_ADDRESS || 'unknown',
+      timestamp: new Date().toISOString(),
+      transactionHash: txHash || 'unknown',
+    }
 
     // ── Optional AI suggestions via Groq ──────────────────────────────────
     let suggestions: string[] = []
@@ -293,6 +327,7 @@ app.get('/search', async (req: Request, res: Response) => {
 
     return res.json({
       query: cleanQ,
+      safeSearch: validSafeSearch,
       results,
       count: results.length,
       network: NETWORK,
@@ -301,6 +336,7 @@ app.get('/search', async (req: Request, res: Response) => {
       txHash,
       latencyMs,
       suggestions,
+      receipt,
     })
   } catch (err: any) {
     console.error('[search error]', err.message)
@@ -310,11 +346,12 @@ app.get('/search', async (req: Request, res: Response) => {
 
 // ─── GET /images ──────────────────────────────────────────────────────────
 app.get('/images', async (req: Request, res: Response) => {
-  const { q, count = '10' } = req.query as Record<string, string>
+  const { q, count = '10', safeSearch = 'moderate' } = req.query as Record<string, string>
 
   const v = validateQuery(q)
   if (!v.ok) return res.status(400).json({ error: v.error })
   const cleanQ = v.cleanQ
+  const validSafeSearch = ['strict', 'moderate', 'off'].includes(safeSearch) ? safeSearch : 'moderate'
 
   const t0 = Date.now()
 
@@ -328,6 +365,7 @@ app.get('/images', async (req: Request, res: Response) => {
       body: JSON.stringify({
         q: cleanQ,
         num: Math.min(parseInt(count) || 10, 10),
+        safeSearch: validSafeSearch === 'strict' ? 'active' : (validSafeSearch === 'off' ? 'off' : 'moderate')
       }),
     })
 
@@ -358,8 +396,20 @@ app.get('/images', async (req: Request, res: Response) => {
 
     const txHash = (req.headers['x-payment-response'] as string) || null
 
+    const receipt = {
+      version: '1.0',
+      amount: AMOUNT_USDC,
+      asset: 'USDC',
+      network: NETWORK,
+      payer: getPayer(req),
+      payee: RECEIVING_ADDRESS || 'unknown',
+      timestamp: new Date().toISOString(),
+      transactionHash: txHash || 'unknown',
+    }
+
     return res.json({
       query: cleanQ,
+      safeSearch: validSafeSearch,
       results,
       count: results.length,
       network: NETWORK,
@@ -367,6 +417,7 @@ app.get('/images', async (req: Request, res: Response) => {
       currency: 'USDC',
       txHash,
       latencyMs,
+      receipt,
     })
   } catch (err: any) {
     console.error('[images error]', err.message)
@@ -436,6 +487,17 @@ app.get('/news', async (req: Request, res: Response) => {
 
     const txHash = (req.headers['x-payment-response'] as string) || null
 
+    const receipt = {
+      version: '1.0',
+      amount: AMOUNT_USDC,
+      asset: 'USDC',
+      network: NETWORK,
+      payer: getPayer(req),
+      payee: RECEIVING_ADDRESS || 'unknown',
+      timestamp: new Date().toISOString(),
+      transactionHash: txHash || 'unknown',
+    }
+
     return res.json({
       query: cleanQ,
       results,
@@ -445,6 +507,7 @@ app.get('/news', async (req: Request, res: Response) => {
       currency: 'USDC',
       txHash,
       latencyMs,
+      receipt,
     })
   } catch (err: any) {
     console.error('[news error]', err.message)

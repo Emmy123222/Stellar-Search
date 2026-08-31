@@ -49,6 +49,7 @@ Use for current events, documentation, research, or anything needing up-to-date 
           query: { type: 'string', description: 'Search query' },
           count: { type: 'number', description: 'Results count (1–10, default 5)', default: 5 },
           freshness: { type: 'string', enum: ['pd', 'pw', 'pm'], description: 'Age: pd=day, pw=week, pm=month' },
+          safeSearch: { type: 'string', enum: ['strict', 'moderate', 'off'], description: 'SafeSearch policy', default: 'moderate' },
         },
         required: ['query'],
       },
@@ -63,6 +64,7 @@ Use for visual references, photos, diagrams, or anything where you need image re
         properties: {
           query: { type: 'string', description: 'Image search query' },
           count: { type: 'number', description: 'Results count (1–10, default 5)', default: 5 },
+          safeSearch: { type: 'string', enum: ['strict', 'moderate', 'off'], description: 'SafeSearch policy', default: 'moderate' },
         },
         required: ['query'],
       },
@@ -121,11 +123,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── web_search ────────────────────────────────────────────────────────
   if (name === 'web_search') {
-    const { query, count = 5, freshness } = args as { query: string; count?: number; freshness?: string }
+    const { query, count = 5, freshness, safeSearch } = args as { query: string; count?: number; freshness?: string; safeSearch?: string }
 
     try {
       const params = new URLSearchParams({ q: query, count: String(count) })
       if (freshness) params.set('freshness', freshness)
+      if (safeSearch) params.set('safeSearch', safeSearch)
 
       // The server's x402 middleware handles the full payment flow.
       // In server-to-server mode the server needs a funded Stellar key.
@@ -148,6 +151,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           text: [
             `🔍 Results for: "${query}"`,
             `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
+            `🧾 Tx Hash: ${data.receipt?.transactionHash || 'N/A'}`,
             `⚡ Latency: ${data.latencyMs}ms`,
             `📊 ${data.count} results\n`,
             formatted,
@@ -161,11 +165,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── image_search ──────────────────────────────────────────────────────
   if (name === 'image_search') {
-    const { query, count = 5 } = args as { query: string; count?: number }
+    const { query, count = 5, safeSearch } = args as { query: string; count?: number; safeSearch?: string }
 
     try {
       const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 10)
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
+      if (safeSearch) params.set('safeSearch', safeSearch)
 
       const res = await fetch(`${SERVER_URL}/images?${params}`)
 
@@ -185,6 +190,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           text: [
             `🖼️  Image results for: "${query}"`,
             `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
+            `🧾 Tx Hash: ${data.receipt?.transactionHash || 'N/A'}`,
             `⚡ Latency: ${data.latencyMs}ms`,
             `📊 ${data.count} results\n`,
             formatted,
@@ -228,6 +234,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           text: [
             `📰 News results for: "${query}"`,
             `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
+            `🧾 Tx Hash: ${data.receipt?.transactionHash || 'N/A'}`,
             `⚡ Latency: ${data.latencyMs}ms`,
             `📊 ${data.count} results\n`,
             formatted,

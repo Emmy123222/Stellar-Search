@@ -135,6 +135,18 @@ describe('settle — successful search after payment', () => {
     expect(res.body.network).toMatch(/^stellar:/)
     expect(typeof res.body.latencyMs).toBe('number')
     expect(res.body.latencyMs).toBeGreaterThanOrEqual(0)
+    
+    // Check versioned receipt schema
+    const receipt = res.body.receipt
+    expect(receipt).toBeDefined()
+    expect(receipt.version).toBe('1.0')
+    expect(receipt.amount).toBe('0.001')
+    expect(receipt.asset).toBe('USDC')
+    expect(receipt.network).toMatch(/^stellar:/)
+    expect(receipt.payer).toBe('unknown') // from our mock
+    expect(receipt.payee).toBe(process.env.STELLAR_RECEIVING_ADDRESS)
+    expect(receipt.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)
+    expect(typeof receipt.transactionHash).toBe('string')
   })
 
   it('respects count param and returns correct result count', async () => {
@@ -165,6 +177,8 @@ describe('settle — successful search after payment', () => {
     expect(res.body.results[0].imageUrl).toBe('https://i.example.com/1.jpg')
     expect(res.body.currency).toBe('USDC')
     expect(res.body.paidAmount).toBe('0.001')
+    expect(res.body.receipt).toBeDefined()
+    expect(res.body.receipt.version).toBe('1.0')
   })
 
   it('settle on /news returns news results with x402 metadata', async () => {
@@ -178,6 +192,8 @@ describe('settle — successful search after payment', () => {
     expect(res.status).toBe(200)
     expect(res.body.results[0].title).toBe('News')
     expect(res.body.network).toMatch(/^stellar:/)
+    expect(res.body.receipt).toBeDefined()
+    expect(res.body.receipt.version).toBe('1.0')
   })
 
   it('applies freshness filter pw → qdr:w when param is set', async () => {
