@@ -37,6 +37,8 @@ export default defineConfig({
         'src/components/search/SearchBar.tsx': { statements: 80, branches: 80, functions: 90, lines: 80 },
         'server/index.ts': { statements: 65, branches: 60, functions: 65, lines: 65 },
         'api/search.ts': { statements: 90, branches: 75, functions: 80, lines: 90 },
+        'api/images.ts': { statements: 90, branches: 75, functions: 80, lines: 90 },
+        'api/news.ts': { statements: 90, branches: 75, functions: 80, lines: 90 },
         'api/health.ts': { statements: 80, branches: 50, functions: 100, lines: 80 },
         'mcp-server/index.ts': { statements: 30, branches: 20, functions: 20, lines: 30 },
         'src/hooks/useFreighterWallet.ts': { statements: 85, branches: 65, functions: 90, lines: 85 },

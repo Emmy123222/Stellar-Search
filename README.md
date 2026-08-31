@@ -228,6 +228,8 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
 | `server/index.ts` | 65% | 60% | 65% | 65% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
+| `api/images.ts` | 90% | 75% | 80% | 90% |
+| `api/news.ts` | 90% | 75% | 80% | 90% |
 | `api/health.ts` | 80% | 50% | 100% | 80% |
 | `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
 | `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
