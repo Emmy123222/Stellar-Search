@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/.well-known/x402",
+      "destination": "/api/.well-known/x402"
+    }
+  ]
+}
