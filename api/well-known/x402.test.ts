@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import handler from './x402'
+import handler from '../well-known/x402'
 
 function mockResponse() {
   const res: any = {
