@@ -1,4 +1,4 @@
-import type { SearchResult, ImageResult, NewsResult } from '../types/index.js'
+import type { SearchResult, ImageResult, NewsResult, Sitelink } from '../types/index.js'
 
 /**
  * Validates whether a given string is a valid HTTP or HTTPS URL.
@@ -76,6 +76,22 @@ export function normalizeOrganicResults(rawData: unknown): SearchResult[] {
       ? row.date.trim()
       : undefined
 
+    // Sitelinks: validate up to 4 entries, each must have a valid URL
+    const MAX_SITELINKS = 4
+    const sitelinks: Sitelink[] = []
+    if (Array.isArray(row.sitelinks)) {
+      for (const sl of row.sitelinks) {
+        if (sitelinks.length >= MAX_SITELINKS) break
+        if (!sl || typeof sl !== 'object') continue
+        const slRow = sl as Record<string, unknown>
+        if (!isValidHttpUrl(slRow.link)) continue
+        const slTitle = typeof slRow.title === 'string' && slRow.title.trim()
+          ? slRow.title.trim()
+          : 'Link'
+        sitelinks.push({ title: slTitle, url: (slRow.link as string).trim() })
+      }
+    }
+
     const index = validResults.length
     validResults.push({
       id: String(index + 1),
@@ -85,6 +101,7 @@ export function normalizeOrganicResults(rawData: unknown): SearchResult[] {
       source,
       relevanceScore: Math.max(0.5, 1 - index * 0.06),
       publishedAt,
+      ...(sitelinks.length > 0 && { sitelinks }),
     })
   }
 

@@ -1,5 +1,10 @@
 export type PaymentStep = 1 | 2 | 3 | 4 | 5 | 6
 
+export interface Sitelink {
+  title: string
+  url: string
+}
+
 export interface SearchResult {
   id: string
   title: string
@@ -8,6 +13,8 @@ export interface SearchResult {
   source: string
   relevanceScore: number
   publishedAt?: string
+  /** Up to 4 validated organic sitelinks from the upstream Serper response. */
+  sitelinks?: Sitelink[]
 }
 
 export interface SearchSession {
