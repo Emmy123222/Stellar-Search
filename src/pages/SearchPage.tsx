@@ -11,6 +11,7 @@ import {
 import type { SearchSession } from '../hooks/useSearch'
 import type { WalletState } from '../hooks/useFreighterWallet'
 import { AMOUNT_USDC } from '../lib/stellar'
+import { useReducedMotion } from '../hooks/useReducedMotion'
 
 interface Props {
   wallet: WalletState
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function SearchPage({ wallet, onConnectWallet, session, search, reset }: Props) {
+  const reducedMotion = useReducedMotion()
   const handleSearch = (query: string, freshness?: string) => {
     if (!wallet.connected) { onConnectWallet(); return }
     search(query, freshness)
@@ -36,15 +38,16 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
       <AnimatePresence>
         {session.status === 'idle' && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            exit={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : -20 }}
+            transition={reducedMotion ? { duration: 0 } : { duration: 0.3 }}
             className="text-center space-y-4 py-8"
           >
             <motion.div
               className="relative w-20 h-20 mx-auto mb-5"
-              animate={{ rotate: [0, 360] }}
-              transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+              animate={reducedMotion ? {} : { rotate: [0, 360] }}
+              transition={reducedMotion ? {} : { duration: 20, repeat: Infinity, ease: 'linear' }}
             >
               <div className="absolute inset-0 rounded-full border border-neon-cyan/20" />
               <div className="absolute inset-2 rounded-full border border-neon-cyan/40" />
@@ -114,8 +117,9 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         {session.status !== 'idle' && (
           <motion.div
             key="results-area"
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 16 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}
             className="space-y-5"
           >
             <PaymentFlowVisualizer session={session} />
@@ -128,19 +132,19 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
             )}
 
             {(session.status === 'complete' || session.status === 'searching') && (
-              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}>
                 <SearchResults results={session.results} query={session.query} isLoading={session.status === 'searching'} txHash={session.txHash} />
               </motion.div>
             )}
 
             {session.status === 'complete' && session.suggestions.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.3 }}>
                 <SearchSuggestions onSelect={handleSearch} aiSuggestions={session.suggestions} />
               </motion.div>
             )}
 
             {(session.status === 'complete' || session.status === 'error') && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
+              <motion.div initial={{ opacity: reducedMotion ? 1 : 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
                 <button onClick={reset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
                   ← NEW SEARCH
                 </button>

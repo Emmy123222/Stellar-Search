@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink } from 'lucide-react'
 import type { SearchSession } from '../../hooks/useSearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 // 6 steps of the x402 flow per the official x402 quickstart:
 //   request → 402 → sign → retry → facilitate → result
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export function PaymentFlowVisualizer({ session }: Props) {
+  const reducedMotion = useReducedMotion()
   if (session.status === 'idle') return null
 
   const isSearching = session.status === 'searching'
@@ -33,11 +35,16 @@ export function PaymentFlowVisualizer({ session }: Props) {
   const activeIdx  = (session.step ?? 1) - 1
   const doneCount  = isComplete ? TOTAL_STEPS : activeIdx
 
+  const transition = reducedMotion
+    ? { duration: 0 }
+    : { type: 'spring', bounce: 0.2, duration: 0.4 }
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16 }}
+      initial={{ opacity: 0, y: reducedMotion ? 0 : 16 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -16 }}
+      exit={{ opacity: 0, y: reducedMotion ? 0 : -16 }}
+      transition={transition}
       className="rounded-xl p-5 space-y-4"
       style={{
         background: 'rgba(6,13,20,0.7)',
@@ -73,8 +80,9 @@ export function PaymentFlowVisualizer({ session }: Props) {
                       : stepActive ? `${step.color}10`
                       : stepFailed ? 'rgba(239,68,68,0.1)'
                       : 'transparent',
-                    boxShadow: stepActive ? `0 0 20px ${step.color}50` : 'none',
+                    boxShadow: stepActive && !reducedMotion ? `0 0 20px ${step.color}50` : 'none',
                   }}
+                  transition={reducedMotion ? { duration: 0 } : { duration: 0.3 }}
                 >
                   {stepDone ? (
                     <motion.span
@@ -90,7 +98,7 @@ export function PaymentFlowVisualizer({ session }: Props) {
                       {step.icon}
                     </span>
                   )}
-                  {stepActive && (
+                  {stepActive && !reducedMotion && (
                     <motion.div
                       className="absolute inset-0 rounded-full border"
                       style={{ borderColor: step.color }}
@@ -126,11 +134,15 @@ export function PaymentFlowVisualizer({ session }: Props) {
           className="flex items-center gap-3 py-2.5 px-3 rounded-lg bg-white/4 border border-white/5"
         >
           {session.status === 'searching' && (
-            <motion.div
-              className="w-2 h-2 rounded-full bg-neon-cyan flex-shrink-0"
-              animate={{ opacity: [1, 0.2, 1] }}
-              transition={{ duration: 0.7, repeat: Infinity }}
-            />
+            reducedMotion ? (
+              <div className="w-2 h-2 rounded-full bg-neon-cyan flex-shrink-0" />
+            ) : (
+              <motion.div
+                className="w-2 h-2 rounded-full bg-neon-cyan flex-shrink-0"
+                animate={{ opacity: [1, 0.2, 1] }}
+                transition={{ duration: 0.7, repeat: Infinity }}
+              />
+            )
           )}
           <p className="font-display text-xs text-white/50">
             {isSearching && `→ Step ${session.step ?? 1}/${TOTAL_STEPS}: ${STEPS[activeIdx]?.label} — ${STEPS[activeIdx]?.sub}...`}

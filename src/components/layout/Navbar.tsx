@@ -3,6 +3,7 @@ import { Search, BookOpen, BarChart2, ExternalLink, Zap, Github, Globe } from 'l
 import { WalletPanel } from '../wallet/WalletPanel'
 import type { WalletState, StellarTransaction } from '../../hooks/useFreighterWallet'
 import { IS_MAINNET } from '../../lib/stellar'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 type Page = 'search' | 'docs' | 'dashboard'
 
@@ -28,6 +29,7 @@ export function Navbar({
   wallet, transactions, txLoading,
   onConnect, onDisconnect, onRefresh,
 }: Props) {
+  const reducedMotion = useReducedMotion()
   return (
     <header
       className="sticky top-0 z-40 border-b border-white/5"
@@ -83,7 +85,7 @@ export function Navbar({
                     background: 'rgba(0,245,255,0.08)',
                     border: '1px solid rgba(0,245,255,0.15)',
                   }}
-                  transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
+                  transition={reducedMotion ? { duration: 0 } : { type: 'spring', bounce: 0.2, duration: 0.4 }}
                 />
               )}
             </button>

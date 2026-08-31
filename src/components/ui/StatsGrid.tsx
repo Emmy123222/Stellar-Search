@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { TrendingUp, Zap, Clock, Shield } from 'lucide-react'
 import { fetchServerStats } from '../../lib/stellar'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 interface ServerStats {
   totalQueries: number
@@ -25,6 +26,7 @@ interface StatsGridProps {
 }
 
 export function StatsGrid({ pollingIntervalMs = 10_000 }: StatsGridProps) {
+  const reducedMotion = useReducedMotion()
   const [stats, setStats] = useState<ServerStats>({
     totalQueries: 0,
     totalUsdcSettled: '0.00',
@@ -60,9 +62,9 @@ export function StatsGrid({ pollingIntervalMs = 10_000 }: StatsGridProps) {
       {CARDS.map(({ key, label, Icon, color, fmt }, i) => (
         <motion.div
           key={key}
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.08 }}
+          transition={reducedMotion ? { duration: 0 } : { delay: i * 0.08 }}
           className="rounded-xl p-4"
           style={{
             background: 'rgba(6,13,20,0.7)',
@@ -77,12 +79,16 @@ export function StatsGrid({ pollingIntervalMs = 10_000 }: StatsGridProps) {
             >
               <Icon className="w-4 h-4" style={{ color }} />
             </div>
-            <motion.div
-              className="w-1.5 h-1.5 rounded-full mt-1"
-              style={{ background: color }}
-              animate={{ opacity: [0.4, 1, 0.4] }}
-              transition={{ duration: 2, repeat: Infinity, delay: i * 0.4 }}
-            />
+            {reducedMotion ? (
+              <div className="w-1.5 h-1.5 rounded-full mt-1" style={{ background: color }} />
+            ) : (
+              <motion.div
+                className="w-1.5 h-1.5 rounded-full mt-1"
+                style={{ background: color }}
+                animate={{ opacity: [0.4, 1, 0.4] }}
+                transition={{ duration: 2, repeat: Infinity, delay: i * 0.4 }}
+              />
+            )}
           </div>
           <p className="font-display text-lg font-bold" style={{ color }}>
             {fmt(stats[key])}
@@ -97,7 +103,7 @@ export function StatsGrid({ pollingIntervalMs = 10_000 }: StatsGridProps) {
       ))}
 
       <div className="col-span-2 lg:col-span-4 flex items-center justify-end gap-2 mt-1">
-        <div className={`w-1.5 h-1.5 rounded-full ${stats.status === 'online' ? 'bg-neon-green animate-pulse' : 'bg-red-500'}`} />
+        <div className={`w-1.5 h-1.5 rounded-full ${stats.status === 'online' ? 'bg-neon-green' : 'bg-red-500'} ${reducedMotion || stats.status !== 'online' ? '' : 'animate-pulse'}`} />
         <span className="font-display text-xs text-white/25">
           SERVER {stats.status === 'online' ? 'ONLINE' : 'OFFLINE — run: npm run server'}
         </span>

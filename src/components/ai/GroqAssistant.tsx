@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bot, Send, X, ChevronDown } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 interface Message {
   role: 'system' | 'user' | 'assistant'
@@ -117,6 +118,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const bottomRef               = useRef<HTMLDivElement>(null)
   const contextInjectedFor      = useRef<string | null>(null)
+  const reducedMotion           = useReducedMotion()
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -224,16 +226,16 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
         onClick={() => setOpen(true)}
         className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full flex items-center justify-center"
         style={{ background: 'rgba(0,245,255,0.15)', border: '1px solid rgba(0,245,255,0.4)' }}
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.95 }}
-        animate={{
+        whileHover={{ scale: reducedMotion ? 1 : 1.1 }}
+        whileTap={{ scale: reducedMotion ? 1 : 0.95 }}
+        animate={reducedMotion ? {} : {
           boxShadow: [
             '0 0 15px rgba(0,245,255,0.3)',
             '0 0 35px rgba(0,245,255,0.6)',
             '0 0 15px rgba(0,245,255,0.3)',
           ],
         }}
-        transition={{ duration: 2, repeat: Infinity }}
+        transition={reducedMotion ? {} : { duration: 2, repeat: Infinity }}
       >
         <Bot className="w-5 h-5 text-neon-cyan" />
       </motion.button>
@@ -242,9 +244,10 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 20, scale: reducedMotion ? 1 : 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            exit={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 20, scale: reducedMotion ? 1 : 0.95 }}
+            transition={reducedMotion ? { duration: 0 } : { type: 'spring', bounce: 0.2, duration: 0.3 }}
             className="fixed bottom-20 right-6 z-40 w-96 rounded-2xl overflow-hidden flex flex-col"
             style={{
               height: '480px',
@@ -273,19 +276,19 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                     <ChevronDown className="w-3 h-3" />
                   </button>
                   
-                  {/* Dropdown Menu */}
-                  <AnimatePresence>
-                    {showModelDropdown && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -5 }}
-                        className="absolute top-full left-0 mt-1 w-48 rounded-lg overflow-hidden z-50"
-                        style={{
-                          background: 'rgba(6,13,20,0.98)',
-                          border: '1px solid rgba(0,245,255,0.2)',
-                        }}
-                      >
+                   {/* Dropdown Menu */}
+                   <AnimatePresence>
+                     {showModelDropdown && (
+                       <motion.div
+                         initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : -5 }}
+                         animate={{ opacity: 1, y: 0 }}
+                         exit={{ opacity: reducedMotion ? 1 : 0, y: -5 }}
+                         className="absolute top-full left-0 mt-1 w-48 rounded-lg overflow-hidden z-50"
+                         style={{
+                           background: 'rgba(6,13,20,0.98)',
+                           border: '1px solid rgba(0,245,255,0.2)',
+                         }}
+                       >
                         {AVAILABLE_MODELS.map(model => (
                           <button
                             key={model.id}
@@ -352,14 +355,20 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               {loading && (
                 <div className="flex justify-start">
                   <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/7">
-                    {[0, 1, 2].map(j => (
-                      <motion.div
-                        key={j}
-                        className="w-1.5 h-1.5 rounded-full bg-neon-cyan/60"
-                        animate={{ opacity: [0.3, 1, 0.3] }}
-                        transition={{ duration: 0.8, repeat: Infinity, delay: j * 0.15 }}
-                      />
-                    ))}
+                    {reducedMotion ? (
+                      [0, 1, 2].map(j => (
+                        <div key={j} className="w-1.5 h-1.5 rounded-full bg-neon-cyan/60" />
+                      ))
+                    ) : (
+                      [0, 1, 2].map(j => (
+                        <motion.div
+                          key={j}
+                          className="w-1.5 h-1.5 rounded-full bg-neon-cyan/60"
+                          animate={{ opacity: [0.3, 1, 0.3] }}
+                          transition={{ duration: 0.8, repeat: Infinity, delay: j * 0.15 }}
+                        />
+                      ))
+                    )}
                   </div>
                 </div>
               )}

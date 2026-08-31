@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, truncateHash, formatTimeAgo, explorerTxUrl, explorerAccountUrl } from '../lib/stellar'
 import type { StellarTransaction } from '../hooks/useFreighterWallet'
 import type { SearchReceipt } from '../hooks/useSearch'
+import { useReducedMotion } from '../hooks/useReducedMotion'
 
 interface Props {
   transactions: StellarTransaction[]
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance, xlmBalance, onRefresh }: Props) {
+  const reducedMotion = useReducedMotion()
   const [receipts, setReceipts] = useState<SearchReceipt[]>([])
 
   useEffect(() => {
@@ -52,14 +54,14 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
     <div className="max-w-4xl mx-auto px-4 py-10 space-y-8">
 
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
+      <motion.div initial={{ opacity: reducedMotion ? 1 : 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between">
         <div>
           <span className="font-display text-xs text-neon-cyan/50 tracking-widest">LIVE BLOCKCHAIN DATA</span>
           <h1 className="font-display text-3xl text-white mt-1">DASHBOARD</h1>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${IS_MAINNET ? 'bg-neon-amber' : 'bg-neon-green'}`} />
+            <div className={`w-1.5 h-1.5 rounded-full ${IS_MAINNET ? 'bg-neon-amber' : 'bg-neon-green'} ${reducedMotion ? '' : 'animate-pulse'}`} />
             <span className={`font-display text-xs tracking-wider ${IS_MAINNET ? 'text-neon-amber/60' : 'text-neon-green/60'}`}>{networkLabel}</span>
           </div>
           <button
@@ -67,7 +69,15 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
             disabled={txLoading}
             className="p-2 rounded-lg border border-white/10 text-white/30 hover:text-neon-cyan transition-colors disabled:opacity-40"
           >
-            <RefreshCw className={`w-4 h-4 ${txLoading ? 'animate-spin' : ''}`} />
+            {txLoading ? (
+              reducedMotion ? (
+                <RefreshCw className="w-4 h-4" />
+              ) : (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              )
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
           </button>
         </div>
       </motion.div>
@@ -210,11 +220,15 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
         <div className="divide-y divide-white/4">
           {txLoading ? (
             <div className="flex justify-center py-10">
-              <motion.div
-                className="w-6 h-6 rounded-full border-2 border-neon-cyan/30 border-t-neon-cyan"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-              />
+              {reducedMotion ? (
+                <div className="w-6 h-6 rounded-full border-2 border-neon-cyan/30" />
+              ) : (
+                <motion.div
+                  className="w-6 h-6 rounded-full border-2 border-neon-cyan/30 border-t-neon-cyan"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                />
+              )}
             </div>
           ) : transactions.length === 0 ? (
             <div className="text-center py-10">

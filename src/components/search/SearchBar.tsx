@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { Search, Zap, AlertTriangle, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 import { IS_MAINNET, EXPECTED_WALLET_NETWORK, AMOUNT_USDC } from '../../lib/stellar'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 export interface FreshnessOption {
   label: string
@@ -35,6 +36,7 @@ export function SearchBar({
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [freshness, setFreshness] = useState<string>('')
+  const reducedMotion = useReducedMotion()
 
   const isWrongNetwork = walletConnected && walletNetwork !== EXPECTED_WALLET_NETWORK
 
@@ -139,11 +141,15 @@ export function SearchBar({
             whileTap={{ scale: 0.96 }}
           >
             {isSearching ? (
-              <motion.div
-                className="w-3.5 h-3.5 rounded-full border border-neon-cyan/40 border-t-neon-cyan"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-              />
+              reducedMotion ? (
+                <div className="w-3.5 h-3.5 rounded-full border border-neon-cyan/40" />
+              ) : (
+                <motion.div
+                  className="w-3.5 h-3.5 rounded-full border border-neon-cyan/40 border-t-neon-cyan"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                />
+              )
             ) : (
               <>
                 <Zap className="w-3.5 h-3.5" /> {AMOUNT_USDC} USDC

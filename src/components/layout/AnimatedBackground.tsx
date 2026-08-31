@@ -1,13 +1,20 @@
 import { useEffect, useRef } from 'react'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 export function AnimatedBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const reducedMotion = useReducedMotion()
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+
+    if (reducedMotion) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      return
+    }
 
     let animId: number
     const matrixChars = '01ABCDEF⬡◈▲⬢x402USDC'.split('')
@@ -113,7 +120,7 @@ export function AnimatedBackground() {
       cancelAnimationFrame(animId)
       window.removeEventListener('resize', resize)
     }
-  }, [])
+  }, [reducedMotion])
 
   return (
     <canvas

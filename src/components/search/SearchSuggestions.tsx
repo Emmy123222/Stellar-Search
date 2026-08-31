@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Sparkles } from 'lucide-react'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 const STATIC_SUGGESTIONS = [
   'x402 payment protocol Stellar',
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export function SearchSuggestions({ onSelect, aiSuggestions }: Props) {
+  const reducedMotion = useReducedMotion()
   const isAi = aiSuggestions && aiSuggestions.length > 0
   const nextItems = isAi ? aiSuggestions : STATIC_SUGGESTIONS
   const [items, setItems] = useState<string[]>(STATIC_SUGGESTIONS)
@@ -45,9 +47,9 @@ export function SearchSuggestions({ onSelect, aiSuggestions }: Props) {
         {items.map((q, i) => (
           <motion.button
             key={q}
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.06 }}
+            transition={reducedMotion ? { duration: 0 } : { delay: i * 0.06 }}
             onClick={() => onSelect(q)}
             className="px-3 py-1.5 rounded-lg text-xs font-display tracking-wide transition-all text-white/40 hover:text-neon-cyan/80"
             style={{ border: '1px solid rgba(255,255,255,0.08)' }}

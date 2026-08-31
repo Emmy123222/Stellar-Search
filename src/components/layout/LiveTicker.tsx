@@ -1,3 +1,4 @@
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 import { IS_MAINNET, AMOUNT_USDC } from '../../lib/stellar'
 
 interface Props {
@@ -15,12 +16,12 @@ const getTickerItems = () => [
 ]
 
 export function LiveTicker({ walletConnected }: Props) {
+  const reducedMotion = useReducedMotion()
   const items = [
     ...getTickerItems(),
     ['STATUS', walletConnected ? 'WALLET CONNECTED' : 'NOT CONNECTED'],
   ]
 
-  // Duplicate for seamless loop
   const doubled = [...items, ...items]
 
   return (
@@ -29,7 +30,7 @@ export function LiveTicker({ walletConnected }: Props) {
       style={{ background: 'rgba(2,4,8,0.4)' }}
     >
       <div
-        className="flex items-center gap-8 animate-ticker whitespace-nowrap"
+        className={`flex items-center gap-8 whitespace-nowrap ${reducedMotion ? '' : 'animate-ticker'}`}
         style={{ width: 'max-content' }}
       >
         {doubled.map(([k, v], i) => (

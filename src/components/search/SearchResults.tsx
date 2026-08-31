@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 interface Props {
   results: SearchResult[]
@@ -18,6 +19,7 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
 )
 
 export function SearchResults({ results, query, isLoading, txHash }: Props) {
+  const reducedMotion = useReducedMotion()
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
@@ -194,7 +196,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   }
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+    <motion.div initial={{ opacity: reducedMotion ? 1 : 0 }} animate={{ opacity: 1 }} className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2.5 flex-wrap">
           <p className="font-display text-xs text-white/35 tracking-widest" aria-live="polite">
@@ -234,7 +236,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
             <AnimatePresence>
               {showExportMenu && (
                 <motion.div
-                  initial={{ opacity: 0, y: -5 }}
+                  initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : -5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -5 }}
                   className="absolute top-full right-0 mt-1 w-48 rounded-lg overflow-hidden z-50"
@@ -302,14 +304,20 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
               <span className="font-display text-xs text-neon-cyan tracking-wider">AI SUMMARY · GROQ</span>
               {summarizing && (
                 <span className="flex items-center gap-1 ml-auto">
-                  {[0, 1, 2].map(j => (
-                    <motion.div
-                      key={j}
-                      className="w-1 h-1 rounded-full bg-neon-cyan/60"
-                      animate={{ opacity: [0.3, 1, 0.3] }}
-                      transition={{ duration: 0.8, repeat: Infinity, delay: j * 0.15 }}
-                    />
-                  ))}
+                  {reducedMotion ? (
+                    [0, 1, 2].map(j => (
+                      <div key={j} className="w-1 h-1 rounded-full bg-neon-cyan/60" />
+                    ))
+                  ) : (
+                    [0, 1, 2].map(j => (
+                      <motion.div
+                        key={j}
+                        className="w-1 h-1 rounded-full bg-neon-cyan/60"
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{ duration: 0.8, repeat: Infinity, delay: j * 0.15 }}
+                      />
+                    ))
+                  )}
                 </span>
               )}
             </div>
@@ -333,9 +341,9 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
           rel="noopener noreferrer"
           role="article"
           aria-label={r.title}
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.06 }}
+          transition={reducedMotion ? { duration: 0 } : { delay: i * 0.06 }}
           className="block group rounded-xl p-4 hover:border-neon-cyan/25 transition-all relative"
           style={{
             background: 'rgba(6,13,20,0.6)',
@@ -399,9 +407,10 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
                   <AnimatePresence>
                     {copiedUrl === r.url && (
                       <motion.div
-                        initial={{ opacity: 0, y: 5, scale: 0.8 }}
+                        initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 5, scale: reducedMotion ? 1 : 0.8 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 5, scale: 0.8 }}
+                        exit={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 5, scale: reducedMotion ? 1 : 0.8 }}
+                        transition={reducedMotion ? { duration: 0 } : { type: 'spring', bounce: 0.3, duration: 0.2 }}
                         className="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap pointer-events-none"
                         style={{
                           background: 'rgba(0,0,0,0.9)',
@@ -430,7 +439,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${r.relevanceScore * 100}%` }}
-              transition={{ delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
+              transition={reducedMotion ? { duration: 0 } : { delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
               className="h-full rounded-full"
               style={{ background: 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))' }}
             />
