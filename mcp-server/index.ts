@@ -18,10 +18,11 @@ import dotenv from 'dotenv'
 import { 
   HORIZON_URL, 
   USDC_ISSUER, 
-  STELLAR_NETWORK,
+  STELLAR_NETWORK, 
   STELLAR_EXPERT_URL,
   AMOUNT_USDC
 } from '../src/lib/constants'
+import { fetchHorizonWithRetry } from '../src/lib/horizonClient.js'
 import type {
   SearchResponse,
   ImageSearchResponse,
@@ -275,12 +276,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { address } = args as { address: string }
 
     try {
-      const res = await fetch(`${HORIZON_URL}/accounts/${address}`)
-      if (res.status === 404) throw new Error(`Account not found on Stellar ${STELLAR_NETWORK.split(':')[1]}`)
-      if (!res.ok) throw new Error(`Horizon returned ${res.status}`)
+      const res = await fetchHorizonWithRetry(`${HORIZON_URL}/accounts/${address}`, {
+        timeoutMs: 8000,
+        maxRetries: 3,
+      })
 
-      const account = await res.json() as any
-      let xlm = '0', usdc = '0'
+      const account = (await res.json()) as any
+      let xlm = '0',
+        usdc = '0'
 
       for (const b of account.balances) {
         if (b.asset_type === 'native') xlm = parseFloat(b.balance).toFixed(4)

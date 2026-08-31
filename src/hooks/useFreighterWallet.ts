@@ -13,6 +13,7 @@ import {
 } from '@stellar/freighter-api'
 import { Horizon } from '@stellar/stellar-sdk'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
+import { withHorizonRetry, classifyHorizonError } from '../lib/horizonClient'
 import type { WalletState, StellarTransaction } from '../types'
 
 export type { WalletState, StellarTransaction }
@@ -82,7 +83,7 @@ export function useFreighterWallet() {
   // Fetch real balances from Horizon
   const fetchBalances = useCallback(async (publicKey: string) => {
     try {
-      const account = await horizon.loadAccount(publicKey)
+      const account = await withHorizonRetry(() => horizon.loadAccount(publicKey))
 
       let xlm = '0'
       let usdc = '0'
@@ -105,10 +106,11 @@ export function useFreighterWallet() {
         usdcBalance: usdc,
         error: null,
       }))
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const classified = classifyHorizonError(err)
       setWallet((prev: WalletState) => ({
         ...prev,
-        error: err.message || 'Failed to load account',
+        error: classified.message || 'Failed to load account',
       }))
     }
   }, [])
@@ -117,12 +119,14 @@ export function useFreighterWallet() {
   const fetchTransactions = useCallback(async (publicKey: string) => {
     setTxLoading(true)
     try {
-      const ops = await horizon
-        .operations()
-        .forAccount(publicKey)
-        .order('desc')
-        .limit(15)
-        .call()
+      const ops = await withHorizonRetry(() =>
+        horizon
+          .operations()
+          .forAccount(publicKey)
+          .order('desc')
+          .limit(15)
+          .call()
+      )
 
       // Expanded transaction lookup to reliably retrieve memos
       const txMap = new Map<string, { memo?: unknown; memo_type?: unknown }>()
