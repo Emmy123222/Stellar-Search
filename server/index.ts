@@ -13,7 +13,7 @@
  *   groq-sdk       — Groq AI (Llama 3)
  */
 
-import express, { Request, Response } from 'express'
+import express, { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import helmet from 'helmet'
@@ -24,6 +24,7 @@ import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
 import logger from './logger'
+import { metrics } from './metrics'
 import {
   STELLAR_NETWORK,
   HORIZON_URL, 
@@ -77,6 +78,25 @@ app.use(
 app.use(cors(buildCorsOptions()))
 app.use(express.json())
 app.use(limiter)
+
+// ─── Metrics Middleware ─────────────────────────────────────────────────────
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const t0 = Date.now()
+  metrics.setInFlight(1)
+
+  res.on('finish', () => {
+    const duration = Date.now() - t0
+    const route = req.route?.path || req.path
+    let errorType: string | undefined
+    if (res.statusCode >= 500) errorType = 'internal_error'
+    else if (res.statusCode === 400) errorType = 'validation'
+    else if (res.statusCode === 402) errorType = 'payment_error'
+    metrics.recordRequest(route, req.method, res.statusCode, duration, errorType)
+    metrics.setInFlight(-1)
+  })
+
+  next()
+})
 
 // ─── In-memory stats ──────────────────────────────────────────────────────
 const stats = {
@@ -517,8 +537,139 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   }
 })
 
+// ─── Health Check State ────────────────────────────────────────────────────
+interface HealthCheck {
+  status: 'pass' | 'fail' | 'warn'
+  responseTimeMs: number
+  error?: string
+}
+
+interface HealthReport {
+  status: 'pass' | 'fail' | 'warn'
+  checks: Record<string, HealthCheck>
+  timestamp: string
+}
+
+async function checkSerper(): Promise<HealthCheck> {
+  const t0 = Date.now()
+  if (!SERPER_API_KEY) {
+    metrics.setProviderHealth('serper', false)
+    return { status: 'fail', responseTimeMs: 0, error: 'SERPER_API_KEY not configured' }
+  }
+  try {
+    const res = await fetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: 'healthcheck', num: 1 }),
+      signal: AbortSignal.timeout(5000),
+    })
+    const ms = Date.now() - t0
+    metrics.recordProviderLatency('serper', res.ok ? 'success' : 'error', ms)
+    if (res.ok) {
+      metrics.setProviderHealth('serper', true)
+      return { status: 'pass', responseTimeMs: ms }
+    }
+    metrics.setProviderHealth('serper', false)
+    return { status: 'fail', responseTimeMs: ms, error: `HTTP ${res.status}` }
+  } catch (err: any) {
+    const ms = Date.now() - t0
+    metrics.recordProviderLatency('serper', 'error', ms)
+    metrics.setProviderHealth('serper', false)
+    return { status: 'fail', responseTimeMs: ms, error: err.message }
+  }
+}
+
+async function checkGroq(): Promise<HealthCheck> {
+  const t0 = Date.now()
+  if (!GROQ_API_KEY) {
+    metrics.setProviderHealth('groq', false)
+    return { status: 'fail', responseTimeMs: 0, error: 'GROQ_API_KEY not configured' }
+  }
+  try {
+    const res = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: 'ping' }],
+      max_tokens: 1,
+    })
+    const ms = Date.now() - t0
+    metrics.recordProviderLatency('groq', 'success', ms)
+    metrics.setProviderHealth('groq', true)
+    return { status: 'pass', responseTimeMs: ms }
+  } catch (err: any) {
+    const ms = Date.now() - t0
+    metrics.recordProviderLatency('groq', 'error', ms)
+    metrics.setProviderHealth('groq', false)
+    return { status: 'fail', responseTimeMs: ms, error: err.message }
+  }
+}
+
+async function checkHorizon(): Promise<HealthCheck> {
+  const t0 = Date.now()
+  if (!HORIZON_URL) {
+    metrics.setProviderHealth('horizon', false)
+    return { status: 'fail', responseTimeMs: 0, error: 'HORIZON_URL not configured' }
+  }
+  try {
+    const res = await fetch(`${HORIZON_URL}`, { signal: AbortSignal.timeout(5000) })
+    const ms = Date.now() - t0
+    metrics.recordProviderLatency('horizon', res.ok ? 'success' : 'error', ms)
+    if (res.ok) {
+      metrics.setProviderHealth('horizon', true)
+      return { status: 'pass', responseTimeMs: ms }
+    }
+    metrics.setProviderHealth('horizon', false)
+    return { status: 'fail', responseTimeMs: ms, error: `HTTP ${res.status}` }
+  } catch (err: any) {
+    const ms = Date.now() - t0
+    metrics.recordProviderLatency('horizon', 'error', ms)
+    metrics.setProviderHealth('horizon', false)
+    return { status: 'fail', responseTimeMs: ms, error: err.message }
+  }
+}
+
+async function checkFacilitator(): Promise<HealthCheck> {
+  const t0 = Date.now()
+  try {
+    const res = await fetch(`${FACILITATOR_URL}/health`, { signal: AbortSignal.timeout(5000) })
+    const ms = Date.now() - t0
+    metrics.recordProviderLatency('facilitator', res.ok ? 'success' : 'error', ms)
+    if (res.ok) {
+      metrics.setProviderHealth('facilitator', true)
+      return { status: 'pass', responseTimeMs: ms }
+    }
+    metrics.setProviderHealth('facilitator', false)
+    return { status: 'warn', responseTimeMs: ms, error: `HTTP ${res.status}` }
+  } catch (err: any) {
+    const ms = Date.now() - t0
+    metrics.recordProviderLatency('facilitator', 'error', ms)
+    metrics.setProviderHealth('facilitator', false)
+    return { status: 'warn', responseTimeMs: ms, error: err.message }
+  }
+}
+
+function buildHealthReport(checks: Record<string, HealthCheck>): HealthReport {
+  const values = Object.values(checks)
+  let status: 'pass' | 'fail' | 'warn' = 'pass'
+  const requiredChecks = ['serper', 'groq', 'horizon']
+  for (const key of requiredChecks) {
+    if (checks[key]?.status === 'fail') {
+      status = 'fail'
+      break
+    }
+  }
+  if (status === 'pass') {
+    for (const c of values) {
+      if (c.status === 'warn') {
+        status = 'warn'
+        break
+      }
+    }
+  }
+  return { status, checks, timestamp: new Date().toISOString() }
+}
+
 // ─── GET /health ──────────────────────────────────────────────────────────
-app.get('/health', (_req: Request, res: Response) => {
+app.get('/health', async (_req: Request, res: Response) => {
   const avg = stats.latencies.length
     ? Math.round(stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length)
     : 0
@@ -526,20 +677,64 @@ app.get('/health', (_req: Request, res: Response) => {
   const up = Math.floor((Date.now() - stats.startTime) / 1000)
   const uptime = up < 60 ? `${up}s` : up < 3600 ? `${Math.floor(up / 60)}m` : `${Math.floor(up / 3600)}h`
 
-  res.json({
-    status:                    'ok',
-    network:                   NETWORK,
-    pricePerQuery:             '0.001 USDC',
-    protocol:                  'x402',
-    facilitator:               FACILITATOR_URL,
-    totalQueries:              stats.totalQueries,
-    totalUsdcSettled:          stats.totalUsdcSettled.toFixed(4),
-    avgLatencyMs:              avg,
+  const [serper, groq, horizon, facilitator] = await Promise.all([
+    checkSerper(),
+    checkGroq(),
+    checkHorizon(),
+    checkFacilitator(),
+  ])
+
+  const report = buildHealthReport({ serper, groq, horizon, facilitator })
+
+  const statusCode = report.status === 'pass' ? 200 : report.status === 'warn' ? 200 : 503
+
+  res.status(statusCode).json({
+    status: report.status,
+    network: NETWORK,
+    pricePerQuery: '0.001 USDC',
+    protocol: 'x402',
+    facilitator: FACILITATOR_URL,
+    totalQueries: stats.totalQueries,
+    totalUsdcSettled: stats.totalUsdcSettled.toFixed(4),
+    avgLatencyMs: avg,
     uptime,
-    serperApiConfigured:       !!SERPER_API_KEY,
-    groqApiConfigured:         !!GROQ_API_KEY,
+    serperApiConfigured: !!SERPER_API_KEY,
+    groqApiConfigured: !!GROQ_API_KEY,
     receivingAddressConfigured: !!RECEIVING_ADDRESS,
+    checks: report.checks,
+    timestamp: report.timestamp,
   })
+})
+
+// ─── GET /metrics ──────────────────────────────────────────────────────────
+const METRICS_TOKEN = process.env.METRICS_TOKEN
+
+function metricsAuth(req: Request, res: Response, next: NextFunction): void {
+  if (!METRICS_TOKEN) {
+    res.status(503).json({ error: 'Metrics endpoint not configured: METRICS_TOKEN not set' })
+    return
+  }
+  const authHeader = req.headers.authorization
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authorization required' })
+    return
+  }
+  const token = authHeader.slice(7)
+  if (token !== METRICS_TOKEN) {
+    res.status(403).json({ error: 'Invalid token' })
+    return
+  }
+  next()
+}
+
+app.get('/metrics', metricsAuth, (req: Request, res: Response) => {
+  const accept = req.headers.accept || ''
+  if (accept.includes('application/json')) {
+    res.json(metrics.toJSON())
+    return
+  }
+  res.setHeader('Content-Type', 'text/plain; version=0.0.4')
+  res.send(metrics.toPrometheus())
 })
 
 // ─── POST /ai/chat ────────────────────────────────────────────────────────
@@ -655,7 +850,8 @@ app.get('/', (_req: Request, res: Response) => {
       'GET /images?q=<query>': '0.001 USDC via x402 — image results',
       'GET /news?q=<query>':   '0.001 USDC via x402 — news articles',
       'POST /ai/chat':         'Groq AI — free',
-      'GET /health':           'Live server stats',
+      'GET /health':           'Live server stats with upstream health checks',
+      'GET /metrics':          'Prometheus metrics (requires Bearer token)',
     },
   })
 })
