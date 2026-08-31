@@ -27,10 +27,10 @@ import logger from './logger'
 import { metrics } from './metrics'
 import {
   STELLAR_NETWORK,
-  HORIZON_URL, 
-  AMOUNT_USDC, 
-  AMOUNT_STROOPS 
+  AMOUNT_USDC,
+  AMOUNT_STROOPS
 } from '../src/lib/constants'
+import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 
 dotenv.config()
 
@@ -175,12 +175,33 @@ app.use((req, res, next) => {
 
 app.use(paymentMiddlewareFromConfig(x402Routes, facilitatorClient, schemes))
 
-const MAX_QUERY_LENGTH = 256
+// ─── Payment Replay Protection Middleware ─────────────────────────────────
+app.use((req, res, next) => {
+  const paidRoutes = ['/search', '/images', '/news']
+  if (paidRoutes.includes(req.path)) {
+    const paymentHeader =
+      req.headers['payment-signature'] ||
+      req.headers['x-payment'] ||
+      req.headers['X-PAYMENT'] ||
+      req.headers['x-payment-response'] ||
+      req.headers['authorization']
+
+    if (paymentHeader) {
+      const consumption = consumePaymentPayload(paymentHeader)
+      if (!consumption.ok) {
+        return res.status(402).json({ error: consumption.error })
+      }
+    }
+  }
+  next()
+})
+
+export const MAX_QUERY_LENGTH = 256
 
 // Validate and sanitize the user-supplied `q` parameter. Returns either the
 // cleaned string or a 400 response body to send back. Centralised so /search
 // and /images share the same rules.
-function validateQuery(
+export function validateQuery(
   q: unknown,
 ): { ok: true; cleanQ: string } | { ok: false; error: string } {
   if (typeof q !== 'string' || !q.trim()) {
@@ -241,7 +262,7 @@ app.get('/search', async (req: Request, res: Response) => {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data = await serperRes.json()
+    const data = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     stats.totalQueries++
@@ -336,7 +357,7 @@ app.get('/images', async (req: Request, res: Response) => {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data = await serperRes.json()
+    const data = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     stats.totalQueries++
@@ -415,7 +436,7 @@ app.get('/news', async (req: Request, res: Response) => {
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
-    const data = await serperRes.json()
+    const data = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
     stats.totalQueries++
@@ -450,223 +471,6 @@ app.get('/news', async (req: Request, res: Response) => {
     return res.status(500).json({ error: 'News search failed. Check server logs.' })
   }
 })
-
-// ─── POST /ai/chat ────────────────────────────────────────────────────────
-// Streams responses as Server-Sent Events when the client sends
-// `Accept: text/event-stream`; otherwise returns the full completion as JSON
-// (back-compat fallback for callers that don't support SSE).
-app.post('/ai/chat', async (req: Request, res: Response) => {
-  const { messages } = req.body as {
-    messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
-  }
-
-  if (!messages?.length) {
-    return res.status(400).json({ error: 'messages array required' })
-  }
-
-  const wantsStream =
-    (req.headers.accept || '').includes('text/event-stream') ||
-    req.query.stream === '1'
-
-  const groqMessages = [
-    {
-      role: 'system' as const,
-      content:
-        'You are StellarSearch AI, a concise research assistant. Help users craft better search queries and understand results. Keep responses under 200 words.',
-    },
-    ...messages,
-  ]
-
-  if (!wantsStream) {
-    try {
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: groqMessages,
-        max_tokens:  512,
-        temperature: 0.7,
-      })
-
-      const content = completion.choices[0]?.message?.content || 'No response.'
-      return res.json({ content, model: completion.model })
-    } catch (err: any) {
-      console.error('[groq error]', err.message)
-      return res.status(500).json({ error: `Groq AI error: ${err.message}` })
-    }
-  }
-
-  // SSE path
-  res.setHeader('Content-Type', 'text/event-stream')
-  res.setHeader('Cache-Control', 'no-cache, no-transform')
-  res.setHeader('Connection', 'keep-alive')
-  // Disable proxy buffering (e.g. nginx) so chunks flush immediately
-  res.setHeader('X-Accel-Buffering', 'no')
-  res.flushHeaders?.()
-
-  const sendEvent = (event: string, data: Record<string, unknown>) => {
-    res.write(`event: ${event}\n`)
-    res.write(`data: ${JSON.stringify(data)}\n\n`)
-  }
-
-  // Abort the Groq stream if the client disconnects mid-response.
-  const controller = new AbortController()
-  req.on('close', () => controller.abort())
-
-  try {
-    const stream = await groq.chat.completions.create(
-      {
-        model: 'llama-3.3-70b-versatile',
-        messages: groqMessages,
-        max_tokens:  512,
-        temperature: 0.7,
-        stream: true,
-      },
-      { signal: controller.signal },
-    )
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content
-      if (delta) sendEvent('delta', { content: delta })
-    }
-    sendEvent('done', { model: 'llama-3.3-70b-versatile' })
-    res.end()
-  } catch (err: any) {
-    if (controller.signal.aborted) return res.end()
-    console.error('[groq stream error]', err.message)
-    sendEvent('error', { error: `Groq AI error: ${err.message}` })
-    res.end()
-  }
-})
-
-// ─── Health Check State ────────────────────────────────────────────────────
-interface HealthCheck {
-  status: 'pass' | 'fail' | 'warn'
-  responseTimeMs: number
-  error?: string
-}
-
-interface HealthReport {
-  status: 'pass' | 'fail' | 'warn'
-  checks: Record<string, HealthCheck>
-  timestamp: string
-}
-
-async function checkSerper(): Promise<HealthCheck> {
-  const t0 = Date.now()
-  if (!SERPER_API_KEY) {
-    metrics.setProviderHealth('serper', false)
-    return { status: 'fail', responseTimeMs: 0, error: 'SERPER_API_KEY not configured' }
-  }
-  try {
-    const res = await fetch('https://google.serper.dev/search', {
-      method: 'POST',
-      headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: 'healthcheck', num: 1 }),
-      signal: AbortSignal.timeout(5000),
-    })
-    const ms = Date.now() - t0
-    metrics.recordProviderLatency('serper', res.ok ? 'success' : 'error', ms)
-    if (res.ok) {
-      metrics.setProviderHealth('serper', true)
-      return { status: 'pass', responseTimeMs: ms }
-    }
-    metrics.setProviderHealth('serper', false)
-    return { status: 'fail', responseTimeMs: ms, error: `HTTP ${res.status}` }
-  } catch (err: any) {
-    const ms = Date.now() - t0
-    metrics.recordProviderLatency('serper', 'error', ms)
-    metrics.setProviderHealth('serper', false)
-    return { status: 'fail', responseTimeMs: ms, error: err.message }
-  }
-}
-
-async function checkGroq(): Promise<HealthCheck> {
-  const t0 = Date.now()
-  if (!GROQ_API_KEY) {
-    metrics.setProviderHealth('groq', false)
-    return { status: 'fail', responseTimeMs: 0, error: 'GROQ_API_KEY not configured' }
-  }
-  try {
-    const res = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: 'ping' }],
-      max_tokens: 1,
-    })
-    const ms = Date.now() - t0
-    metrics.recordProviderLatency('groq', 'success', ms)
-    metrics.setProviderHealth('groq', true)
-    return { status: 'pass', responseTimeMs: ms }
-  } catch (err: any) {
-    const ms = Date.now() - t0
-    metrics.recordProviderLatency('groq', 'error', ms)
-    metrics.setProviderHealth('groq', false)
-    return { status: 'fail', responseTimeMs: ms, error: err.message }
-  }
-}
-
-async function checkHorizon(): Promise<HealthCheck> {
-  const t0 = Date.now()
-  if (!HORIZON_URL) {
-    metrics.setProviderHealth('horizon', false)
-    return { status: 'fail', responseTimeMs: 0, error: 'HORIZON_URL not configured' }
-  }
-  try {
-    const res = await fetch(`${HORIZON_URL}`, { signal: AbortSignal.timeout(5000) })
-    const ms = Date.now() - t0
-    metrics.recordProviderLatency('horizon', res.ok ? 'success' : 'error', ms)
-    if (res.ok) {
-      metrics.setProviderHealth('horizon', true)
-      return { status: 'pass', responseTimeMs: ms }
-    }
-    metrics.setProviderHealth('horizon', false)
-    return { status: 'fail', responseTimeMs: ms, error: `HTTP ${res.status}` }
-  } catch (err: any) {
-    const ms = Date.now() - t0
-    metrics.recordProviderLatency('horizon', 'error', ms)
-    metrics.setProviderHealth('horizon', false)
-    return { status: 'fail', responseTimeMs: ms, error: err.message }
-  }
-}
-
-async function checkFacilitator(): Promise<HealthCheck> {
-  const t0 = Date.now()
-  try {
-    const res = await fetch(`${FACILITATOR_URL}/health`, { signal: AbortSignal.timeout(5000) })
-    const ms = Date.now() - t0
-    metrics.recordProviderLatency('facilitator', res.ok ? 'success' : 'error', ms)
-    if (res.ok) {
-      metrics.setProviderHealth('facilitator', true)
-      return { status: 'pass', responseTimeMs: ms }
-    }
-    metrics.setProviderHealth('facilitator', false)
-    return { status: 'warn', responseTimeMs: ms, error: `HTTP ${res.status}` }
-  } catch (err: any) {
-    const ms = Date.now() - t0
-    metrics.recordProviderLatency('facilitator', 'error', ms)
-    metrics.setProviderHealth('facilitator', false)
-    return { status: 'warn', responseTimeMs: ms, error: err.message }
-  }
-}
-
-function buildHealthReport(checks: Record<string, HealthCheck>): HealthReport {
-  const values = Object.values(checks)
-  let status: 'pass' | 'fail' | 'warn' = 'pass'
-  const requiredChecks = ['serper', 'groq', 'horizon']
-  for (const key of requiredChecks) {
-    if (checks[key]?.status === 'fail') {
-      status = 'fail'
-      break
-    }
-  }
-  if (status === 'pass') {
-    for (const c of values) {
-      if (c.status === 'warn') {
-        status = 'warn'
-        break
-      }
-    }
-  }
-  return { status, checks, timestamp: new Date().toISOString() }
-}
 
 // ─── GET /health ──────────────────────────────────────────────────────────
 app.get('/health', async (_req: Request, res: Response) => {
@@ -857,7 +661,7 @@ app.get('/', (_req: Request, res: Response) => {
 })
 
 // ─── Start ────────────────────────────────────────────────────────────────
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`\n🚀 StellarSearch on http://localhost:${PORT}`)
     console.log(`   Network:     ${NETWORK}`)

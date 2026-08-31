@@ -17,7 +17,7 @@ import { ExactStellarScheme }                  from '@x402/stellar/exact/client'
 import { signAuthEntry, getNetworkDetails }    from '@stellar/freighter-api'
 import { Networks }                            from '@stellar/stellar-sdk'
 import { Buffer }                              from 'buffer'
-import { HORIZON_URL, IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
+import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
   typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
@@ -64,6 +64,12 @@ export interface SearchSession {
   suggestions: string[]
 }
 
+/**
+ * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
+ *
+ * @param walletAddress - The Stellar public key address of the connected wallet, or `null` if unauthenticated.
+ * @returns Object containing search session state (`session`), search execution function (`search`), and session reset function (`reset`).
+ */
 export function useSearch(walletAddress: string | null = null) {
   const [session, setSession] = useState<SearchSession>({
     query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],

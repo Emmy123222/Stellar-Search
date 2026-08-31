@@ -303,6 +303,7 @@ docs: add CONTRIBUTING.md
 
 4. Make sure:
    - [ ] `npx tsc --noEmit` passes with no errors.
+   - [ ] `npm run lint` passes with zero errors and zero warnings (`eslint . --max-warnings=0`).
    - [ ] The app starts and the affected feature works manually.
    - [ ] No new `console.log` / debug statements left in.
    - [ ] No secrets or `.env` values committed.
@@ -397,7 +398,36 @@ const signedAuthEntry = Buffer.from(raw as unknown as Uint8Array).toString('base
 
 ## Testing
 
-Currently the project relies on manual testing. We are actively adding automated tests — see the open [testing issues](https://github.com/Emmy123222/Stellar-Search/issues?q=is%3Aopen+label%3Atesting). If you are adding a new hook or server route, please include tests.
+Vitest + @vitest/coverage-v8 enforces **coverage thresholds for statements, branches, functions, and lines**. Configuration lives in `vite.config.ts:6` and is documented in `README.md#testing--coverage`.
+
+```bash
+npm run test              # run tests without coverage
+npm run test:coverage     # run with coverage + thresholds (CI gate)
+# reports in coverage/ (text, json, html, lcov)
+open coverage/index.html  # view HTML report
+```
+
+### Coverage thresholds (ratchet)
+
+Global thresholds start modest and ratchet upward as payment/wallet/API/MCP/UI behavior moves from untested to tested:
+
+| Scope | Statements | Branches | Functions | Lines |
+|---|---:|---:|---:|---:|
+| Global | 35% | 30% | 28% | 35% |
+| `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
+| `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
+| `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
+| `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
+| `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
+| `server/index.ts` | 65% | 60% | 65% | 65% |
+| `api/search.ts` | 90% | 75% | 80% | 90% |
+| `api/health.ts` | 80% | 50% | 100% | 80% |
+| `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
+| `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
+
+**Ratchet policy:** If a module's real coverage exceeds its threshold, bump the threshold in `vite.config.ts` in the same PR. CI fails if any threshold drops. Global ratchets `15 → 25 → 35` as new payment, wallet, API, MCP, and UI tests land. Keep Express (`server/`), Vercel (`api/`), browser (`src/`), and MCP (`mcp-server/`) constants aligned — `STELLAR_NETWORK`, `USDC_CONTRACT`, `AMOUNT_STROOPS=10000` → `0.001 USDC` (see `server/index.ts:104`, `api/search.ts:48`, `mcp-server/index.ts:19`). Thresholds verify the **x402 settlement semantics** are preserved for paid routes.
+
+When adding a new hook or server route, include tests. Five utility tests can pass while payment, wallet, API, MCP, and UI remain untested — thresholds prevent that.
 
 ### Manual testing checklist
 

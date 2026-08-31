@@ -109,7 +109,13 @@ Browser (Freighter) → GET /search?q=...
 3. The x402 client signs a Soroban authorization entry via Freighter wallet
 4. Retries with `X-Payment` header containing the signed entry
 5. OpenZeppelin facilitator at `channels.openzeppelin.com/x402/testnet` verifies the signature and settles 0.001 USDC on Stellar testnet
-6. Server receives confirmation and returns search results
+6. Server enforces payment integrity (`src/lib/paymentIntegrity.ts`), rejecting replayed or duplicate payloads within the 300-second validity window, and returns search results
+
+### Payment Integrity & Replay Protection
+
+To guarantee that each payment identifier authorizes **exactly one provider call**, StellarSearch tracks consumed payment identifiers across Express (`server/index.ts`) and Vercel (`api/search.ts`) runtimes:
+- **Payload Invalidation:** Extracts transaction hashes (or SHA-256 fallback hashes of payment headers) and invalidates consumed payloads for a 300-second window.
+- **Concurrency Throttling:** Rapid parallel requests using identical payment payloads are throttled so only one search query proceeds; concurrent duplicates immediately receive HTTP 402 (`Payment payload already consumed`).
 
 ### Sequence diagram
 
@@ -194,6 +200,41 @@ stellar-search/
 ```
 
 Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.
+
+---
+
+## Testing & Coverage
+
+Coverage is enforced via **Vitest + @vitest/coverage-v8** with thresholds for **statements, branches, functions, and lines** (see `vite.config.ts:6`).
+
+```bash
+npm run test              # unit tests without coverage
+npm run test:coverage     # run with coverage + thresholds (CI gate)
+```
+
+Reports are generated to `coverage/` (`text`, `json`, `html`, `lcov`). CI uploads the `coverage/` artifact and fails if thresholds are not met.
+
+### Current thresholds (ratchet upward)
+
+Global thresholds are deliberately modest initially and ratchet upward as payment/wallet/API/MCP/UI tests land:
+
+| Scope | Statements | Branches | Functions | Lines |
+|---|---:|---:|---:|---:|
+| **Global** | 35% | 30% | 28% | 35% |
+| `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
+| `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
+| `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
+| `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
+| `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
+| `server/index.ts` | 65% | 60% | 65% | 65% |
+| `api/search.ts` | 90% | 75% | 80% | 90% |
+| `api/health.ts` | 80% | 50% | 100% | 80% |
+| `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
+| `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
+
+> **Ratchet policy:** When a module's real coverage exceeds its threshold, bump the threshold in `vite.config.ts` in the same PR. Global thresholds ratchet `15 → 25 → 35` as payment, wallet, API, MCP, and UI behavior moves from untested to tested. Keep Express (`server/`), Vercel (`api/`), browser (`src/`), and MCP (`mcp-server/`) constants aligned (`STELLAR_NETWORK`, `USDC_CONTRACT`, `AMOUNT_STROOPS=10000` → `0.001 USDC`).
+
+Coverage verifies the **x402 settlement semantics** for paid routes (`/search`, `/images`, `/news`): `scheme=exact`, `network=stellar:testnet|mainnet`, `amount=10000 stroops`, `asset=C...` (Soroban USDC contract, not `USDC:ISSUER`), `payTo=G...`. See `server/index.ts:104`, `api/search.ts:48`, and `mcp-server/index.ts:19`.
 
 ---
 
