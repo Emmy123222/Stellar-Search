@@ -117,7 +117,7 @@ export async function preflightPayment({
         if (access.error) {
           return {
             ok: false,
-            reason: access.error.message,
+            reason: access.error,
             recoveryAction: 'Approve Freighter access for this app.',
           }
         }
@@ -144,6 +144,15 @@ export async function preflightPayment({
             ok: false,
             reason: 'Freighter selected account does not match the active account.',
             recoveryAction: 'Select the matching account in Freighter.',
+          }
+        }
+
+        const requiredAmount = Number(amount)
+        if (!Number.isFinite(requiredAmount) || requiredAmount <= 0) {
+          return {
+            ok: false,
+            reason: 'Payment amount is invalid.',
+            recoveryAction: 'Enter a valid payment amount.',
           }
         }
 
@@ -191,15 +200,6 @@ export async function preflightPayment({
             ok: false,
             reason: 'USDC trustline is missing.',
             recoveryAction: 'Add the USDC trustline in Freighter.',
-          }
-        }
-
-        const requiredAmount = Number(amount)
-        if (!Number.isFinite(requiredAmount) || requiredAmount <= 0) {
-          return {
-            ok: false,
-            reason: 'Payment amount is invalid.',
-            recoveryAction: 'Enter a valid payment amount.',
           }
         }
 
@@ -448,7 +448,7 @@ export function useFreighterWallet() {
 
       const accessResult = await requestAccess()
       if (accessResult.error) {
-        throw new Error(accessResult.error.message)
+        throw new Error(accessResult.error)
       }
 
       const addressResult = await getAddress()
