@@ -7,6 +7,7 @@ import {
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
+import { mapSerperStatus, mapSerperNetworkError } from '../src/lib/serperError'
 import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────
@@ -132,8 +133,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!serperRes.ok) {
       const errText = await serperRes.text()
       console.error('[serper]', serperRes.status, errText)
-      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
-      return res.status(502).json(errorBody)
+      const mapped = mapSerperStatus(serperRes.status)
+      return res.status(mapped.httpStatus).json(mapped.body)
     }
 
     const data: unknown = await serperRes.json()
@@ -156,7 +157,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (err: any) {
     console.error('[search error]', err.message)
-    const errorBody: ApiErrorResponse = { error: 'Search failed.' }
-    return res.status(500).json(errorBody)
+    const mapped = mapSerperNetworkError()
+    return res.status(mapped.httpStatus).json(mapped.body)
   }
 }

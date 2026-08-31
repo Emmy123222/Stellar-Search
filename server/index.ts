@@ -41,6 +41,7 @@ import type {
   NewsSearchResponse,
   ApiErrorResponse,
 } from '../src/types/index.js'
+import { mapSerperStatus, mapSerperNetworkError } from '../src/lib/serperError.js'
 
 dotenv.config()
 
@@ -251,10 +252,10 @@ app.get('/search', async (req: Request, res: Response) => {
     })
 
     if (!serperRes.ok) {
-      const err = await serperRes.text()
-      console.error('[serper]', serperRes.status, err)
-      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
-      return res.status(502).json(errorBody)
+      const errText = await serperRes.text()
+      console.error('[serper]', serperRes.status, errText)
+      const mapped = mapSerperStatus(serperRes.status)
+      return res.status(mapped.httpStatus).json(mapped.body)
     }
 
     const data: unknown = await serperRes.json()
@@ -321,8 +322,8 @@ app.get('/search', async (req: Request, res: Response) => {
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[search error]', err.message)
-    const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.' }
-    return res.status(500).json(errorBody)
+    const mapped = mapSerperNetworkError()
+    return res.status(mapped.httpStatus).json(mapped.body)
   }
 })
 
@@ -353,10 +354,10 @@ app.get('/images', async (req: Request, res: Response) => {
     })
 
     if (!serperRes.ok) {
-      const err = await serperRes.text()
-      console.error('[serper images]', serperRes.status, err)
-      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
-      return res.status(502).json(errorBody)
+      const errText = await serperRes.text()
+      console.error('[serper images]', serperRes.status, errText)
+      const mapped = mapSerperStatus(serperRes.status)
+      return res.status(mapped.httpStatus).json(mapped.body)
     }
 
     const data: unknown = await serperRes.json()
@@ -385,8 +386,8 @@ app.get('/images', async (req: Request, res: Response) => {
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[images error]', err.message)
-    const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.' }
-    return res.status(500).json(errorBody)
+    const mapped = mapSerperNetworkError()
+    return res.status(mapped.httpStatus).json(mapped.body)
   }
 })
 
@@ -430,10 +431,10 @@ app.get('/news', async (req: Request, res: Response) => {
     })
 
     if (!serperRes.ok) {
-      const err = await serperRes.text()
-      console.error('[serper news]', serperRes.status, err)
-      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
-      return res.status(502).json(errorBody)
+      const errText = await serperRes.text()
+      console.error('[serper news]', serperRes.status, errText)
+      const mapped = mapSerperStatus(serperRes.status)
+      return res.status(mapped.httpStatus).json(mapped.body)
     }
 
     const data: unknown = await serperRes.json()
@@ -462,8 +463,8 @@ app.get('/news', async (req: Request, res: Response) => {
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[news error]', err.message)
-    const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.' }
-    return res.status(500).json(errorBody)
+    const mapped = mapSerperNetworkError()
+    return res.status(mapped.httpStatus).json(mapped.body)
   }
 })
 

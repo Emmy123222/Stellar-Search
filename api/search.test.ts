@@ -155,6 +155,33 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
     })
     await handler(req, res)
     expect(res._status).toBe(502)
+    expect(res._json.providerCode).toBe('SERPER_PROVIDER_ERROR')
+  })
+
+  it('MCP/browser alignment: maps distinct Serper statuses to stable error codes', async () => {
+    const cases: Array<{ upstream: number; expectedStatus: number; expectedCode: string }> = [
+      { upstream: 401, expectedStatus: 503, expectedCode: 'SERPER_AUTH_FAILURE' },
+      { upstream: 403, expectedStatus: 503, expectedCode: 'SERPER_QUOTA_EXCEEDED' },
+      { upstream: 429, expectedStatus: 429, expectedCode: 'SERPER_RATE_LIMITED' },
+      { upstream: 502, expectedStatus: 502, expectedCode: 'SERPER_PROVIDER_ERROR' },
+    ]
+
+    for (const c of cases) {
+      const fakeTx = Buffer.from(JSON.stringify({ transactionHash: `tx_map_${c.upstream}` })).toString('base64')
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: c.upstream,
+        text: async () => 'upstream body',
+      } as any)
+      const { req, res } = mockReqRes({
+        method: 'GET',
+        query: { q: 'stellar' },
+        headers: { 'x-payment': fakeTx },
+      })
+      await handler(req, res)
+      expect(res._status).toBe(c.expectedStatus)
+      expect(res._json.providerCode).toBe(c.expectedCode)
+    }
   })
 
   it('applies freshness filter', async () => {

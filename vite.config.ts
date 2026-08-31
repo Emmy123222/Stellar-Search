@@ -34,6 +34,7 @@ export default defineConfig({
         'src/lib/stellar.ts': { statements: 85, branches: 75, functions: 85, lines: 85 },
         'src/lib/paymentIntegrity.ts': { statements: 90, branches: 85, functions: 95, lines: 90 },
         'src/lib/serperNormalizer.ts': { statements: 95, branches: 90, functions: 100, lines: 95 },
+        'src/lib/serperError.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
         'server/corsConfig.ts': { statements: 90, branches: 85, functions: 95, lines: 90 },
         'src/components/search/SearchBar.tsx': { statements: 80, branches: 80, functions: 90, lines: 80 },
         'server/index.ts': { statements: 65, branches: 60, functions: 55, lines: 65 },

@@ -195,29 +195,39 @@ describe('settle — successful search after payment', () => {
 // ─── Reject ───────────────────────────────────────────────────────────────────
 
 describe('reject — upstream errors after payment header is present', () => {
-  it('returns 502 when Serper responds 500', async () => {
+  it('returns 502 when Serper responds 500 (provider error)', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'internal error' } as any)
     const res = await request(app).get('/search?q=stellar').set('x-payment', makeReceipt('tx_rej_500'))
     expect(res.status).toBe(502)
-    expect(res.body.error).toMatch(/Serper/)
+    expect(res.body.providerCode).toBe('SERPER_PROVIDER_ERROR')
   })
 
-  it('returns 502 when Serper responds 403 (bad API key)', async () => {
+  it('returns 503 when Serper responds 403 (quota exceeded)', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 403, text: async () => 'forbidden' } as any)
     const res = await request(app).get('/search?q=stellar').set('x-payment', makeReceipt('tx_rej_403'))
-    expect(res.status).toBe(502)
+    expect(res.status).toBe(503)
+    expect(res.body.providerCode).toBe('SERPER_QUOTA_EXCEEDED')
   })
 
-  it('returns 502 when /images Serper responds with error', async () => {
+  it('returns 429 when /images Serper responds with rate limit', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 429, text: async () => 'rate limited' } as any)
     const res = await request(app).get('/images?q=stellar').set('x-payment', makeReceipt('tx_rej_img'))
-    expect(res.status).toBe(502)
+    expect(res.status).toBe(429)
+    expect(res.body.providerCode).toBe('SERPER_RATE_LIMITED')
   })
 
-  it('returns 500 when fetch throws (network failure)', async () => {
+  it('returns 502 when fetch throws (network failure)', async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'))
     const res = await request(app).get('/search?q=stellar').set('x-payment', makeReceipt('tx_rej_net'))
-    expect(res.status).toBe(500)
+    expect(res.status).toBe(502)
+    expect(res.body.providerCode).toBe('SERPER_NETWORK_ERROR')
+  })
+
+  it('returns 503 when Serper responds 401 (auth failure)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'unauthorized' } as any)
+    const res = await request(app).get('/search?q=stellar').set('x-payment', makeReceipt('tx_rej_401'))
+    expect(res.status).toBe(503)
+    expect(res.body.providerCode).toBe('SERPER_AUTH_FAILURE')
   })
 })
 
