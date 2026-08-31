@@ -34,6 +34,111 @@ import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSe
 
 export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
 
+export interface SavedResultSet {
+  id: string
+  query: string
+  timestamp: string
+  txHash: string | null
+  results: SearchResult[]
+}
+
+export interface MovedResult {
+  result: SearchResult
+  fromRank: number
+  toRank: number
+}
+
+export interface ResultComparison {
+  added: SearchResult[]
+  removed: SearchResult[]
+  moved: MovedResult[]
+  unchanged: Array<{ result: SearchResult; rank: number }>
+}
+
+const RESULT_SETS_KEY = 'stellarsearch_result_sets'
+const SELECTED_RESULT_SETS_KEY = 'stellarsearch_selected_result_sets'
+
+const canonicalUrl = (result: SearchResult): string =>
+  (result as SearchResult & { url?: string }).url ?? ''
+
+const readResultSets = (): SavedResultSet[] => {
+  try {
+    const raw = localStorage.getItem(RESULT_SETS_KEY)
+    return raw ? (JSON.parse(raw) as SavedResultSet[]) : []
+  } catch {
+    return []
+  }
+}
+
+const writeResultSets = (sets: SavedResultSet[]) => {
+  try {
+    localStorage.setItem(RESULT_SETS_KEY, JSON.stringify(sets))
+  } catch {
+    // Ignore storage quota / privacy errors.
+  }
+}
+
+const readSelectedResultSetIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem(SELECTED_RESULT_SETS_KEY)
+    return raw ? (JSON.parse(raw) as string[]) : []
+  } catch {
+    return []
+  }
+}
+
+const writeSelectedResultSetIds = (ids: string[]) => {
+  try {
+    localStorage.setItem(SELECTED_RESULT_SETS_KEY, JSON.stringify(ids))
+  } catch {
+    // Ignore storage quota / privacy errors.
+  }
+}
+
+/**
+ * Compares two paid result sets by canonical URL.
+ * Results present only in `current` are added; only in `previous` are removed;
+ * present in both but at different ranks are moved; otherwise unchanged.
+ */
+export function compareResultSets(
+  previous: SearchResult[],
+  current: SearchResult[]
+): ResultComparison {
+  const previousByUrl = new Map<string, { result: SearchResult; rank: number }>()
+  const currentByUrl = new Map<string, { result: SearchResult; rank: number }>()
+
+  previous.forEach((result, index) => {
+    const url = canonicalUrl(result)
+    if (!previousByUrl.has(url)) previousByUrl.set(url, { result, rank: index + 1 })
+  })
+  current.forEach((result, index) => {
+    const url = canonicalUrl(result)
+    if (!currentByUrl.has(url)) currentByUrl.set(url, { result, rank: index + 1 })
+  })
+
+  const added: SearchResult[] = []
+  const removed: SearchResult[] = []
+  const moved: MovedResult[] = []
+  const unchanged: Array<{ result: SearchResult; rank: number }> = []
+
+  currentByUrl.forEach((entry, url) => {
+    const prev = previousByUrl.get(url)
+    if (!prev) {
+      added.push(entry.result)
+    } else if (prev.rank !== entry.rank) {
+      moved.push({ result: entry.result, fromRank: prev.rank, toRank: entry.rank })
+    } else {
+      unchanged.push({ result: entry.result, rank: entry.rank })
+    }
+  })
+
+  previousByUrl.forEach((entry, url) => {
+    if (!currentByUrl.has(url)) removed.push(entry.result)
+  })
+
+  return { added, removed, moved, unchanged }
+}
+
 /**
  * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
  *
@@ -44,6 +149,8 @@ export function useSearch(walletAddress: string | null = null) {
   const [session, setSession] = useState<SearchSession>({
     query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
   })
+  const [savedResultSets, setSavedResultSets] = useState<SavedResultSet[]>(() => readResultSets())
+  const [selectedResultSetIds, setSelectedResultSetIds] = useState<string[]>(() => readSelectedResultSetIds())
 
   const search = useCallback(
     async (
@@ -229,6 +336,20 @@ export function useSearch(walletAddress: string | null = null) {
           const updated = [newReceipt, ...receipts].slice(0, 50)
           localStorage.setItem('stellarsearch_receipts', JSON.stringify(updated))
           console.log('📄 Receipt persisted')
+          // Keep only last 50 paid result sets for side-by-side comparison
+          const setsRaw = localStorage.getItem(RESULT_SETS_KEY)
+          const resultSets: SavedResultSet[] = setsRaw ? JSON.parse(setsRaw) : []
+          const newResultSet: SavedResultSet = {
+            id: `set_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            query: query.trim(),
+            timestamp: new Date().toISOString(),
+            txHash: data.txHash,
+            results: data.results ?? [],
+          }
+          const updatedResultSets = [newResultSet, ...resultSets].slice(0, 50)
+          localStorage.setItem(RESULT_SETS_KEY, JSON.stringify(updatedResultSets))
+          setSavedResultSets(updatedResultSets)
+          console.log('📄 Result set persisted')
         } catch (e) {
           console.warn('Failed to persist receipt:', e)
         }
@@ -250,5 +371,47 @@ export function useSearch(walletAddress: string | null = null) {
     setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [] })
   }, [])
 
-  return { session, search, reset }
+  const toggleResultSetSelection = useCallback((id: string) => {
+    setSelectedResultSetIds(prev => {
+      const next = prev.includes(id)
+        ? prev.filter(selected => selected !== id)
+        : prev.length >= 2
+          ? [prev[1], id]
+          : [...prev, id]
+      writeSelectedResultSetIds(next)
+      return next
+    })
+  }, [])
+
+  const removeResultSet = useCallback((id: string) => {
+    setSavedResultSets(prev => {
+      const next = prev.filter(set => set.id !== id)
+      writeResultSets(next)
+      return next
+    })
+    setSelectedResultSetIds(prev => {
+      const next = prev.filter(selected => selected !== id)
+      writeSelectedResultSetIds(next)
+      return next
+    })
+  }, [])
+
+  const clearResultSetSelection = useCallback(() => {
+    setSelectedResultSetIds([])
+    writeSelectedResultSetIds([])
+  }, [])
+
+  const compareSelectedResultSets = useCallback((): ResultComparison | null => {
+    const selected = selectedResultSetIds
+      .map(id => savedResultSets.find(set => set.id === id))
+      .filter((set): set is SavedResultSet => Boolean(set))
+    if (selected.length !== 2) return null
+    return compareResultSets(selected[0].results, selected[1].results)
+  }, [savedResultSets, selectedResultSetIds])
+
+  const selectedResultSets = selectedResultSetIds
+    .map(id => savedResultSets.find(set => set.id === id))
+    .filter((set): set is SavedResultSet => Boolean(set))
+
+  return { session, search, reset, savedResultSets, selectedResultSets, toggleResultSetSelection, removeResultSet, clearResultSetSelection, compareSelectedResultSets }
 }
