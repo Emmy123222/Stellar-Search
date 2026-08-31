@@ -13,28 +13,9 @@ import {
 } from '@stellar/freighter-api'
 import { Horizon } from '@stellar/stellar-sdk'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
+import type { WalletState, StellarTransaction } from '../types'
 
-export interface WalletState {
-  publicKey: string | null
-  connected: boolean
-  network: string
-  xlmBalance: string
-  usdcBalance: string
-  loading: boolean
-  error: string | null
-}
-
-export interface StellarTransaction {
-  id: string
-  hash: string
-  type: string
-  amount: string
-  asset: string
-  from: string
-  to: string
-  timestamp: string
-  memo?: string
-}
+export type { WalletState, StellarTransaction }
 
 const horizon = new Horizon.Server(HORIZON_URL)
 

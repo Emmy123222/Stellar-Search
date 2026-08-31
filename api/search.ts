@@ -6,6 +6,7 @@ import {
   AMOUNT_USDC
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import type { SearchResponse, ApiErrorResponse, SearchResult } from '../src/types/index.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -30,18 +31,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     'X-Payment-Response',
   ].join(', '))
 
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Allow', 'GET, OPTIONS')
-    return res.status(200).end()
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET, OPTIONS')
-    return res.status(405).json({ error: 'Method not allowed' })
+    const errorBody: ApiErrorResponse = { error: 'Method not allowed' }
+    return res.status(405).json(errorBody)
   }
 
   const { q, count = '5', freshness } = req.query as Record<string, string>
 
-  if (!q?.trim()) return res.status(400).json({ error: 'Missing required parameter: q' })
+  if (!q?.trim()) {
+    const errorBody: ApiErrorResponse = { error: 'Missing required parameter: q' }
+    return res.status(400).json(errorBody)
+  }
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -77,13 +78,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'PAYMENT-REQUIRED',
       Buffer.from(JSON.stringify(paymentRequired)).toString('base64')
     )
-    return res.status(402).json({ error: 'Payment required' })
+    const errorBody: ApiErrorResponse = { error: 'Payment required' }
+    return res.status(402).json(errorBody)
   }
 
   // ─── Payment Replay Protection ───────────────────────────────────────────
   const consumption = consumePaymentPayload(paymentHeader)
   if (!consumption.ok) {
-    return res.status(402).json({ error: consumption.error })
+    const errorBody: ApiErrorResponse = { error: consumption.error }
+    return res.status(402).json(errorBody)
   }
 
   // ─── Payment present — proceed with search ────────────────────────────────
@@ -128,13 +131,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!serperRes.ok) {
       const errText = await serperRes.text()
       console.error('[serper]', serperRes.status, errText)
-      return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
+      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
+      return res.status(502).json(errorBody)
     }
 
-    const data      = await serperRes.json() as any
+    const data      = await serperRes.json() as Record<string, any>
     const latencyMs = Date.now() - t0
 
-    const results = (data.organic || []).map((r: any, i: number) => ({
+    const results: SearchResult[] = (data.organic || []).map((r: any, i: number) => ({
       id:             String(i + 1),
       title:          r.title   || 'No title',
       url:            r.link,
@@ -147,7 +151,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       publishedAt:    r.date || undefined,
     }))
 
-    return res.json({
+    const responseBody: SearchResponse = {
       query:      q.trim(),
       results,
       count:      results.length,
@@ -156,10 +160,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       currency:   'USDC',
       txHash,
       latencyMs,
-    })
+    }
+
+    return res.json(responseBody)
 
   } catch (err: any) {
     console.error('[search error]', err.message)
-    return res.status(500).json({ error: 'Search failed.' })
+    const errorBody: ApiErrorResponse = { error: 'Search failed.' }
+    return res.status(500).json(errorBody)
   }
 }

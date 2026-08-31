@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["scripts/**/*", "src/lib/constants.ts"],
+  "include": ["scripts/**/*", "src/lib/constants.ts", "src/types/**/*"],
   "exclude": ["node_modules", "dist"]
 }

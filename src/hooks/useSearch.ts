@@ -30,39 +30,9 @@ const SOROBAN_RPC_TESTNET = 'https://soroban-testnet.stellar.org'
 const SOROBAN_RPC_MAINNET = 'https://soroban-rpc.mainnet.stellar.org' // Or another public RPC
 const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET
 
-export interface SearchReceipt {
-  txHash: string
-  query: string
-  amount: string
-  timestamp: string
-  network: string
-}
+import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSession } from '../types'
 
-export interface SearchResult {
-  id: string
-  title: string
-  url: string
-  description: string
-  source: string
-  relevanceScore: number
-  publishedAt?: string
-}
-
-// x402 flow steps, per the official x402 quickstart:
-//   1 Request   2 402 Received   3 Sign Auth   4 Retry   5 Facilitate   6 Result
-export type PaymentStep = 1 | 2 | 3 | 4 | 5 | 6
-
-export interface SearchSession {
-  query: string
-  results: SearchResult[]
-  txHash: string | null
-  paidAmount: string | null
-  status: 'idle' | 'searching' | 'complete' | 'error'
-  step?: PaymentStep
-  error?: string
-  durationMs?: number
-  suggestions: string[]
-}
+export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
 
 /**
  * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
@@ -174,7 +144,7 @@ export function useSearch(walletAddress: string | null = null) {
 
       if (firstRes.status !== 402) {
         if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`)
-        const data = await firstRes.json()
+        const data = (await firstRes.json()) as SearchResponse
         return setSession({
           query, results: data.results ?? [], txHash: null,
           paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
@@ -215,7 +185,7 @@ export function useSearch(walletAddress: string | null = null) {
         throw new Error(`Payment failed: server returned ${paidRes.status} — ${text}`)
       }
 
-      const data = await paidRes.json()
+      const data = (await paidRes.json()) as SearchResponse
       console.log('✅ Search complete!')
 
       // Flow step 6 — result received and rendered
@@ -231,11 +201,12 @@ export function useSearch(walletAddress: string | null = null) {
       })
 
       if (data.txHash) {
+        const settledTxHash = data.txHash
         toast.success(`Payment settled: ${data.paidAmount || '0.001'} USDC`, {
           description: 'View transaction on Stellar network',
           action: {
             label: 'Explorer',
-            onClick: () => window.open(explorerTxUrl(data.txHash), '_blank')
+            onClick: () => window.open(explorerTxUrl(settledTxHash), '_blank')
           }
         })
       }
