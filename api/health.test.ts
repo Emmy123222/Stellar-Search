@@ -41,6 +41,10 @@ describe('api/health — Vercel health aligned with server /health', () => {
         serperApiConfigured: true,
         groqApiConfigured: true,
         receivingAddressConfigured: true,
+        serperCircuitBreaker: expect.objectContaining({
+          name: 'serper',
+          state: expect.stringMatching(/^(closed|open|half-open)$/),
+        }),
       })
     )
   })

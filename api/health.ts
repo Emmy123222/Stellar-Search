@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { getSerperBreakerState } from '../src/lib/serperClient'
 import { readServerConfig } from '../src/lib/config'
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
@@ -13,6 +14,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     serperApiConfigured: true,
     groqApiConfigured: !!config.groqApiKey,
     receivingAddressConfigured: true,
+    serperCircuitBreaker: getSerperBreakerState(),
     timestamp: new Date().toISOString(),
   })
 }

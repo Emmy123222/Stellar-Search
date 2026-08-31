@@ -117,6 +117,9 @@ The typed schema checks required core variables separately from optional feature
 | `VITE_SERVER_URL` | No | `http://localhost:3001` | Frontend URL for AI chat backend calls. On Vercel deployments auto-detects `${origin}/api`; locally falls back to `http://localhost:3001`. | `http://localhost:3001` |
 | `MCP_ENABLE_RECEIPTS` | No | `0` | Set `1` to opt-in MCP local receipt storage for `stellar-search://receipts/recent` (in-memory capped at 50) | `1` |
 | `RECONCILIATION_LOG_PATH` | No | `logs/reconciliation.jsonl` | Path to the append-only settlement reconciliation log (see [Settlement reconciliation](#settlement-reconciliation)). | `/var/log/stellarsearch/reconciliation.jsonl` |
+| `SERPER_BREAKER_FAILURE_THRESHOLD` | No | `5` | Consecutive Serper failures (5xx/429/network error) required to open the circuit breaker (see [Serper circuit breaker](#serper-circuit-breaker-120)). | `5` |
+| `SERPER_BREAKER_OPEN_MS` | No | `30000` | Milliseconds the breaker stays open before allowing a half-open recovery probe. | `30000` |
+| `SERPER_BREAKER_HALF_OPEN_PROBES` | No | `1` | Concurrent requests allowed through while the breaker is half-open, testing recovery. | `1` |
 
 ---
 
@@ -143,6 +146,36 @@ Browser (Freighter) → GET /search?q=...
 To guarantee that each payment identifier authorizes **exactly one provider call**, StellarSearch tracks consumed payment identifiers across Express (`server/index.ts`) and Vercel (`api/search.ts`) runtimes:
 - **Payload Invalidation:** Extracts transaction hashes (or SHA-256 fallback hashes of payment headers) and invalidates consumed payloads for a 300-second window.
 - **Concurrency Throttling:** Rapid parallel requests using identical payment payloads are throttled so only one search query proceeds; concurrent duplicates immediately receive HTTP 402 (`Payment payload already consumed`).
+
+### Serper circuit breaker (#120)
+
+A sustained Serper.dev outage shouldn't let every incoming request hang on a
+slow/failing upstream, consuming connection slots and retry budgets while an
+agent has already committed to (or is about to commit to) a paid x402 flow.
+`src/lib/serperClient.ts` wraps every direct Serper call — in Express
+(`server/index.ts`: `/search`, `/images`, `/news`, batch JSONL, async jobs)
+and in the Vercel functions (`api/search.ts`, `api/search/batch.ts`,
+`api/jobs.ts`) — in a shared circuit breaker (`src/lib/circuitBreaker.ts`):
+
+- **Closed** (normal): requests pass through. Consecutive 5xx/429 responses
+  or network errors increment a failure counter; a single success resets it.
+- **Open**: once `SERPER_BREAKER_FAILURE_THRESHOLD` consecutive failures are
+  hit, the breaker opens. Further requests fail immediately with
+  `503 Search provider temporarily unavailable` (+ a `Retry-After` header) —
+  no network call is made — for `SERPER_BREAKER_OPEN_MS`.
+- **Half-open**: after the open duration elapses, the next
+  `SERPER_BREAKER_HALF_OPEN_PROBES` request(s) are let through as a probe. A
+  successful probe closes the breaker; a failed one re-opens it immediately.
+
+A **4xx** from Serper (e.g. a malformed query) does *not* count as a breaker
+failure — Serper answered, so that's not a signal the dependency is down.
+
+Breaker state is exposed on `GET /health` (Express) and `/api/health`
+(Vercel) as `serperCircuitBreaker: { state, failureCount, failureThreshold,
+openDurationMs, halfOpenMaxProbes, openedAt, nextAttemptAt }` for
+monitoring/alerting. The browser and MCP server never call Serper directly —
+they call these `/search`/`/images`/`/news` endpoints — so they inherit the
+fast-fail behavior transitively without their own breaker.
 
 ### Sequence diagram
 
