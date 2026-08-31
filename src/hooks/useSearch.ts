@@ -32,6 +32,7 @@ const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET
 
 const HORIZON_URL = IS_MAINNET ? 'https://horizon.stellar.org' : 'https://horizon-testnet.stellar.org'
 
+const PREFLIGHT_TIMEOUT_MS = 8000
 const USDC_ISSUER = IS_MAINNET
   ? 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZP'
   : 'GBBD47IF6LWK7P7MDEVSCWR7DPUWVKGNY3DGQPCACV4BYN6JFCEDUKW3'
@@ -49,7 +50,7 @@ async function preflightStellarAccount(
     throw new Error('Invalid Stellar account. Reconnect your Freighter wallet.')
   }
   if (typeof signAuthEntry !== 'function') {
-    throw new Error('Freighter signer unavailable. Install or unlock Freighter.')
+    throw new Error('Freighter signer unavailable. Install Freighter and try again.')
   }
 
   const net = await getNetworkDetails()
@@ -77,7 +78,7 @@ async function preflightStellarAccount(
     if (err?.response?.status === 404) {
       throw new Error('Account not found on Stellar network. Fund the connected address first.')
     }
-    throw new Error('Unable to verify Stellar account. Check your connection and try again.')
+    throw new Error('Unable to verify Stellar account. Reconnect Freighter and try again.')
   }
 
   const usdcBalance = account.balances?.find(
@@ -93,8 +94,14 @@ async function preflightStellarAccount(
 
   const spendableUsdc = Number(usdcBalance.balance) - Number(usdcBalance.selling_liabilities ?? 0)
 
-  if (requiredAmount !== undefined && spendableUsdc < Number(requiredAmount)) {
-    throw new Error(`Insufficient USDC balance. Required: ${requiredAmount}, available: ${spendableUsdc}.`)
+  if (requiredAmount !== undefined) {
+    const required = Number(requiredAmount)
+    if (!Number.isFinite(required) || required <= 0) {
+      throw new Error('Invalid payment amount from server. Retry the search.')
+    }
+    if (spendableUsdc < required) {
+      throw new Error(`Insufficient USDC balance. Required: ${requiredAmount}, available: ${spendableUsdc}.`)
+    }
   }
 }
 
@@ -164,7 +171,7 @@ export function useSearch(walletAddress: string | null = null) {
       console.log('🔍 Starting search with wallet:', walletAddress)
 
       // Step 1 — verify Freighter is on correct network
-      const net = await withTimeout(getNetworkDetails(), 8000)
+      const net = await withTimeout(getNetworkDetails(), PREFLIGHT_TIMEOUT_MS)
       if (net.error)              throw new Error(net.error.message)
       if (net.network !== EXPECTED_WALLET_NETWORK) {
         throw new Error(`Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`)
@@ -237,7 +244,7 @@ export function useSearch(walletAddress: string | null = null) {
       const requiredAmount = paymentRequired.amount != null ? String(paymentRequired.amount) : undefined
       await withTimeout(
         preflightStellarAccount(walletAddress, requiredAmount),
-        8000
+        PREFLIGHT_TIMEOUT_MS
       )
 
       // Flow step 3 — createPaymentPayload() triggers the Freighter popup (signs auth entry)
