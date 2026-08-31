@@ -114,7 +114,7 @@ export function consumePaymentPayload(
   // Atomically mark as consumed
   consumedPayments.set(paymentId, {
     consumedAt: now,
-    expiresAt: now + validityWindowMs,
+    expiresAt: now + validityWindowMS,
   })
 
   return { ok: true, paymentId }
@@ -129,4 +129,89 @@ export function isPaymentConsumed(header: unknown, now: number = Date.now()): bo
   if (!paymentId) return false
   const existing = consumedPayments.get(paymentId)
   return !!(existing && existing.expiresAt > now)
+}
+
+/**
+ * Input values required to perform a payment preflight check.
+ * This is intentionally a plain data object so hooks can assemble it from wallet/network state.
+ */
+export interface PaymentPreflightInput {
+  /** Active Stellar public key (from Freighter) or null if none selected. */
+  account: string | null
+  /** The network the wallet is currently connected to. */
+  network: string
+  /** The network the x402 payment requires (e.g. 'testnet' or 'public'). */
+  expectedNetwork: string
+  /** Whether the active account has a USDC trustline. */
+  usdcTrustline: boolean
+  /** Spendable USDC balance available for the payment. */
+  spendableBalance: number
+  /** Amount required for the payment. */
+  requiredAmount: number
+  /** Whether the signing wallet (Freighter) is available and unlocked. */
+  signerAvailable: boolean
+}
+
+export type PreflightFailureReason =
+  | 'NO_ACCOUNT'
+  | 'WRONG_NETWORK'
+  | 'NO_TRUSTLINE'
+  | 'INSUFFICIENT_BALANCE'
+  | 'NO_SIGNER'
+
+export type PaymentPreflightResult =
+  | { ok: true }
+  | { ok: false; reason: PreflightFailureReason; recoveryAction: string }
+
+/**
+ * Checks whether all conditions are satisfied before creating a signed x402 payment payload.
+ *
+ * This is a bounded, side-effect-free preflight: it never creates or signs a payment,
+ * and it returns a single targeted recovery action for the first unmet condition.
+ *
+ * @param input Preflight data assembled from the active wallet and network state.
+ * @returns `{ ok: true }`if all checks pass. Otherwise `{ ok: false, reason, recoveryAction }`.
+ */
+export function performPaymentPreflight(input: PaymentPreflightInput): PaymentPreflightResult {
+  if (!input.signerAvailable) {
+    return {
+      ok: false,
+      reason: 'NO_SIGNER',
+      recoveryAction: 'Unlock Freighter and make sure it is available.',
+    }
+  }
+
+  if (!input.account) {
+    return {
+      ok: false,
+      reason: 'NO_ACCOUNT',
+      recoveryAction: 'Open Freighter and select an active account.',
+    }
+  }
+
+  if (input.network !== input.expectedNetwork) {
+    return {
+      ok: false,
+      reason: 'WRONG_NETWORK',
+      recoveryAction: `Switch your wallet network to ${input.expectedNetwork}.`,
+    }
+  }
+
+  if (!input.usdcTrustline) {
+    return {
+      ok: false,
+      reason: 'NO_TRUSTLINE',
+      recoveryAction: 'Add a USDC trustline in Freighter before making this payment.',
+    }
+  }
+
+  if (typeof input.spendableBalance !== 'number' || typeof input.requiredAmount !== 'number' || input.spendableBalance < input.requiredAmount) {
+    return {
+      ok: false,
+      reason: 'INSUFFICIENT_BALANCE',
+      recoveryAction: 'Fund your account with more USDC to cover the payment amount.',
+    }
+  }
+
+  return { ok: true }
 }
