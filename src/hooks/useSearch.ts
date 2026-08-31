@@ -15,7 +15,7 @@ import { toast }                               from 'sonner'
 import { x402Client, x402HTTPClient }          from '@x402/fetch'
 import { ExactStellarScheme }                  from '@x402/stellar/exact/client'
 import { signAuthEntry, getNetworkDetails }    from '@stellar/freighter-api'
-import { Networks }                            from '@stellar/stellar-sdk'
+import { Networks, Horizon, StrKey }           from '@stellar/stellar-sdk'
 import { Buffer }                              from 'buffer'
 import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
 
@@ -30,9 +30,58 @@ const SOROBAN_RPC_TESTNET = 'https://soroban-testnet.stellar.org'
 const SOROBAN_RPC_MAINNET = 'https://soroban-rpc.mainnet.stellar.org' // Or another public RPC
 const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET
 
+const HORIZON_URL = IS_MAINNET ? 'https://horizon.stellar.org' : 'https://horizon-testnet.stellar.org'
+
+const USDC_ISSUER = IS_MAINNET
+  ? 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZP'
+  : 'GBBD47IF6LWK7P7MDEVSCWR7DPUWVKGNY3DGQPCACV4BYN6JFCEDUKW3'
+
 import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSession } from '../types'
 
 export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
+
+async function preflightStellarAccount(address: string, requiredAmount?: string) {
+  if (!StrKey.isValidEd25519PublicKey(address)) {
+    throw new Error('Invalid Stellar account. Reconnect your Freighter wallet.')
+  }
+  if (typeof signAuthEntry !== 'function') {
+    throw new Error('Freighter signer unavailable. Install or unlock Freighter.')
+  }
+
+  let account: any
+  try {
+    account = await new Horizon.Server(HORIZON_URL).loadAccount(address)
+  } catch (err: any) {
+    if (err?.response?.status === 404) {
+      throw new Error('Account not found on Stellar network. Fund the connected address first.')
+    }
+    throw new Error('Unable to verify Stellar account. Check your connection and try again.')
+  }
+
+  const usdcBalance = account.balances?.find(
+    (balance: any) =>
+      balance.asset_type === 'credit_alphanum4' &&
+      balance.asset_code === 'USDC' &&
+      balance.asset_issuer === USDC_ISSUER
+  )?.balance
+
+  if (!usdcBalance) {
+    throw new Error('No USDC trustline found. Add the USDC trustline to your wallet and try again.')
+  }
+
+  if (requiredAmount !== undefined && Number(usdcBalance) < Number(requiredAmount)) {
+    throw new Error(`Insufficient USDC balance. Required: ${requiredAmount}, available: ${usdcBalance}.`)
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Preflight timed out. Check your network connection.')), ms)
+    ),
+  ])
+}
 
 /**
  * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
@@ -158,6 +207,14 @@ export function useSearch(walletAddress: string | null = null) {
         (name) => firstRes.headers.get(name)
       )
       console.log('💰 Payment requirements:', paymentRequired)
+
+      // Preflight — verify account, expected network (checked above), USDC trustline,
+      // spendable amount, and signer availability before triggering the Freighter signing popup.
+      const requiredAmount = paymentRequired.amount != null ? String(paymentRequired.amount) : undefined
+      await withTimeout(
+        preflightStellarAccount(walletAddress, requiredAmount),
+        8000
+      )
 
       // Flow step 3 — createPaymentPayload() triggers the Freighter popup (signs auth entry)
       advance(3)
