@@ -90,6 +90,146 @@ const stats = {
   startTime: Date.now(),
 }
 
+// ─── Batch idempotency & async job stores (issues #324, #325) ────────────
+export const MAX_BATCH_SIZE = 10
+export const MAX_BATCH_TOTAL_USDC = 0.01
+export const MAX_JOB_WEBHOOK_ATTEMPTS = 5
+export const WEBHOOK_RETRY_BASE_MS = 1000
+
+// Batch idempotency cache: key -> { expiresAt, resultSummary }
+export const batchIdempotencyStore = new Map<string, { expiresAt: number; requestId: string }>()
+// Job store: jobId -> SearchJob
+export const jobStore = new Map<string, SearchJob>()
+// Job idempotency: key -> jobId
+export const jobIdempotencyStore = new Map<string, { jobId: string; expiresAt: number }>()
+// Recent receipts for MCP resources (opted-in, in-memory capped at 50)
+export const recentReceipts: Array<{ id: string; query: string; txHash: string | null; amount: string; currency: string; network: string; timestamp: string; latencyMs: number; count: number }> = []
+
+export function resetBatchJobStores(): void {
+  batchIdempotencyStore.clear()
+  jobStore.clear()
+  jobIdempotencyStore.clear()
+  recentReceipts.length = 0
+}
+
+export function addRecentReceipt(receipt: typeof recentReceipts[number]): void {
+  recentReceipts.unshift(receipt)
+  if (recentReceipts.length > 50) recentReceipts.pop()
+}
+
+function cleanupBatchIdempotency(now = Date.now()): void {
+  for (const [k, v] of batchIdempotencyStore.entries()) if (v.expiresAt <= now) batchIdempotencyStore.delete(k)
+  for (const [k, v] of jobIdempotencyStore.entries()) if (v.expiresAt <= now) jobIdempotencyStore.delete(k)
+}
+
+// ─── Webhook SSRF protection & signing (issue #324) ─────────────────────
+const BLOCKED_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'])
+
+export function isPrivateIp(hostname: string): boolean {
+  if (BLOCKED_HOSTNAMES.has(hostname.toLowerCase())) return true
+  // 10.0.0.0/8
+  if (/^10\.\d+\.\d+\.\d+$/.test(hostname)) return true
+  // 192.168.0.0/16
+  if (/^192\.168\.\d+\.\d+$/.test(hostname)) return true
+  // 172.16.0.0/12
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(hostname)) return true
+  // 169.254.0.0/16 link-local
+  if (/^169\.254\.\d+\.\d+$/.test(hostname)) return true
+  // fc00::/7 private, fe80::/10 link-local
+  if (hostname.includes(':') && (/^fc/i.test(hostname) || /^fd/i.test(hostname) || /^fe80/i.test(hostname))) return true
+  return false
+}
+
+export function validateWebhookUrl(urlStr: string): { ok: true } | { ok: false; error: string } {
+  let parsed: URL
+  try {
+    parsed = new URL(urlStr)
+  } catch {
+    return { ok: false, error: 'Invalid webhook URL' }
+  }
+  if (parsed.protocol !== 'https:') {
+    return { ok: false, error: 'Webhook URL must be https' }
+  }
+  if (isPrivateIp(parsed.hostname)) {
+    return { ok: false, error: 'Webhook URL points to private or blocked host (SSRF protection)' }
+  }
+  if (parsed.username || parsed.password) return { ok: false, error: 'Webhook URL must not contain credentials' }
+  return { ok: true }
+}
+
+export function signWebhookPayload(payload: string, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(payload).digest('hex')
+}
+
+export function verifyWebhookSignature(payload: string, signature: string, secret: string, maxAgeMs = 5 * 60 * 1000, timestampHeader?: string): boolean {
+  const expected = signWebhookPayload(payload, secret)
+  // timing-safe compare
+  if (expected.length !== signature.length) return false
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return false
+  } catch { return false }
+  if (timestampHeader) {
+    const ts = parseInt(timestampHeader, 10)
+    if (!Number.isFinite(ts)) return false
+    const age = Date.now() - ts
+    if (age < 0 || age > maxAgeMs) return false
+  }
+  return true
+}
+
+async function deliverWebhookWithRetry(job: SearchJob, maxAttempts = MAX_JOB_WEBHOOK_ATTEMPTS): Promise<void> {
+  if (!job.webhookUrl || !job.webhookSecret) return
+  const payloadObj = {
+    event: 'job.completed',
+    jobId: job.id,
+    status: job.status,
+    query: job.query,
+    result: job.result ?? null,
+    error: job.error ?? null,
+    txHash: job.txHash,
+    paymentVerified: job.verified,
+    timestamp: new Date().toISOString(),
+    nonce: crypto.randomUUID(),
+  }
+  const payload = JSON.stringify(payloadObj)
+  const timestamp = String(Date.now())
+  const signature = signWebhookPayload(`${timestamp}.${payload}`, job.webhookSecret)
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 5000)
+      const res = await fetch(job.webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Webhook-Signature': signature,
+          'X-Webhook-Timestamp': timestamp,
+          'X-Webhook-Attempt': String(attempt),
+          'X-Job-Id': job.id,
+          'User-Agent': 'StellarSearch-Webhook/1.0',
+        },
+        body: payload,
+        signal: controller.signal,
+      })
+      clearTimeout(timeout)
+      if (res.ok) return
+      // 4xx except 429 should not retry
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+        console.warn(`[webhook] non-retryable ${res.status} for job ${job.id}`)
+        return
+      }
+    } catch (err: any) {
+      console.warn(`[webhook] attempt ${attempt} failed for job ${job.id}: ${err.message}`)
+    }
+    if (attempt < maxAttempts) {
+      const backoff = WEBHOOK_RETRY_BASE_MS * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200)
+      await new Promise((r) => setTimeout(r, backoff))
+    }
+  }
+  console.error(`[webhook] exhausted retries for job ${job.id}`)
+}
+
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
 const FACILITATOR_URL   = process.env.FACILITATOR_URL   || 'https://www.x402.org/facilitator'
@@ -127,6 +267,20 @@ const x402Routes = {
   'GET /news': {
     accepts: x402Accepts,
     description: `StellarSearch: pay-per-query news search — ${AMOUNT_USDC} USDC on Stellar`,
+  },
+  'POST /search/batch': {
+    accepts: [{
+      scheme: 'exact',
+      price: parseFloat(AMOUNT_USDC) * MAX_BATCH_SIZE,
+      amount: String(parseInt(AMOUNT_STROOPS) * MAX_BATCH_SIZE),
+      network: NETWORK,
+      payTo: RECEIVING_ADDRESS,
+    }],
+    description: `StellarSearch: batch web search (up to ${MAX_BATCH_SIZE}) — ${AMOUNT_USDC} USDC per query on Stellar, JSONL streaming`,
+  },
+  'POST /jobs': {
+    accepts: x402Accepts,
+    description: `StellarSearch: async paid search job — ${AMOUNT_USDC} USDC on Stellar, webhook callback`,
   },
 }
 
@@ -333,6 +487,11 @@ app.get('/search', async (req: Request, res: Response) => {
       suggestions,
     }
 
+    // Record opted-in receipt (cap 50, in-memory)
+    try {
+      addRecentReceipt({ id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, query: cleanQ, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+    } catch {}
+
     return res.json(responseBody)
   } catch (err: any) {
     recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
@@ -517,6 +676,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
 
   const wantsStream =
     (req.headers.accept || '').includes('text/event-stream') ||
+    (req.body as any)?.stream === true ||
     req.query.stream === '1'
 
   const groqMessages = [
@@ -690,8 +850,17 @@ app.get('/', (_req: Request, res: Response) => {
       'GET /search?q=<query>': '0.001 USDC via x402',
       'GET /images?q=<query>': '0.001 USDC via x402 — image results',
       'GET /news?q=<query>':   '0.001 USDC via x402 — news articles',
+      'POST /search/batch':    '0.001 USDC per query (max 10), JSONL streaming — versioned quote/settlement/result/error/done events, idempotency & aggregate limits',
+      'POST /jobs':            '0.001 USDC via x402 — async job, returns 202 + statusUrl + verified payment state',
+      'GET /jobs/:id':         'Job status + verified payment state (webhook signed, replay/SSRF protected)',
+      'GET /jobs':             'List recent jobs (capped at 50)',
       'POST /ai/chat':         'Groq AI — free',
       'GET /health':           'Live server stats',
+    },
+    mcp: {
+      resources: ['stellar-search://capabilities', 'stellar-search://schema/search', 'stellar-search://receipts/recent (opted-in)'],
+      prompts: ['research_brief (no silent payment)', 'summarize_results', 'compare_sources'],
+      progress: 'notifications/progress bounded to 4 phases (challenge→signing→settlement→search), cancellation/error terminates cleanly without false completion',
     },
   })
 })

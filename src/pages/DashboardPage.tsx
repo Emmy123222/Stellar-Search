@@ -42,7 +42,7 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
       return acc
     }, {} as Record<string, number>)
 
-    return Object.entries(grouped).map(([date, amount]) => ({
+    return Object.entries(grouped).map(([date, amount]: [string, number]) => ({
       date,
       amount: parseFloat(amount.toFixed(2))
     }))
@@ -233,7 +233,17 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
               >
                 <div className="w-1.5 h-1.5 rounded-full bg-neon-green flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white/60 capitalize truncate">{tx.type.replace('_', ' ')}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-white/60 capitalize truncate">{tx.type.replace('_', ' ')}</p>
+                    {tx.memo && (
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-neon-cyan/10 text-neon-cyan/70 border border-neon-cyan/20 truncate max-w-[180px]"
+                        title={`Memo: ${tx.memo}`}
+                      >
+                        Memo: {tx.memo}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-3 mt-0.5">
                     <a
                       href={explorerTxUrl(tx.hash)}
