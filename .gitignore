@@ -9,3 +9,8 @@ dist/
 # Local scripts
 create_issues.py
 coverage/
+
+# Generated supply-chain artifacts
+sbom.cyclonedx.json
+osv-results.json
+osv-results.sarif

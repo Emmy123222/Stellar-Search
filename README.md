@@ -388,6 +388,32 @@ Coverage verifies the **x402 settlement semantics** for paid routes (`/search`, 
 
 ---
 
+## Supply chain security & SBOM
+
+The `supply-chain` CI job generates a **CycloneDX SBOM** from the committed lockfile and runs a **dependency vulnerability gate** using [OSV-Scanner](https://google.github.io/osv-scanner/).
+
+### SBOM
+
+- The SBOM is generated deterministically from `package-lock.json` (no `node_modules` required):
+
+  ```bash
+  npm run sbom          # writes ./sbom.cyclonedx.json
+  node scripts/verify-sbom.mjs   # validates it's a non-empty CycloneDX doc
+  ```
+
+- CI uploads the SBOM as the **`cyclonedx-sbom`** artifact (`sbom.cyclonedx.json`).
+
+### Vulnerability gate (fail/exception policy)
+
+- OSV-Scanner runs with `--config=osv-scanner.toml` (repo root). That file is the single source of truth for the exception policy.
+- The pipeline **fails** when OSV-Scanner reports a **High or Critical** vulnerability that is **not** covered by a documented exception.
+- **Low / Moderate** findings are reported only and do not block.
+- Exceptions are **time-boxed**: each `[[IgnoredVulns]]` entry sets an `ignoreUntil` deadline and a `reason`, so an accepted risk re-flags CI for triage when it lapses.
+
+> See `CONTRIBUTING.md` → **Supply-Chain Security** for the full policy and how to add an exception.
+
+---
+
 ## Hackathon requirements
 
 | Requirement | ✓ |
