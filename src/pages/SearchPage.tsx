@@ -133,7 +133,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
               </motion.div>
             )}
 
-            {session.status === 'complete' && session.suggestions.length > 0 && (
+            {session.status === 'complete' && session.suggestions && session.suggestions.length > 0 && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                 <SearchSuggestions onSelect={handleSearch} aiSuggestions={session.suggestions} />
               </motion.div>
