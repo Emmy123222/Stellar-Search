@@ -59,7 +59,8 @@ function toCsv(results: SearchResult[], metadata: Record<string, unknown>): stri
  * @param walletAddress - The Stellar public key address of the connected wallet, or `null` if unauthenticated.
  * @returns Object containing search session, payment/export helpers, and selection controls (`session`, `search`, `reset`,
  *          `selectedResults`, `toggleResult`, `toggleAllResults`, `clearSelection`, `isResultSelected`, `isAllSelected`,
- *          and `exportSelectedResults`).
+ *          and `exportSelectedResults`). Selection callbacks are intended for keyboard-accessible controls; exports
+ *          include a versioned metadata envelope (query, filters, network, receipt reference, export timestamp).
  */
 export function useSearch(walletAddress: string | null = null) {
   const [session, setSession] = useState<SearchSession>({
@@ -314,7 +315,7 @@ export function useSearch(walletAddress: string | null = null) {
       exportedAt,
       query: session.query,
       filters,
-      network: network ?? 'stellar:testnet',
+      network: network ?? (IS_MAINNET ? 'stellar:pubnet' : 'stellar:testnet'),
       receipt: session.txHash ? { txHash: session.txHash, paidAmount: session.paidAmount } : null,
       resultCount: selectedResults.length,
     }
