@@ -1,14 +1,22 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy } from 'lucide-react'
+import {
+  ExternalLink, Star, Clock, Sparkles, Download, FileJson,
+  FileSpreadsheet, Check, Copy, Bookmark, BookmarkCheck, Plus, ChevronDown, FolderOpen,
+} from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
+import type { UseCollectionsReturn } from '../../hooks/useCollections'
 
 interface Props {
   results: SearchResult[]
   query: string
   isLoading?: boolean
   txHash?: string | null
+  /** Pass the useCollections return value to enable save-to-collection UI. */
+  collections?: UseCollectionsReturn
+  /** Stellar network string, e.g. "stellar:testnet". Stored with saved results. */
+  network?: string
 }
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
@@ -17,7 +25,211 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
     : 'http://localhost:3001'
 )
 
-export function SearchResults({ results, query, isLoading, txHash }: Props) {
+// ─── Save button component ───────────────────────────────────────────────────
+
+interface SaveButtonProps {
+  result: SearchResult
+  query: string
+  txHash: string | null | undefined
+  network: string
+  collections: UseCollectionsReturn
+}
+
+function SaveButton({ result, query, txHash, network, collections }: SaveButtonProps) {
+  const [open, setOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [flash, setFlash] = useState<string | null>(null)  // collection id flashed on save
+  const menuRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setCreating(false)
+        setNewName('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  // Focus input when creating mode opens
+  useEffect(() => {
+    if (creating) inputRef.current?.focus()
+  }, [creating])
+
+  // Is this result already saved in ANY collection?
+  const savedInCollections = collections.collections.filter((col) =>
+    collections.isSaved(col.id, result.id)
+  )
+  const isSavedAnywhere = savedInCollections.length > 0
+
+  const handleSave = (e: React.MouseEvent, collectionId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    collections.saveResult(collectionId, result, query, txHash ?? null, network)
+    setFlash(collectionId)
+    setTimeout(() => setFlash(null), 1400)
+    setOpen(false)
+  }
+
+  const handleCreateAndSave = (e: React.FormEvent) => {
+    e.preventDefault()
+    const col = collections.createCollection(newName)
+    if (col) {
+      collections.saveResult(col.id, result, query, txHash ?? null, network)
+      setFlash(col.id)
+      setTimeout(() => setFlash(null), 1400)
+    }
+    setCreating(false)
+    setNewName('')
+    setOpen(false)
+  }
+
+  const toggleMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setOpen((v) => !v)
+    setCreating(false)
+    setNewName('')
+  }
+
+  const hasCollections = collections.collections.length > 0
+
+  return (
+    <div className="relative flex-shrink-0" ref={menuRef}>
+      <button
+        onClick={toggleMenu}
+        aria-label={isSavedAnywhere ? 'Saved to collection' : 'Save to collection'}
+        aria-expanded={open}
+        title={isSavedAnywhere ? 'Saved' : 'Save to collection'}
+        className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-display tracking-wider transition-all
+          ${isSavedAnywhere
+            ? 'text-neon-cyan border-neon-cyan/40 bg-neon-cyan/10'
+            : 'text-white/40 border-white/12 bg-white/5 hover:text-neon-cyan hover:border-neon-cyan/30 hover:bg-neon-cyan/8'
+          }`}
+        style={{ border: '1px solid' }}
+      >
+        {isSavedAnywhere
+          ? <BookmarkCheck className="w-3 h-3" />
+          : <Bookmark className="w-3 h-3" />}
+        <ChevronDown className={`w-2.5 h-2.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.97 }}
+            transition={{ duration: 0.12 }}
+            className="absolute right-0 top-full mt-1.5 w-56 rounded-xl overflow-hidden z-50 shadow-xl"
+            style={{
+              background: 'rgba(6,13,20,0.98)',
+              border: '1px solid rgba(0,245,255,0.2)',
+              backdropFilter: 'blur(16px)',
+            }}
+          >
+            {/* Header */}
+            <div className="px-3 py-2 border-b border-white/6">
+              <p className="font-display text-[10px] text-white/30 tracking-widest uppercase">
+                Save to collection
+              </p>
+            </div>
+
+            {/* Collection list */}
+            <div className="max-h-48 overflow-y-auto">
+              {!hasCollections && !creating && (
+                <p className="px-3 py-3 text-xs text-white/30 text-center">
+                  No collections yet
+                </p>
+              )}
+              {collections.collections.map((col) => {
+                const alreadySaved = collections.isSaved(col.id, result.id)
+                const isFlashed = flash === col.id
+                return (
+                  <button
+                    key={col.id}
+                    onClick={(e) => !alreadySaved && handleSave(e, col.id)}
+                    disabled={alreadySaved}
+                    className={`w-full px-3 py-2.5 text-left flex items-center gap-2.5 transition-colors
+                      ${alreadySaved
+                        ? 'text-neon-cyan/60 cursor-default'
+                        : 'text-white/70 hover:bg-white/5 hover:text-white'
+                      }`}
+                  >
+                    <FolderOpen className={`w-3.5 h-3.5 flex-shrink-0 ${alreadySaved ? 'text-neon-cyan' : 'text-white/30'}`} />
+                    <span className="flex-1 truncate text-xs">{col.name}</span>
+                    {alreadySaved && (
+                      <Check className={`w-3 h-3 flex-shrink-0 transition-all ${isFlashed ? 'text-neon-green scale-125' : 'text-neon-cyan'}`} />
+                    )}
+                    {!alreadySaved && (
+                      <span className="text-[10px] text-white/20">{col.resultIds.length}</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Create new */}
+            <div className="border-t border-white/6">
+              {creating ? (
+                <form onSubmit={handleCreateAndSave} className="px-3 py-2 flex gap-2">
+                  <input
+                    ref={inputRef}
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="Collection name…"
+                    maxLength={100}
+                    className="flex-1 bg-transparent border-b border-neon-cyan/30 text-xs text-white placeholder-white/25 outline-none pb-0.5"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newName.trim()}
+                    className="text-xs text-neon-cyan disabled:opacity-30 hover:text-white transition-colors font-display"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCreating(false); setNewName('') }}
+                    className="text-xs text-white/30 hover:text-white transition-colors"
+                  >
+                    ✕
+                  </button>
+                </form>
+              ) : (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCreating(true) }}
+                  className="w-full px-3 py-2.5 flex items-center gap-2 text-xs text-neon-cyan/60 hover:text-neon-cyan hover:bg-neon-cyan/5 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  New collection
+                </button>
+              )}
+            </div>
+
+            {/* Quota hint */}
+            {collections.remaining < 50 && (
+              <div className="px-3 py-1.5 border-t border-white/5">
+                <p className="text-[10px] text-white/20">{collections.remaining} slots remaining</p>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ─── Main component ──────────────────────────────────────────────────────────
+
+export function SearchResults({ results, query, isLoading, txHash, collections, network = 'stellar:testnet' }: Props) {
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
@@ -58,22 +270,14 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   }
 
   const copyToClipboard = async (url: string, e: React.MouseEvent) => {
-    // Prevent the anchor tag from navigating when clicking copy button
     e.preventDefault()
     e.stopPropagation()
     
     try {
       await navigator.clipboard.writeText(url)
       setCopiedUrl(url)
-      
-      // Reset copied state after 1.5 seconds
-      setTimeout(() => {
-        setCopiedUrl(prev => prev === url ? null : prev)
-      }, 1500)
-    } catch (err) {
-      console.error('Failed to copy:', err)
-      
-      // Fallback for older browsers
+      setTimeout(() => setCopiedUrl(prev => prev === url ? null : prev), 1500)
+    } catch {
       try {
         const textArea = document.createElement('textarea')
         textArea.value = url
@@ -84,9 +288,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
         document.execCommand('copy')
         document.body.removeChild(textArea)
         setCopiedUrl(url)
-        setTimeout(() => {
-          setCopiedUrl(prev => prev === url ? null : prev)
-        }, 1500)
+        setTimeout(() => setCopiedUrl(prev => prev === url ? null : prev), 1500)
       } catch (fallbackErr) {
         console.error('Fallback copy failed:', fallbackErr)
       }
@@ -195,6 +397,29 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+      {/* Quota error banner */}
+      <AnimatePresence>
+        {collections?.quotaError && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+            style={{
+              background: 'rgba(255,80,80,0.07)',
+              border: '1px solid rgba(255,80,80,0.25)',
+            }}
+          >
+            <p className="text-xs text-red-300">{collections.quotaError}</p>
+            <button
+              onClick={collections.clearQuotaError}
+              className="text-xs text-white/30 hover:text-white transition-colors"
+              aria-label="Dismiss quota error"
+            >✕</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2.5 flex-wrap">
           <p className="font-display text-xs text-white/35 tracking-widest" aria-live="polite">
@@ -218,7 +443,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
           )}
         </div>
         <div className="flex items-center gap-3">
-          {/* Export Button with Format Selector */}
+          {/* Export Button */}
           <div className="relative">
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
@@ -230,7 +455,6 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
               EXPORT
             </button>
 
-            {/* Export Format Dropdown */}
             <AnimatePresence>
               {showExportMenu && (
                 <motion.div
@@ -345,7 +569,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
         >
           <div className="flex items-start justify-between gap-3 flex-col sm:flex-row">
             <div className="flex-1 min-w-0 w-full">
-              {/* Source + score */}
+              {/* Source + score + date */}
               <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                 <span
                   className="inline-flex items-center py-0.5 px-2 rounded-full font-display border"
@@ -378,7 +602,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
                 <p className="font-mono text-xs truncate" style={{ color: 'rgba(0,245,255,0.35)' }}>
                   {r.url}
                 </p>
-                {/* Copy button */}
+                {/* Copy URL button */}
                 <button
                   onClick={(e) => copyToClipboard(r.url, e)}
                   className="relative flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10"
@@ -395,7 +619,6 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
                     <Copy className="w-3 h-3" />
                   )}
                   
-                  {/* Tooltip */}
                   <AnimatePresence>
                     {copiedUrl === r.url && (
                       <motion.div
@@ -421,8 +644,23 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
               </p>
             </div>
 
-            <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border border-white/8 text-white/25 group-hover:text-neon-cyan group-hover:border-neon-cyan/30 transition-all mt-0.5">
-              <ExternalLink className="w-3.5 h-3.5" />
+            {/* Right-side actions */}
+            <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+              {/* Save-to-collection button (only when collections prop is provided) */}
+              {collections && (
+                <SaveButton
+                  result={r}
+                  query={query}
+                  txHash={txHash}
+                  network={network}
+                  collections={collections}
+                />
+              )}
+
+              {/* External link icon */}
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center border border-white/8 text-white/25 group-hover:text-neon-cyan group-hover:border-neon-cyan/30 transition-all">
+                <ExternalLink className="w-3.5 h-3.5" />
+              </div>
             </div>
           </div>
 
