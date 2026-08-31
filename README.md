@@ -103,6 +103,23 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 
 ---
 
+## API Reference
+
+The full HTTP API — `/search`, `/images`, `/news`, `/ai/chat`, `/health`, and
+the x402 `402` payment challenge shape — is documented as an OpenAPI 3.0
+spec in [`openapi.yaml`](./openapi.yaml). Express (`server/index.ts`) and
+the Vercel serverless functions (`api/`) expose the same request/response
+shapes, so one spec covers both runtimes. Validate it locally with:
+
+```bash
+npm run openapi:validate
+```
+
+CI runs the same check on every PR (`OpenAPI spec` job in
+[`.github/workflows/ci.yml`](./.github/workflows/ci.yml)).
+
+---
+
 ## How the x402 payment flow works
 
 ```

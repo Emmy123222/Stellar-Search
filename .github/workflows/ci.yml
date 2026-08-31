@@ -31,8 +31,97 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Run Vitest with coverage
-        run: echo "Vitest unit and integration tests passed"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Cache Vite & Vitest intermediates
+        id: test-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.vite
+            node_modules/.cache
+          key: ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json', 'vite.config.ts', 'vitest.setup.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json', 'vite.config.ts', 'vitest.setup.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-
+            ${{ runner.os }}-vitest-
+
+      - name: Log cache status
+        run: echo "Vitest cache hit: ${{ steps.test-cache.outputs.cache-hit || 'false' }}"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Vitest with coverage (enforces thresholds)
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          if-no-files-found: warn
+
+  openapi:
+    name: OpenAPI spec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate openapi.yaml
+        run: npm run openapi:validate
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Cache Vite & build intermediates
+        id: build-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.vite
+            node_modules/.cache
+          key: ${{ runner.os }}-vite-build-${{ hashFiles('package-lock.json', 'vite.config.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json', 'tailwind.config.js', 'postcss.config.js') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-vite-build-${{ hashFiles('package-lock.json', 'vite.config.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json', 'tailwind.config.js', 'postcss.config.js') }}-
+            ${{ runner.os }}-vite-build-
+
+      - name: Log cache status
+        run: echo "Build cache hit: ${{ steps.build-cache.outputs.cache-hit || 'false' }}"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build
+        run: npm run build
 
   coverage:
     name: Coverage gate

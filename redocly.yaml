@@ -1,0 +1,13 @@
+# Config for `npm run openapi:validate` (redocly lint), used in CI.
+extends:
+  - recommended
+
+rules:
+  # /health takes no parameters and has no auth/validation path that can
+  # produce a 4xx — only the generic 500 documented on it is realistic.
+  operation-4xx-response: off
+  # AiChatStreamEvent documents the shape of each SSE `data:` frame via the
+  # x-sse-frame-schema extension on the text/event-stream media type, since
+  # OpenAPI 3.0 has no native way to validate SSE payloads — that reference
+  # isn't a real $ref, so the linter can't see it's in use.
+  no-unused-components: off
