@@ -11,6 +11,7 @@ import {
 import type { SearchSession } from '../hooks/useSearch'
 import type { WalletState } from '../hooks/useFreighterWallet'
 import { AMOUNT_USDC } from '../lib/stellar'
+import { useState } from 'react'
 
 interface Props {
   wallet: WalletState
@@ -95,6 +96,8 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         usdcBalance={wallet.usdcBalance}
       />
 
+      <AdvancedSearchBuilder onSearch={handleSearch} initialQuery={session.query} />
+
       <SearchBar
         onSearch={handleSearch}
         isSearching={isSearching}
@@ -149,6 +152,78 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  )
+}
+
+function AdvancedSearchBuilder({ onSearch, initialQuery }: { onSearch: (q: string) => void; initialQuery?: string }) {
+  const [query, setQuery] = useState(initialQuery || '')
+  const [showOperators, setShowOperators] = useState(false)
+
+  const addToken = (token: string) => {
+    setQuery((prev) => {
+      const sep = prev.trim() ? ' ' : ''
+      return prev + sep + token
+    })
+  }
+
+  const handleSearch = () => {
+    const trimmed = query.trim()
+    if (!trimmed) return
+    if (trimmed.length > 500) {
+      alert('Query exceeds maximum length of 500 characters')
+      return
+    }
+    onSearch(trimmed)
+  }
+
+  return (
+    <div className="rounded-xl border border-neon-cyan/20 bg-white/[0.02] p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display text-sm text-neon-cyan tracking-widest">ADVANCED SEARCH BUILDER</h3>
+        <button
+          onClick={() => setShowOperators(!showOperators)}
+          className="text-xs text-white/40 hover:text-neon-cyan transition-colors"
+        >
+          {showOperators ? 'Hide operators' : 'Show operators'}
+        </button>
+      </div>
+      <textarea
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        rows={3}
+        placeholder="Compose your query with operators..."
+        className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white/80 focus:outline-none focus:border-neon-cyan/50 resize-y"
+      />
+      {showOperators && (
+        <div className="flex flex-wrap gap-2">
+          {[
+            { label: 'site:', token: 'site:' },
+            { label: 'filetype:', token: 'filetype:' },
+            { label: 'exclude (-word)', token: '-word' },
+            { label: 'exact phrase ("...")', token: '"..."' },
+            { label: 'inurl:', token: 'inurl:' },
+            { label: 'intitle:', token: 'intitle:' },
+          ].map((op) => (
+            <button
+              key={op.token}
+              onClick={() => addToken(op.token)}
+              className="px-2 py-1 rounded-md border border-white/10 text-xs text-white/60 hover:text-neon-cyan hover:border-neon-cyan/40 transition-colors"
+            >
+              {op.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-white/30">{query.length}/500</span>
+        <button
+          onClick={handleSearch}
+          className="px-4 py-2 rounded-lg font-display text-xs tracking-widest text-neon-cyan border border-neon-cyan/40 bg-neon-cyan/10 hover:bg-neon-cyan/20 transition-colors"
+        >
+          SEARCH WITH THIS QUERY
+        </button>
+      </div>
     </div>
   )
 }
