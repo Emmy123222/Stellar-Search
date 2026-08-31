@@ -190,5 +190,5 @@ jobs:
       - name: Verify coverage thresholds (statements, branches, functions, lines)
         run: npm run test:coverage -- --run
         # thresholds defined in vite.config.ts: global 35/30/28/35 + per-file ratchets for
-        # src/lib/constants, src/lib/stellar, server/corsConfig, api/search, etc.
+        # src/lib/constants, src/lib/stellar, server/corsConfig, api/search, src/components/search/SearchResults.tsx, etc.
         # CI fails if any threshold drops — ratchet upward as payment/wallet/API/MCP/UI tests land.
