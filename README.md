@@ -145,6 +145,7 @@ sequenceDiagram
     User->>Browser: Enter search query
     Browser->>Server: GET /search?q=...
     Server-->>Browser: 402 Payment Required<br/>(price, network, payTo)
+    Browser->>Browser: Bounded preflight: account, network, trustline, balance, signer
     Browser->>Freighter: Request signature of<br/>Soroban auth entry
     Freighter-->>Browser: Signed payment payload
     Browser->>Server: GET /search?q=...<br/>+ X-Payment header
@@ -167,7 +168,7 @@ stellar-search/
 ├── src/                        # React frontend
 │   ├── hooks/
 │   │   ├── useFreighterWallet.ts   # Real Freighter + Horizon integration with preflight checks
-│   │   └── useSearch.ts            # Calls real server endpoint; refuses to sign until preflight passes
+│   │   └── useSearch.ts            # Calls real server endpoint; refuses to create payment payload until preflight passes
 │   ├── components/
 │   │   ├── AnimatedBackground.tsx  # Canvas animation
 │   │   ├── WalletPanel.tsx         # Real Freighter connect + live balances
@@ -339,10 +340,13 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 | `api/health.ts` | 80% | 50% | 100% | 80% |
 | `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
 | `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
+| `src/hooks/useSearch.ts` | 85% | 65% | 90% | 85% |
 
 > **Ratchet policy:** When a module's real coverage exceeds its threshold, bump the threshold in `vite.config.ts` in the same PR. Global thresholds ratchet `15 → 25 → 35` as payment, wallet, API, MCP, and UI behavior moves from untested to tested. Keep Express (`server/`), Vercel (`api/`), browser (`src/`), and MCP (`mcp-server/`) constants aligned (`STELLAR_NETWORK`, `USDC_CONTRACT`, `AMOUNT_STROOPS=10000` → `0.001 USDC`).
 
 Coverage verifies the **x402 settlement semantics** for paid routes (`/search`, `/images`, `/news`): `scheme=exact`, `network=stellar:testnet|mainnet`, `amount=10000 stroops`, `asset=C...` (Soroban USDC contract, not `USDC:ISSUER`), `payTo=G...`. See `server/index.ts:104`, `api/search.ts:48`, and `mcp-server/index.ts:19`.
+
+Coverage also verifies the **bounded preflight guard** in `src/hooks/useFreighterWallet.ts` and `src/hooks/useSearch.ts`: if account, network, USDC trustline, spendable amount, or signer availability fails, the search surfaces one targeted recovery action and never creates a payment payload.
 
 ---
 
