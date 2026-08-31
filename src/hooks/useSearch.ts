@@ -57,7 +57,9 @@ function toCsv(results: SearchResult[], metadata: Record<string, unknown>): stri
  * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
  *
  * @param walletAddress - The Stellar public key address of the connected wallet, or `null` if unauthenticated.
- * @returns Object containing search session state (`session`), search execution function (`search`), and session reset function (`reset`).
+ * @returns Object containing search session, payment/export helpers, and selection controls (`session`, `search`, `reset`,
+ *          `selectedResults`, `toggleResult`, `toggleAllResults`, `clearSelection`, `isResultSelected`, `isAllSelected`,
+ *          and `exportSelectedResults`).
  */
 export function useSearch(walletAddress: string | null = null) {
   const [session, setSession] = useState<SearchSession>({
@@ -280,6 +282,11 @@ export function useSearch(walletAddress: string | null = null) {
     )
   }, [])
 
+  const isResultSelected = useCallback((result: SearchResult) =>
+    selectedResults.some(r => r === result),
+    [selectedResults]
+  )
+
   const toggleAllResults = useCallback((results: SearchResult[]) => {
     setSelectedResults(prev => {
       const resultSet = new Set(results)
@@ -290,6 +297,11 @@ export function useSearch(walletAddress: string | null = null) {
       return next
     })
   }, [])
+
+  const isAllSelected = useCallback((results: SearchResult[]) =>
+    results.length > 0 && results.every(r => selectedResults.some(p => p === r)),
+    [selectedResults]
+  )
 
   const clearSelection = useCallback(() => setSelectedResults([]), [])
 
@@ -327,5 +339,5 @@ export function useSearch(walletAddress: string | null = null) {
     setFilters({})
   }, [])
 
-  return { session, search, reset, selectedResults, toggleResult, toggleAllResults, clearSelection, exportSelectedResults }
+  return { session, search, reset, selectedResults, toggleResult, toggleAllResults, clearSelection, isResultSelected, isAllSelected, exportSelectedResults }
 }
