@@ -233,3 +233,71 @@ export function normalizeNewsResults(rawData: unknown): NewsResult[] {
 
   return validResults
 }
+
+/**
+ * Compares two result sets (previous and current) by canonical URL and
+ * categorizes each result as added, removed, moved, or unchanged.
+ * Items are matched by their canonical URL; moved items are those present in
+ * both sets but at different ranks (indices). The comparison is stable: in the
+ * output, items retain the order they appear in the current set.
+ *
+ * @param previous - The earlier stored result set.
+ * @param current - The later stored result set.
+ * @param getCanonicalUrl - Function that returns the canonical URL for a result.
+ * @returns A comparison object containing arrays for added, removed, moved, and unchanged items.
+ */
+export function compareResultSets<T>(
+  previous: readonly T[],
+  current: readonly T[],
+  getCanonicalUrl: (item: T) => string
+): {
+  added: T[]
+  removed: T[]
+  moved: Array<{ item: T; previousRank: number; currentRank: number }>
+  unchanged: T[]
+} {
+  const previousIndexByUrl = new Map<string, number>()
+  const currentIndexByUrl = new Map<string, number>()
+
+  previous.forEach((item, index) => {
+    const key = getCanonicalUrl(item)
+    if (!previousIndexByUrl.has(key)) {
+      previousIndexByUrl.set(key, index)
+    }
+  })
+
+  current.forEach((item, index) => {
+    const key = getCanonicalUrl(item)
+    if (!currentIndexByUrl.has(key)) {
+      currentIndexByUrl.set(key, index)
+    }
+  })
+
+  const added: T[] = []
+  const removed: T[] = []
+  const moved: Array<{ item: T; previousRank: number; currentRank: number }> = []
+  const unchanged: T[] = []
+
+  current.forEach((item, index) => {
+    const key = getCanonicalUrl(item)
+    const previousIndex = previousIndexByUrl.get(key)
+    if (previousIndex === undefined) {
+      added.push(item)
+    } else {
+      if (previousIndex !== index) {
+        moved.push({ item, previousRank: previousIndex, currentRank: index })
+      } else {
+        unchanged.push(item)
+      }
+    }
+  })
+
+  previous.forEach((item) => {
+    const key = getCanonicalUrl(item)
+    if (!currentIndexByUrl.has(key)) {
+      removed.push(item)
+    }
+  })
+
+  return { added, removed, moved, unchanged }
+}
