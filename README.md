@@ -108,6 +108,14 @@ Browser (Freighter) → GET /search?q=...
 
 Before signing, a bounded preflight verifies the active account, expected network, USDC trustline, spendable amount, and signer availability. If any check fails, no payment payload is created and the user gets a single targeted recovery action (e.g. "Add USDC", "Switch to testnet", or "Enable signer").
 
+| Preflight check | Required state | Targeted recovery action |
+|---|---|---|
+| Active account | A Freighter account is selected | Connect Freighter and select an account |
+| Expected network | Freighter network matches `VITE_STELLAR_NETWORK` (default `stellar:testnet`) | Switch Freighter to the configured Stellar network |
+| USDC trustline | Trustline to the Soroban USDC contract exists | Add the USDC trustline in Freighter |
+| Spendable amount | USDC balance ≥ 0.001 USDC (`AMOUNT_STROOPS=10000`) | Fund the wallet with testnet USDC |
+| Signer availability | Freighter can sign Soroban authorization entries | Unlock Freighter and approve the request |
+
 1. Agent hits `/search` — the `@x402/express` middleware intercepts
 2. Returns `HTTP 402 Payment Required` with price + network + payTo address
 3. After the preflight passes, the x402 client signs a Soroban authorization entry via Freighter wallet
