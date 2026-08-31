@@ -3,7 +3,8 @@ import {
   STELLAR_NETWORK, 
   USDC_CONTRACT, 
   AMOUNT_STROOPS,
-  AMOUNT_USDC
+  AMOUNT_USDC,
+  MAX_QUERY_LENGTH
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
@@ -42,6 +43,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!q?.trim()) {
     const errorBody: ApiErrorResponse = { error: 'Missing required parameter: q' }
+    return res.status(400).json(errorBody)
+  }
+
+  // Length-validate the serialized query. Advanced operators are composed
+  // client-side and sent through unchanged; the per-query price is fixed.
+  if (q.length > MAX_QUERY_LENGTH) {
+    const errorBody: ApiErrorResponse = { error: `Query exceeds maximum length of ${MAX_QUERY_LENGTH} characters` }
     return res.status(400).json(errorBody)
   }
 
