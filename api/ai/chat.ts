@@ -4,7 +4,13 @@ import Groq from 'groq-sdk'
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! })
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // ─── Method handling ───────────────────────────────────────────────────
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Allow', 'POST, OPTIONS')
+    return res.status(200).end()
+  }
   if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST, OPTIONS')
     return res.status(405).json({ error: 'Method not allowed' })
   }
 

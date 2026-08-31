@@ -50,18 +50,20 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
     global.fetch = originalFetch
   })
 
-  it('handles OPTIONS preflight', async () => {
+  it('handles OPTIONS preflight with Allow header', async () => {
     const { req, res } = mockReqRes({ method: 'OPTIONS' })
     await handler(req, res)
     expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.setHeader).toHaveBeenCalledWith('Allow', 'GET, OPTIONS')
     expect(res.end).toHaveBeenCalled()
   })
 
-  it('rejects non-GET methods', async () => {
+  it('rejects non-GET methods with Allow header', async () => {
     const { req, res } = mockReqRes({ method: 'POST' })
     await handler(req, res)
     expect(res._status).toBe(405)
     expect(res._json.error).toMatch(/Method not allowed/)
+    expect(res.setHeader).toHaveBeenCalledWith('Allow', 'GET, OPTIONS')
   })
 
   it('rejects missing q', async () => {

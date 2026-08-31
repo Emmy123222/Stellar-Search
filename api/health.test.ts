@@ -71,4 +71,24 @@ describe('api/health — Vercel health aligned with server /health', () => {
     const payload = res.json.mock.calls[0][0]
     expect(payload.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
+
+  it('handles OPTIONS preflight with Allow header', async () => {
+    const req: any = { method: 'OPTIONS', headers: {} }
+    const res = mockRes()
+    await handler(req, res)
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(res.setHeader).toHaveBeenCalledWith('Allow', 'GET, OPTIONS')
+    expect(res.end).toHaveBeenCalled()
+  })
+
+  it('returns 405 with Allow header for unsupported methods', async () => {
+    for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
+      const req: any = { method, headers: {} }
+      const res = mockRes()
+      await handler(req, res)
+      expect(res.status).toHaveBeenCalledWith(405)
+      expect(res.setHeader).toHaveBeenCalledWith('Allow', 'GET, OPTIONS')
+      expect(res.json).toHaveBeenCalledWith({ error: 'Method not allowed' })
+    }
+  })
 })

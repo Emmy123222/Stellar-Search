@@ -117,6 +117,21 @@ To guarantee that each payment identifier authorizes **exactly one provider call
 - **Payload Invalidation:** Extracts transaction hashes (or SHA-256 fallback hashes of payment headers) and invalidates consumed payloads for a 300-second window.
 - **Concurrency Throttling:** Rapid parallel requests using identical payment payloads are throttled so only one search query proceeds; concurrent duplicates immediately receive HTTP 402 (`Payment payload already consumed`).
 
+### Method Handling & Allow Headers
+
+Every endpoint explicitly handles `OPTIONS` (preflight) and returns `405 Method Not Allowed` with a correct `Allow` header for unsupported methods. This keeps Express, Vercel, browser, and MCP behaviour aligned:
+
+| Endpoint | Allowed Methods |
+|---|---|
+| `GET /search` | `GET, OPTIONS` |
+| `GET /images` | `GET, OPTIONS` |
+| `GET /news` | `GET, OPTIONS` |
+| `GET /health` | `GET, OPTIONS` |
+| `POST /ai/chat` | `POST, OPTIONS` |
+| `GET /` | `GET, OPTIONS` |
+
+405 responses include a common error body: `{ "error": "Method not allowed" }`.
+
 ### Sequence diagram
 
 ```mermaid

@@ -30,8 +30,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     'X-Payment-Response',
   ].join(', '))
 
-  if (req.method === 'OPTIONS') return res.status(200).end()
-  if (req.method !== 'GET')    return res.status(405).json({ error: 'Method not allowed' })
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Allow', 'GET, OPTIONS')
+    return res.status(200).end()
+  }
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET, OPTIONS')
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
 
   const { q, count = '5', freshness } = req.query as Record<string, string>
 

@@ -37,6 +37,22 @@ const app  = express()
 const PORT = process.env.PORT || 3001
 const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE || '30', 10)
 
+// ─── Method handling helpers ─────────────────────────────────────────────
+// Centralises OPTIONS preflight and 405 responses so every Express endpoint
+// advertises the correct Allow header and returns a consistent error body.
+// These keep Express, Vercel, browser, and MCP behaviour aligned.
+
+/** Build a comma-separated Allow header from a list of methods. */
+function allowHeader(...methods: string[]): string {
+  return [...new Set(['OPTIONS', ...methods])].join(', ')
+}
+
+/** Respond with 405 + Allow header + common error body. */
+function methodNotAllowed(res: Response, allow: string): void {
+  res.setHeader('Allow', allow)
+  res.status(405).json({ error: 'Method not allowed' })
+}
+
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: RATE_LIMIT_PER_MINUTE,
@@ -201,6 +217,8 @@ export function validateQuery(
 
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {
+  // Explicit method guard — unsupported methods receive 405 + Allow header
+  if (req.method !== 'GET') return methodNotAllowed(res, allowHeader('GET'))
   const { q, count = '5', freshness } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -310,6 +328,8 @@ app.get('/search', async (req: Request, res: Response) => {
 
 // ─── GET /images ──────────────────────────────────────────────────────────
 app.get('/images', async (req: Request, res: Response) => {
+  // Explicit method guard — unsupported methods receive 405 + Allow header
+  if (req.method !== 'GET') return methodNotAllowed(res, allowHeader('GET'))
   const { q, count = '10' } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -376,6 +396,8 @@ app.get('/images', async (req: Request, res: Response) => {
 
 // ─── GET /news ────────────────────────────────────────────────────────────
 app.get('/news', async (req: Request, res: Response) => {
+  // Explicit method guard — unsupported methods receive 405 + Allow header
+  if (req.method !== 'GET') return methodNotAllowed(res, allowHeader('GET'))
   const { q, count = '10', freshness } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -453,7 +475,9 @@ app.get('/news', async (req: Request, res: Response) => {
 })
 
 // ─── GET /health ──────────────────────────────────────────────────────────
-app.get('/health', (_req: Request, res: Response) => {
+app.get('/health', (req: Request, res: Response) => {
+  // Explicit method guard — unsupported methods receive 405 + Allow header
+  if (req.method !== 'GET') return methodNotAllowed(res, allowHeader('GET'))
   const avg = stats.latencies.length
     ? Math.round(stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length)
     : 0
@@ -482,6 +506,8 @@ app.get('/health', (_req: Request, res: Response) => {
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
 // (back-compat fallback for callers that don't support SSE).
 app.post('/ai/chat', async (req: Request, res: Response) => {
+  // Explicit method guard — unsupported methods receive 405 + Allow header
+  if (req.method !== 'POST') return methodNotAllowed(res, allowHeader('POST'))
   const { messages, model: requestedModel } = req.body as {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string
@@ -580,7 +606,9 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
 
 
 // ─── GET / ────────────────────────────────────────────────────────────────
-app.get('/', (_req: Request, res: Response) => {
+app.get('/', (req: Request, res: Response) => {
+  // Explicit method guard — unsupported methods receive 405 + Allow header
+  if (req.method !== 'GET') return methodNotAllowed(res, allowHeader('GET'))
   res.json({
     name:        'StellarSearch',
     version:     '1.0.0',
@@ -593,6 +621,28 @@ app.get('/', (_req: Request, res: Response) => {
       'GET /health':           'Live server stats',
     },
   })
+})
+
+// ─── Catch-all: unsupported methods → 405 with Allow header ──────────────
+// Placed after all route definitions. Express routes only register for the
+// explicit method (get/post), so any other method falls through to here.
+app.all('/search', (req: Request, res: Response) => {
+  methodNotAllowed(res, allowHeader('GET'))
+})
+app.all('/images', (req: Request, res: Response) => {
+  methodNotAllowed(res, allowHeader('GET'))
+})
+app.all('/news', (req: Request, res: Response) => {
+  methodNotAllowed(res, allowHeader('GET'))
+})
+app.all('/health', (req: Request, res: Response) => {
+  methodNotAllowed(res, allowHeader('GET'))
+})
+app.all('/ai/chat', (req: Request, res: Response) => {
+  methodNotAllowed(res, allowHeader('POST'))
+})
+app.all('/', (req: Request, res: Response) => {
+  methodNotAllowed(res, allowHeader('GET'))
 })
 
 // ─── Start ────────────────────────────────────────────────────────────────
