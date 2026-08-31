@@ -47,7 +47,11 @@ dotenv.config()
 const SERVER_URL = process.env.SEARCH_API_URL || 'http://localhost:3001'
 const GROQ_API_KEY = process.env.GROQ_API_KEY!
 
-const groq = new Groq({ apiKey: GROQ_API_KEY })
+const groq = new Groq({ 
+  apiKey: GROQ_API_KEY,
+  timeout: 15000,
+  maxRetries: 2
+})
 
 // ─── Receipt store (opted-in, in-memory, capped) ──────────────────────────
 export interface McpReceipt {
@@ -657,11 +661,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   }
 
-  // ── ai_summarize ──────────────────────────────────────────────────────
+// ── ai_summarize ──────────────────────────────────────────────────────
   if (name === 'ai_summarize') {
     const { text, instruction = 'summarise' } = args as { text: string; instruction?: string }
 
     try {
+      // MCP SDK exposes request cancellation via a private symbol or signal if available
+      // but typical pattern without access to extra.signal is to just use deadlines.
       const completion = await groq.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
         messages: [

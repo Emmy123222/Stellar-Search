@@ -259,7 +259,11 @@ if (!SERPER_API_KEY)    console.warn('⚠  SERPER_API_KEY not set')
 if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
-const groq = new Groq({ apiKey: GROQ_API_KEY })
+const groq = new Groq({ 
+  apiKey: GROQ_API_KEY,
+  timeout: 15000,
+  maxRetries: 2
+})
 
 // ─── x402 payment guard on /search ───────────────────────────────────────
 // paymentMiddlewareFromConfig is the recommended API per official Stellar docs.
@@ -438,6 +442,10 @@ app.get('/search', async (req: Request, res: Response) => {
     // ── Optional AI suggestions via Groq ──────────────────────────────────
     let suggestions: string[] = []
     if (req.query.suggestions === '1' && results.length > 0) {
+      const controller = new AbortController()
+      const onReqClose = () => controller.abort()
+      req.on('close', onReqClose)
+
       try {
         const topSnippets = results.slice(0, 3).map((r) => r.description).join(' | ')
         const suggCompletion = await groq.chat.completions.create({
@@ -454,7 +462,7 @@ app.get('/search', async (req: Request, res: Response) => {
           ],
           max_tokens: 120,
           temperature: 0.7,
-        })
+        }, { signal: controller.signal })
         const raw = suggCompletion.choices[0]?.message?.content || '[]'
         const match = raw.match(/\[[\s\S]*\]/)
         if (match) {
@@ -467,7 +475,11 @@ app.get('/search', async (req: Request, res: Response) => {
           }
         }
       } catch (err: any) {
-        console.warn('[suggestions] Groq error:', err.message)
+        if (!controller.signal.aborted) {
+          console.warn('[suggestions] Groq error:', err.message)
+        }
+      } finally {
+        req.off('close', onReqClose)
       }
     }
 
@@ -1052,6 +1064,11 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
     ...messages,
   ]
 
+  // Abort the Groq stream if the client disconnects mid-response.
+  const controller = new AbortController()
+  const onReqClose = () => controller.abort()
+  req.on('close', onReqClose)
+
   if (!wantsStream) {
     try {
       const completion = await groq.chat.completions.create({
@@ -1059,11 +1076,14 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
         messages: groqMessages,
         max_tokens:  512,
         temperature: 0.7,
-      })
+      }, { signal: controller.signal })
 
       const content = completion.choices[0]?.message?.content || 'No response.'
+      req.off('close', onReqClose)
       return res.json({ content, model: completion.model })
     } catch (err: any) {
+      req.off('close', onReqClose)
+      if (controller.signal.aborted) return res.end()
       console.error('[groq error]', err.message)
       return res.status(500).json({ error: `Groq AI error: ${err.message}` })
     }
@@ -1081,10 +1101,6 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
     res.write(`event: ${event}\n`)
     res.write(`data: ${JSON.stringify(data)}\n\n`)
   }
-
-  // Abort the Groq stream if the client disconnects mid-response.
-  const controller = new AbortController()
-  req.on('close', () => controller.abort())
 
   try {
     const stream = await groq.chat.completions.create(
@@ -1109,6 +1125,8 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
     console.error('[groq stream error]', err.message)
     sendEvent('error', { error: `Groq AI error: ${err.message}` })
     res.end()
+  } finally {
+    req.off('close', onReqClose)
   }
 })
 

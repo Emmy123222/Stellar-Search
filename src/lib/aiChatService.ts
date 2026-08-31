@@ -95,7 +95,8 @@ export function buildChatMessages(
  */
 export async function executeChatCompletion(
   groqClient: any,
-  options: ChatCompletionOptions
+  options: ChatCompletionOptions,
+  signal?: AbortSignal
 ): Promise<ChatCompletionResult> {
   const model = resolveModel(options.model)
   const messages = buildChatMessages(options.messages, options.systemPrompt)
@@ -107,7 +108,7 @@ export async function executeChatCompletion(
     messages,
     max_tokens,
     temperature,
-  })
+  }, signal ? { signal } : undefined)
 
   const content = completion.choices?.[0]?.message?.content || 'No response.'
   return {
