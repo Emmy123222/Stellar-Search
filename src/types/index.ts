@@ -20,6 +20,7 @@ export interface SearchSession {
   error?: string
   suggestions?: string[]
   durationMs?: number
+  preflight?: PreflightResult
 }
 
 export interface WalletState {
@@ -31,6 +32,21 @@ export interface WalletState {
   hasUsdcTrustline: boolean
   loading: boolean
   error: string | null
+}
+
+export type PreflightCheckId = 'account' | 'network' | 'trustline' | 'balance' | 'signer'
+
+export interface PreflightCheck {
+  id: PreflightCheckId
+  label: string
+  passed: boolean
+  message?: string
+}
+
+export interface PreflightResult {
+  passed: boolean
+  checks: PreflightCheck[]
+  recoveryAction: string
 }
 
 export interface StellarTransaction {
