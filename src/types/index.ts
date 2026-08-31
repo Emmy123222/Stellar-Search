@@ -28,6 +28,7 @@ export interface WalletState {
   network: string
   xlmBalance: string
   usdcBalance: string
+  hasUsdcTrustline: boolean
   loading: boolean
   error: string | null
 }
