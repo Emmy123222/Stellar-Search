@@ -38,19 +38,14 @@ const EXPORT_VERSION = 1
 
 function escapeCsv(value: unknown): string {
   const str = value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) ?? '' : String(value)
-  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str
+  return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str
 }
 
 function toCsv(results: SearchResult[], metadata: Record<string, unknown>): string {
   const headers = Array.from(new Set(results.flatMap((result) => Object.keys(result))))
   const lines = [
-    `# version: ${EXPORT_VERSION}`,
-    `# exportedAt: ${String(metadata.exportedAt)}`,
-    `# query: ${escapeCsv(metadata.query)}`,
-    `# filters: ${escapeCsv(JSON.stringify(metadata.filters))}`,
-    `# network: ${escapeCsv(metadata.network)}`,
-    `# receipt: ${escapeCsv(JSON.stringify(metadata.receipt))}`,
-    headers.join(','),
+    `# ${JSON.stringify(metadata)}`,
+    headers.map(escapeCsv).join(','),
     ...results.map((result) =>
       headers.map((header) => escapeCsv(result[header as keyof SearchResult])).join(',')
     ),
@@ -301,9 +296,10 @@ export function useSearch(walletAddress: string | null = null) {
   const exportSelectedResults = useCallback((format: 'json' | 'csv' = 'json') => {
     if (selectedResults.length === 0) return
 
+    const exportedAt = new Date().toISOString()
     const metadata = {
       version: EXPORT_VERSION,
-      exportedAt: new Date().toISOString(),
+      exportedAt,
       query: session.query,
       filters,
       network: network ?? 'stellar:testnet',
@@ -317,7 +313,7 @@ export function useSearch(walletAddress: string | null = null) {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `stellar-search-selected-${new Date().toISOString().replace(/[:.]/g, '-')}.${format}`
+    link.download = `stellar-search-selected-${exportedAt.replace(/[:.]/g, '-')}.${format}`
     document.body.appendChild(link)
     link.click()
     link.remove()
