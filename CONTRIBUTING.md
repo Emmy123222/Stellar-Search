@@ -66,7 +66,7 @@ Before you begin, make sure you have:
 
 | Requirement | Version | Notes |
 |---|---|---|
-| **Node.js** | ≥ 18.0.0 | ESM support required; CI tests Node 18 and 22 |
+| **Node.js** | ≥ 20.19.0 | ESM support required; CI tests Node 20 and 22 |
 | **npm** | ≥ 9.0.0 | Comes with Node 18 |
 | **Git** | any recent | — |
 | **Freighter** | latest | [freighter.app](https://freighter.app) browser extension |
@@ -452,7 +452,7 @@ CI runs typecheck, lint, and test jobs across a matrix of Node versions to ensur
 
 | Node version | Role |
 |---|---|
-| **18** | Minimum supported (per `package.json` engines) |
+| **20** | Minimum supported (per `package.json` engines) |
 | **22** | Current LTS |
 
 Each job includes a `node scripts/check-node-version.js` step that validates the running version against the `engines` field before any build or test steps run. Unsupported versions fail early with a clear error message.

@@ -216,7 +216,7 @@ CI runs typecheck, lint, and test jobs across a matrix of Node versions:
 
 | Node version | Role |
 |---|---|
-| **18** | Minimum supported (per `package.json` engines) |
+| **20** | Minimum supported (per `package.json` engines) |
 | **22** | Current LTS |
 
 Unsupported versions fail early via `node scripts/check-node-version.js` before any build or test steps run.

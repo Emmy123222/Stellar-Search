@@ -169,7 +169,7 @@ describe('checkNodeVersion', () => {
     expect(checkNodeVersion('v21.0.0', range).ok).toBe(false)
   })
 
-  it('SUPPORTED_RANGE default is >=18.0.0', () => {
-    expect(SUPPORTED_RANGE).toBe('>=18.0.0')
+  it('SUPPORTED_RANGE matches Vite 8 engine requirements', () => {
+    expect(SUPPORTED_RANGE).toBe('^20.19.0 || >=22.12.0')
   })
 })

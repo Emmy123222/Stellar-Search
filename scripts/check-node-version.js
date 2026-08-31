@@ -12,7 +12,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const SUPPORTED_RANGE = ">=18.0.0";
+export const SUPPORTED_RANGE = "^20.19.0 || >=22.12.0";
 
 /**
  * Parse a major.minor.patch string into a comparable tuple.
