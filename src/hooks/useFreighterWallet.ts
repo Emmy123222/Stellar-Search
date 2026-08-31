@@ -20,6 +20,8 @@ export type { WalletState, StellarTransaction }
 const EXPECTED_NETWORK = 'TESTNET'
 const PREFLIGHT_TIMEOUT_MS = 5000
 
+const MIN_XLM_FEE_XLM = 0.00001
+
 export type PaymentPreflightResult =
   | {
       ok: true
@@ -87,8 +89,9 @@ export function extractSafeMemo(
  * Bounded preflight for x402 payment readiness.
  *
  * Checks Freighter connection, active account, expected network, USDC trustline,
- * spendable balance, and signer availability. Returns a targeted recovery action
- * when the preflight fails so callers can avoid creating a payment payload.
+ * spendable balance, XLM fee availability, and signer availability. Returns a
+ * targeted recovery action when the preflight fails so callers can avoid
+ * creating a payment payload.
  */
 export async function preflightPayment({
   amount,
@@ -145,7 +148,14 @@ export async function preflightPayment({
         }
 
         const networkResult = await getNetwork()
-        const network = networkResult.network || EXPECTED_NETWORK
+        const network = networkResult.network
+        if (!network) {
+          return {
+            ok: false,
+            reason: 'Unable to determine Freighter network.',
+            recoveryAction: 'Check Freighter network settings.',
+          }
+        }
         if (network !== expectedNetwork) {
           return {
             ok: false,
@@ -157,10 +167,13 @@ export async function preflightPayment({
         const account = await horizon.loadAccount(address.address)
         let xlmBalance = '0'
         let usdcBalance = '0'
+        let availableXlm = 0
+        let availableUsdc = 0
         let hasUsdcTrustline = false
 
         for (const balance of account.balances) {
           if (balance.asset_type === 'native') {
+            availableXlm = Number(balance.balance)
             xlmBalance = parseFloat(balance.balance).toFixed(4)
           } else if (
             balance.asset_type === 'credit_alphanum4' &&
@@ -168,6 +181,7 @@ export async function preflightPayment({
             (balance as any).asset_issuer === USDC_ISSUER
           ) {
             hasUsdcTrustline = true
+            availableUsdc = Number(balance.balance)
             usdcBalance = parseFloat(balance.balance).toFixed(6)
           }
         }
@@ -181,7 +195,6 @@ export async function preflightPayment({
         }
 
         const requiredAmount = Number(amount)
-        const availableAmount = Number(usdcBalance)
         if (!Number.isFinite(requiredAmount) || requiredAmount <= 0) {
           return {
             ok: false,
@@ -190,11 +203,19 @@ export async function preflightPayment({
           }
         }
 
-        if (availableAmount < requiredAmount) {
+        if (availableUsdc < requiredAmount) {
           return {
             ok: false,
-            reason: `Insufficient USDC balance: ${usdcBalance} available, ${amount} required.`,
+            reason: `Insufficient USDC balance: ${availableUsdc.toFixed(7)} available, ${amount} required.`,
             recoveryAction: 'Add USDC or reduce the payment amount.',
+          }
+        }
+
+        if (availableXlm < MIN_XLM_FEE_XLM) {
+          return {
+            ok: false,
+            reason: `Insufficient XLM for transaction fees: ${availableXlm.toFixed(6)} XLM available.`,
+            recoveryAction: 'Add a small amount of XLM to cover network fees.',
           }
         }
 
@@ -215,13 +236,22 @@ export async function preflightPayment({
     ])
   } catch (err: any) {
     const message = err.message || 'Preflight check failed.'
+    const isAccountNotFound =
+      err?.response?.status === 404 ||
+      /account.*not found/i.test(message) ||
+      /not found.*account/i.test(message)
+    const isAccessDenied = /denied|declined|reject/i.test(message)
     return {
       ok: false,
       reason: message,
       recoveryAction:
         message === 'Preflight timed out.'
           ? 'Retry the preflight check.'
-          : 'Review Freighter connection and try again.',
+          : isAccessDenied
+            ? 'Approve Freighter access for this app.'
+            : isAccountNotFound
+              ? 'Fund this account with XLM to activate it.'
+              : 'Review Freighter connection and try again.',
     }
   } finally {
     if (timeoutId) {
