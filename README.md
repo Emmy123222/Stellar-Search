@@ -144,6 +144,27 @@ To guarantee that each payment identifier authorizes **exactly one provider call
 - **Payload Invalidation:** Extracts transaction hashes (or SHA-256 fallback hashes of payment headers) and invalidates consumed payloads for a 300-second window.
 - **Concurrency Throttling:** Rapid parallel requests using identical payment payloads are throttled so only one search query proceeds; concurrent duplicates immediately receive HTTP 402 (`Payment payload already consumed`).
 
+### Client-side duplicate submission guard
+
+The server-side throttling above assumes a request actually reaches it — but
+`useSearch` (`src/hooks/useSearch.ts`) can itself be asked to start a second
+paid flow before the first has settled, e.g. a double Enter/double click that
+fires before React re-renders `isSearching`, or a second browser tab open on
+the same page. To prevent that from producing two Freighter payment prompts
+(and two settlements) for one logical query:
+
+- **Same-tab guard:** a `useRef` flips synchronously on the first call and
+  blocks re-entrant calls for the lifetime of that in-flight search,
+  independent of React's (batched, async) `session.status` state.
+- **Cross-tab mutex:** a `localStorage`-backed lock (`stellarsearch_search_lock`)
+  is acquired before the 402 probe is even sent. A second tab attempting to
+  search while the lock is held gets a toast ("Search already in progress")
+  instead of starting its own payment flow. The lock carries a 20s TTL so a
+  crashed/closed tab can never permanently block searching in other tabs.
+
+Both guards release in a `finally` block regardless of success or failure, so
+a completed or failed search always unblocks the next one.
+
 ### Sequence diagram
 
 ```mermaid
