@@ -90,6 +90,9 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 | `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Falls back to the public OpenZeppelin facilitator if missing. | `https://www.x402.org/facilitator` |
 | `PORT` | No | `3001` | Express server listen port. Falls back to `3001` if missing. | `3001` |
 | `VITE_SERVER_URL` | No | `http://localhost:3001` | Frontend URL for AI chat backend calls. On Vercel deployments auto-detects `${origin}/api`; locally falls back to `http://localhost:3001`. | `http://localhost:3001` |
+| `RATE_LIMIT_PAID_PER_MINUTE` | No | `30` | Rate limit for paid search routes (`/search`, `/images`, `/news`) per minute per IP. Separate budget from AI and health routes. | `30` |
+| `RATE_LIMIT_AI_PER_MINUTE` | No | `60` | Rate limit for free AI chat route (`/ai/chat`) per minute per IP. Separate budget from paid search and health routes. | `60` |
+| `RATE_LIMIT_HEALTH_PER_MINUTE` | No | `1000` | Rate limit for health check route (`/health`) per minute per IP. High limit to avoid interfering with health probes. | `1000` |
 
 ---
 

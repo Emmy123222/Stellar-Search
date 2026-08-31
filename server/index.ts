@@ -35,16 +35,57 @@ dotenv.config()
 
 const app  = express()
 const PORT = process.env.PORT || 3001
-const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE || '30', 10)
 
-const limiter = rateLimit({
+// Separate rate limit budgets for each route type
+const RATE_LIMIT_PAID_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PAID_PER_MINUTE || '30', 10)
+const RATE_LIMIT_AI_PER_MINUTE = parseInt(process.env.RATE_LIMIT_AI_PER_MINUTE || '60', 10)
+const RATE_LIMIT_HEALTH_PER_MINUTE = parseInt(process.env.RATE_LIMIT_HEALTH_PER_MINUTE || '1000', 10)
+
+// Rate limiter for paid search routes (/search, /images, /news)
+const paidSearchLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: RATE_LIMIT_PER_MINUTE,
+  max: RATE_LIMIT_PAID_PER_MINUTE,
   standardHeaders: true,
-  legacyHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    return req.ip || 'unknown'
+  },
   handler: (_req: Request, res: Response) => {
-    res.setHeader('Retry-After', '60')
-    res.status(429).json({ error: 'Too many requests, please try again later.' })
+    const retryAfter = Math.ceil(60 * 1000 / 1000)
+    res.setHeader('Retry-After', String(retryAfter))
+    res.status(429).json({ error: 'Too many paid search requests, please try again later.' })
+  },
+})
+
+// Rate limiter for free AI chat route (/ai/chat)
+const aiChatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: RATE_LIMIT_AI_PER_MINUTE,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    return req.ip || 'unknown'
+  },
+  handler: (_req: Request, res: Response) => {
+    const retryAfter = Math.ceil(60 * 1000 / 1000)
+    res.setHeader('Retry-After', String(retryAfter))
+    res.status(429).json({ error: 'Too many AI chat requests, please try again later.' })
+  },
+})
+
+// Rate limiter for health route (/health) - very high limit to not interfere with health probes
+const healthLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: RATE_LIMIT_HEALTH_PER_MINUTE,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    return req.ip || 'unknown'
+  },
+  handler: (_req: Request, res: Response) => {
+    const retryAfter = Math.ceil(60 * 1000 / 1000)
+    res.setHeader('Retry-After', String(retryAfter))
+    res.status(429).json({ error: 'Too many health check requests, please try again later.' })
   },
 })
 
@@ -76,7 +117,6 @@ app.use(
 )
 app.use(cors(buildCorsOptions()))
 app.use(express.json())
-app.use(limiter)
 
 // ─── In-memory stats ──────────────────────────────────────────────────────
 const stats = {
@@ -200,7 +240,7 @@ export function validateQuery(
 }
 
 // ─── GET /search ──────────────────────────────────────────────────────────
-app.get('/search', async (req: Request, res: Response) => {
+app.get('/search', paidSearchLimiter, async (req: Request, res: Response) => {
   const { q, count = '5', freshness } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -309,7 +349,7 @@ app.get('/search', async (req: Request, res: Response) => {
 })
 
 // ─── GET /images ──────────────────────────────────────────────────────────
-app.get('/images', async (req: Request, res: Response) => {
+app.get('/images', paidSearchLimiter, async (req: Request, res: Response) => {
   const { q, count = '10' } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -375,7 +415,7 @@ app.get('/images', async (req: Request, res: Response) => {
 })
 
 // ─── GET /news ────────────────────────────────────────────────────────────
-app.get('/news', async (req: Request, res: Response) => {
+app.get('/news', paidSearchLimiter, async (req: Request, res: Response) => {
   const { q, count = '10', freshness } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -453,7 +493,7 @@ app.get('/news', async (req: Request, res: Response) => {
 })
 
 // ─── GET /health ──────────────────────────────────────────────────────────
-app.get('/health', (_req: Request, res: Response) => {
+app.get('/health', healthLimiter, (_req: Request, res: Response) => {
   const avg = stats.latencies.length
     ? Math.round(stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length)
     : 0
@@ -481,7 +521,7 @@ app.get('/health', (_req: Request, res: Response) => {
 // Streams responses as Server-Sent Events when the client sends
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
 // (back-compat fallback for callers that don't support SSE).
-app.post('/ai/chat', async (req: Request, res: Response) => {
+app.post('/ai/chat', aiChatLimiter, async (req: Request, res: Response) => {
   const { messages, model: requestedModel } = req.body as {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string
