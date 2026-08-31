@@ -43,3 +43,8 @@ export const USDC_CONTRACT = IS_MAINNET ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_
 // Payments
 export const AMOUNT_STROOPS = '10000' // 0.001 USDC
 export const AMOUNT_USDC = '0.001'
+
+// AI summarization input limits (MCP ai_summarize + Express /ai/chat)
+export const AI_TEXT_MAX_LENGTH = 10_000
+export const AI_INSTRUCTION_MAX_LENGTH = 500
+export const AI_COMBINED_MAX_LENGTH = 10_000

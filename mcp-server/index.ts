@@ -39,6 +39,9 @@ import {
   AMOUNT_USDC,
   USDC_CONTRACT,
   AMOUNT_STROOPS,
+  AI_TEXT_MAX_LENGTH,
+  AI_INSTRUCTION_MAX_LENGTH,
+  AI_COMBINED_MAX_LENGTH,
 } from '../src/lib/constants'
 import { MAX_BATCH_SIZE } from '../src/types/index.js'
 
@@ -259,8 +262,8 @@ Use for breaking stories, current events, and time-sensitive reporting.`,
       inputSchema: {
         type: 'object',
         properties: {
-          text: { type: 'string', description: 'Text to summarise or analyse' },
-          instruction: { type: 'string', description: 'What to do with the text (e.g. "summarise", "extract key points")', default: 'summarise' },
+          text: { type: 'string', description: `Text to summarise or analyse (max ${AI_TEXT_MAX_LENGTH} chars; combined text+instruction max ${AI_COMBINED_MAX_LENGTH} chars)` },
+          instruction: { type: 'string', description: `What to do with the text (max ${AI_INSTRUCTION_MAX_LENGTH} chars)`, default: 'summarise' },
         },
         required: ['text'],
       },
@@ -660,6 +663,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── ai_summarize ──────────────────────────────────────────────────────
   if (name === 'ai_summarize') {
     const { text, instruction = 'summarise' } = args as { text: string; instruction?: string }
+
+    // ── Input length validation ──────────────────────────────────────────
+    if (!text || typeof text !== 'string') {
+      return { content: [{ type: 'text', text: 'Validation error: text is required and must be a string.' }], isError: true }
+    }
+    if (text.length > AI_TEXT_MAX_LENGTH) {
+      return { content: [{ type: 'text', text: `Validation error: text exceeds maximum length of ${AI_TEXT_MAX_LENGTH} characters (received ${text.length}).` }], isError: true }
+    }
+    if (instruction.length > AI_INSTRUCTION_MAX_LENGTH) {
+      return { content: [{ type: 'text', text: `Validation error: instruction exceeds maximum length of ${AI_INSTRUCTION_MAX_LENGTH} characters (received ${instruction.length}).` }], isError: true }
+    }
+    if (text.length + instruction.length > AI_COMBINED_MAX_LENGTH) {
+      return { content: [{ type: 'text', text: `Validation error: combined text + instruction length exceeds maximum of ${AI_COMBINED_MAX_LENGTH} characters (received ${text.length + instruction.length}).` }], isError: true }
+    }
 
     try {
       const completion = await groq.chat.completions.create({

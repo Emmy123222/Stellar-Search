@@ -238,9 +238,7 @@ English is the complete, always-available fallback locale, via [i18next](https:/
 }
 ```
 
-Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.
-
-### MCP progress notifications (#327)
+Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.### MCP progress notifications (#327)
 
 Paid MCP tools (`web_search`, `image_search`, `news_search`) emit **bounded** `notifications/progress` events for actual payment/search phases **only when the client sends `_meta.progressToken`**:
 
@@ -297,6 +295,7 @@ curl -N -X POST http://localhost:3001/search/batch \
 
 ### Async paid search jobs with webhooks (#324)
 
+
 ```
 POST /jobs  → 202 { jobId, statusUrl, paymentVerified, paymentId, txHash }
 GET  /jobs/:id → { job, paymentVerified, statusUrl }
@@ -343,6 +342,18 @@ When upstream search providers auto-correct or suggest queries ("Did you mean?")
 - **Auto-Correction**: Displays an informative banner explaining that results were auto-corrected, with a one-click option to search the original query with explicit wallet confirmation.
 - **Did You Mean Suggestions**: Displays the suggested correction alongside "Search Suggestion" (which invokes the explicit Freighter confirmation flow) and a "Dismiss" action that closes the suggestion with **0 additional cost and no second payment**.
 - No automatic or silent payments are ever executed.
+
+### ai_summarize input limits (#169)
+
+The `ai_summarize` MCP tool (and the Express `/ai/chat` endpoint) enforce character-level input limits before any Groq request is made. This prevents oversized payloads from being sent to the LLM and keeps latency predictable.
+
+| Field | Max length |
+|---|---:|
+| `text` | 10,000 characters |
+| `instruction` | 500 characters |
+| `text` + `instruction` combined | 10,000 characters |
+
+Limits are defined in `src/lib/constants.ts` and enforced in both the MCP server and Express server before the Groq API call. Oversized inputs receive a clear validation error (MCP returns `isError: true`; Express returns HTTP 400).
 
 ---
 

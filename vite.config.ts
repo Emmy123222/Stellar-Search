@@ -45,7 +45,7 @@ export default defineConfig({
         'api/jobs/[id].ts': { statements: 95, branches: 90, functions: 100, lines: 95 },
         'api/health.ts': { statements: 80, branches: 50, functions: 100, lines: 80 },
         'api/ai/chat.ts': { statements: 90, branches: 60, functions: 60, lines: 90 },
-        'mcp-server/index.ts': { statements: 20, branches: 10, functions: 10, lines: 20 },
+        'mcp-server/index.ts': { statements: 40, branches: 35, functions: 25, lines: 40 },
         'src/hooks/useFreighterWallet.ts': { statements: 85, branches: 65, functions: 90, lines: 85 },
       },
     },

@@ -17,6 +17,9 @@ import {
   USDC_CONTRACT_MAINNET,
   AMOUNT_STROOPS,
   AMOUNT_USDC,
+  AI_TEXT_MAX_LENGTH,
+  AI_INSTRUCTION_MAX_LENGTH,
+  AI_COMBINED_MAX_LENGTH,
 } from './constants'
 
 describe('constants — Express, Vercel, browser, MCP alignment', () => {
@@ -77,5 +80,19 @@ describe('constants — Express, Vercel, browser, MCP alignment', () => {
     expect(isNaN(parseFloat(AMOUNT_USDC))).toBe(false)
     expect(isNaN(parseInt(AMOUNT_STROOPS))).toBe(false)
     expect(parseFloat(AMOUNT_USDC)).toBeGreaterThan(0)
+  })
+
+  it('AI input limits are positive integers', () => {
+    expect(AI_TEXT_MAX_LENGTH).toBeGreaterThan(0)
+    expect(Number.isInteger(AI_TEXT_MAX_LENGTH)).toBe(true)
+    expect(AI_INSTRUCTION_MAX_LENGTH).toBeGreaterThan(0)
+    expect(Number.isInteger(AI_INSTRUCTION_MAX_LENGTH)).toBe(true)
+    expect(AI_COMBINED_MAX_LENGTH).toBeGreaterThan(0)
+    expect(Number.isInteger(AI_COMBINED_MAX_LENGTH)).toBe(true)
+  })
+
+  it('AI combined max >= text max and >= instruction max', () => {
+    expect(AI_COMBINED_MAX_LENGTH).toBeGreaterThanOrEqual(AI_TEXT_MAX_LENGTH)
+    expect(AI_COMBINED_MAX_LENGTH).toBeGreaterThanOrEqual(AI_INSTRUCTION_MAX_LENGTH)
   })
 })

@@ -1,4 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
+import {
+  AI_TEXT_MAX_LENGTH,
+  AI_INSTRUCTION_MAX_LENGTH,
+  AI_COMBINED_MAX_LENGTH,
+} from '../src/lib/constants'
 
 // Mock MCP SDK before importing server
 const mockSetRequestHandler = vi.fn()
@@ -43,6 +48,18 @@ process.env.SEARCH_API_URL = 'http://localhost:3001'
 
 import { HORIZON_URL, USDC_ISSUER, STELLAR_NETWORK, AMOUNT_USDC } from '../src/lib/constants'
 
+/**
+ * Helper: get the CallTool handler registered by the MCP server.
+ * It is the second setRequestHandler call (after ListTools).
+ */
+function getCallToolHandler(): Function {
+  const calls = mockSetRequestHandler.mock.calls
+  // The ListTools handler is the first registration; CallTool is the second.
+  if (calls.length >= 2) return calls[1][1] as Function
+  // Fallback: any handler whose schema is not the ListTools one
+  return calls.find(c => c[0] !== calls[0][0])?.[1] as Function
+}
+
 describe('MCP server — alignment with Express/Vercel/browser constants', () => {
   it('MCP uses same AMOUNT_USDC as server (x402 settlement)', async () => {
     expect(AMOUNT_USDC).toBe('0.001')
@@ -81,8 +98,7 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
   })
 
   it('MCP check_balance handler uses Horizon and USDC issuer', async () => {
-    const callToolCall = mockSetRequestHandler.mock.calls.find(c => c[0] === CallToolRequestSchemaMock)
-    const callToolHandler = callToolCall?.[1] as Function
+    const callToolHandler = getCallToolHandler()
     if (callToolHandler) {
       // Mock fetch for Horizon
       const mockFetch = vi.fn().mockResolvedValue({
@@ -104,5 +120,89 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
       // Fallback: ensure USDC issuer aligns
       expect(USDC_ISSUER).toBeDefined()
     }
+  })
+})
+
+describe('MCP ai_summarize — input length validation (#169)', () => {
+  it('schema declares per-field and combined character limits', async () => {
+    const listHandler = mockSetRequestHandler.mock.calls[0][1] as Function
+    const result: any = await listHandler()
+    const aiTool = result.tools.find((t: any) => t.name === 'ai_summarize')
+    expect(aiTool).toBeDefined()
+    // Description should mention limits
+    expect(aiTool.description).toBeDefined()
+    // inputSchema text property mentions the text limit
+    const textDesc = aiTool.inputSchema.properties.text.description
+    expect(textDesc).toContain(String(AI_TEXT_MAX_LENGTH))
+    expect(textDesc).toContain(String(AI_COMBINED_MAX_LENGTH))
+    // inputSchema instruction property mentions the instruction limit
+    const instrDesc = aiTool.inputSchema.properties.instruction.description
+    expect(instrDesc).toContain(String(AI_INSTRUCTION_MAX_LENGTH))
+  })
+
+  it('accepts text at exactly the max length (boundary)', async () => {
+    const callToolHandler = getCallToolHandler()
+    const exactText = 'a'.repeat(AI_TEXT_MAX_LENGTH)
+    // instruction must be empty (or short enough that combined stays within limit)
+    // since text alone is already at AI_TEXT_MAX_LENGTH (10000)
+    const result: any = await callToolHandler({
+      params: { name: 'ai_summarize', arguments: { text: exactText, instruction: '' } },
+    })
+    // Should NOT be an error — Groq mock returns successfully
+    expect(result.isError).toBeFalsy()
+    expect(result.content[0].text).toBe('summary')
+  })
+
+  it('rejects text exceeding max length (oversized)', async () => {
+    const callToolHandler = getCallToolHandler()
+    const oversizedText = 'a'.repeat(AI_TEXT_MAX_LENGTH + 1)
+    const result: any = await callToolHandler({
+      params: { name: 'ai_summarize', arguments: { text: oversizedText } },
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('text exceeds maximum length')
+    expect(result.content[0].text).toContain(String(AI_TEXT_MAX_LENGTH))
+  })
+
+  it('rejects instruction exceeding max length (oversized)', async () => {
+    const callToolHandler = getCallToolHandler()
+    const oversizedInstr = 'x'.repeat(AI_INSTRUCTION_MAX_LENGTH + 1)
+    const result: any = await callToolHandler({
+      params: { name: 'ai_summarize', arguments: { text: 'hello', instruction: oversizedInstr } },
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('instruction exceeds maximum length')
+    expect(result.content[0].text).toContain(String(AI_INSTRUCTION_MAX_LENGTH))
+  })
+
+  it('rejects combined text + instruction exceeding combined max (oversized)', async () => {
+    const callToolHandler = getCallToolHandler()
+    // text near limit + instruction near limit → combined exceeds
+    const textLen = AI_TEXT_MAX_LENGTH - 100
+    const instrLen = AI_COMBINED_MAX_LENGTH - textLen + 1
+    const result: any = await callToolHandler({
+      params: {
+        name: 'ai_summarize',
+        arguments: { text: 'a'.repeat(textLen), instruction: 'b'.repeat(instrLen) },
+      },
+    })
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('combined text + instruction length exceeds')
+    expect(result.content[0].text).toContain(String(AI_COMBINED_MAX_LENGTH))
+  })
+
+  it('accepts text + instruction at exactly the combined max (boundary)', async () => {
+    const callToolHandler = getCallToolHandler()
+    const textLen = AI_TEXT_MAX_LENGTH - 100
+    const instrLen = AI_COMBINED_MAX_LENGTH - textLen
+    const result: any = await callToolHandler({
+      params: {
+        name: 'ai_summarize',
+        arguments: { text: 'a'.repeat(textLen), instruction: 'b'.repeat(instrLen) },
+      },
+    })
+    // Should NOT be an error — exactly at the combined limit
+    expect(result.isError).toBeFalsy()
+    expect(result.content[0].text).toBe('summary')
   })
 })
