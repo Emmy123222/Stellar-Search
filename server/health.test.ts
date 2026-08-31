@@ -113,3 +113,43 @@ describe('GET /search validation (x402 middleware bypassed via mock)', () => {
     expect(res.body.error).toMatch(/Query too long/)
   })
 })
+
+describe('GET /images and GET /news validation', () => {
+  it('GET /images returns 400 when q missing', async () => {
+    const res = await request(app).get('/images')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/Missing required parameter/)
+  })
+
+  it('GET /news returns 400 when q missing', async () => {
+    const res = await request(app).get('/news')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/Missing required parameter/)
+  })
+})
+
+describe('createShutdownHandler', () => {
+  it('gracefully stops server when signal is received', async () => {
+    const { createShutdownHandler } = await import('./index.js')
+    const closeMock = vi.fn().mockImplementation((cb: () => void) => cb())
+    const exitMock = vi.fn()
+    const mockServer = { close: closeMock }
+
+    const handler = createShutdownHandler(mockServer, exitMock)
+    handler('SIGTERM')
+
+    expect(closeMock).toHaveBeenCalled()
+    expect(exitMock).toHaveBeenCalledWith(0)
+  })
+
+  it('exits cleanly if server instance is null', async () => {
+    const { createShutdownHandler } = await import('./index.js')
+    const exitMock = vi.fn()
+
+    const handler = createShutdownHandler(null, exitMock)
+    handler('SIGINT')
+
+    expect(exitMock).toHaveBeenCalledWith(0)
+  })
+})
+

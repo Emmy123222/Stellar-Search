@@ -17,6 +17,9 @@
     "test:coverage": "vitest run --coverage",
     "test:coverage:check": "vitest run --coverage --run",
     "server": "tsx server/index.ts",
+    "start": "tsx server/index.ts",
+    "docker:build": "docker build -t stellar-search .",
+    "docker:run": "docker run -p 3001:3001 --env-file .env stellar-search",
     "mcp": "tsx mcp-server/index.ts",
     "dev:all": "concurrently \"npm run server\" \"npm run dev\"",
     "test:search": "tsx scripts/test-search.ts",
@@ -46,6 +49,7 @@
     "react-dom": "^18.2.0",
     "recharts": "^3.10.1",
     "sonner": "^2.0.8",
+    "tsx": "^4.7.0",
     "winston": "^3.19.0"
   },
   "devDependencies": {
@@ -72,7 +76,6 @@
     "postcss": "^8.4.35",
     "supertest": "^7.2.2",
     "tailwindcss": "^3.4.1",
-    "tsx": "^4.7.0",
     "typescript": "^5.3.3",
     "vite": "^5.1.0",
     "vitest": "^4.1.11"

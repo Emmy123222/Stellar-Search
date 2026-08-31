@@ -168,10 +168,39 @@ stellar-search/
 │   └── index.ts                # MCP tools: web_search, ai_summarize, check_balance
 ├── scripts/
 │   └── test-search.ts          # End-to-end test script
+├── Dockerfile                  # Multi-stage production container definition
+├── .dockerignore               # Container build context exclusions
 ├── .env.example
 ├── claude_mcp.json
 └── README.md
 ```
+
+---
+
+## Docker Deployment
+
+StellarSearch includes a production-ready, multi-stage `Dockerfile` with non-root security and container healthchecking.
+
+### Build and Run with Docker
+
+```bash
+# Build production container image
+npm run docker:build
+# Or directly with Docker CLI:
+docker build -t stellar-search .
+
+# Run container with environment variables
+npm run docker:run
+# Or directly with Docker CLI:
+docker run -d --name stellar-search -p 3001:3001 --env-file .env stellar-search
+```
+
+### Container Specifications
+- **Multi-Stage Build**: Separates build tools (`node:20-alpine AS builder`) from the lightweight production runtime (`node:20-alpine AS runner`).
+- **Non-Root User**: Runs under the unprivileged `nodejs` user (`UID:GID 1001`) for enhanced security.
+- **Port**: Listens on port `3001` (configurable via `PORT` environment variable).
+- **Healthcheck**: Automated container healthcheck runs every 30s probing `http://localhost:${PORT}/health`.
+- **Signal Handling**: Listens for `SIGTERM` and `SIGINT` signals to gracefully drain in-flight connections before shutdown.
 
 ---
 
@@ -214,12 +243,12 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 
 | Scope | Statements | Branches | Functions | Lines |
 |---|---:|---:|---:|---:|
-| **Global** | 25% | 23% | 20% | 26% |
+| **Global** | 27% | 24% | 22% | 28% |
 | `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
 | `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
 | `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
-| `server/index.ts` | 35% | 30% | 35% | 35% |
+| `server/index.ts` | 40% | 32% | 40% | 40% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
 | `api/health.ts` | 80% | 50% | 100% | 80% |
 | `mcp-server/index.ts` | 30% | 20% | 20% | 30% |

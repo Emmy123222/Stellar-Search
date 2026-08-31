@@ -17,6 +17,8 @@ import express, { Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import helmet from 'helmet'
+import path from 'path'
+import fs from 'fs'
 import rateLimit from 'express-rate-limit'
 import { buildCorsOptions, getCorsStartupMessage } from './corsConfig.js'
 import Groq from 'groq-sdk'
@@ -573,9 +575,46 @@ app.get('/', (_req: Request, res: Response) => {
   })
 })
 
-// ─── Start ────────────────────────────────────────────────────────────────
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(PORT, () => {
+// ─── Static files for standalone / Docker production container ─────────────
+const distPath = path.resolve(process.cwd(), 'dist')
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath))
+  app.get('*', (req: Request, res: Response, next) => {
+    // Only handle non-API routes as SPA fallback
+    if (req.path.startsWith('/api') || req.path === '/search' || req.path === '/images' || req.path === '/news' || req.path === '/health' || req.path === '/ai/chat') {
+      return next()
+    }
+    const indexPath = path.join(distPath, 'index.html')
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath)
+    }
+    next()
+  })
+}
+
+// ─── Graceful Shutdown Handler ─────────────────────────────────────────────
+export function createShutdownHandler(
+  server: { close: (cb: () => void) => void } | null,
+  exitFn: (code: number) => void = process.exit
+) {
+  return (signal: string) => {
+    console.log(`\nReceived ${signal}, shutting down server gracefully...`)
+    if (server) {
+      server.close(() => {
+        console.log('HTTP server closed.')
+        exitFn(0)
+      })
+    } else {
+      exitFn(0)
+    }
+  }
+}
+
+// ─── Start & Process Signals ───────────────────────────────────────────────
+let serverInstance: ReturnType<typeof app.listen> | null = null
+
+if (process.env.NODE_ENV !== 'test') {
+  serverInstance = app.listen(PORT, () => {
     console.log(`\n🚀 StellarSearch on http://localhost:${PORT}`)
     console.log(`   Network:     ${NETWORK}`)
     console.log(`   Facilitator: ${FACILITATOR_URL}`)
@@ -584,6 +623,12 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`   Receiving:   ${RECEIVING_ADDRESS || '✗ MISSING'}`)
     console.log(`   ${getCorsStartupMessage()}\n`)
   })
+
+  const handleShutdown = createShutdownHandler(serverInstance)
+  process.on('SIGTERM', () => handleShutdown('SIGTERM'))
+  process.on('SIGINT', () => handleShutdown('SIGINT'))
 }
 
+export { serverInstance }
 export default app
+
