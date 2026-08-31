@@ -284,6 +284,12 @@ Closes #9
 docs: add CONTRIBUTING.md
 ```
 
+### Dependency updates (Dependabot)
+
+Dependabot is configured in `.github/dependabot.yml` to automatically propose weekly updates with sensible open PR limits:
+- **Grouped updates:** Minor/patch dependencies for tooling, linting, testing, and UI are grouped into single PRs to reduce notification noise.
+- **Deliberate review for payment & runtime:** Major upgrades for `@x402/*`, `@stellar/*`, `@modelcontextprotocol/*`, AI SDKs (`groq-sdk`), and server runtime packages are kept as isolated PRs to ensure deliberate review, preventing regressions across runtime boundaries (Express, Vercel, browser, and MCP) and safeguarding x402 settlement semantics.
+
 ---
 
 ## Submitting a Pull Request
@@ -304,6 +310,7 @@ docs: add CONTRIBUTING.md
 4. Make sure:
    - [ ] `npx tsc --noEmit` passes with no errors.
    - [ ] `node scripts/check-node-version.js` passes (validates Node version against engines).
+   - [ ] `npm run lint` passes with zero errors and zero warnings (`eslint . --max-warnings=0`).
    - [ ] The app starts and the affected feature works manually.
    - [ ] No new `console.log` / debug statements left in.
    - [ ] No secrets or `.env` values committed.
@@ -414,12 +421,13 @@ Global thresholds start modest and ratchet upward as payment/wallet/API/MCP/UI b
 
 | Scope | Statements | Branches | Functions | Lines |
 |---|---:|---:|---:|---:|
-| Global | 25% | 23% | 20% | 26% |
+| Global | 35% | 30% | 28% | 35% |
 | `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
 | `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
+| `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
 | `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
-| `server/index.ts` | 35% | 30% | 35% | 35% |
+| `server/index.ts` | 65% | 60% | 65% | 65% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
 | `api/health.ts` | 80% | 50% | 100% | 80% |
 | `mcp-server/index.ts` | 30% | 20% | 20% | 30% |

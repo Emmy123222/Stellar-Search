@@ -12,6 +12,7 @@
  */
 
 import dotenv from 'dotenv'
+import type { SearchResponse, ApiErrorResponse, SearchResult } from '../src/types/index.js'
 dotenv.config()
 
 const query = process.argv[2] || 'Stellar blockchain developer tools'
@@ -22,7 +23,7 @@ const SERVER = process.env.SEARCH_API_URL || 'http://localhost:3001'
 async function checkHealth() {
   const res = await fetch(`${SERVER}/health`)
   if (!res.ok) throw new Error(`Health check failed: ${res.status}`)
-  const data = await res.json()
+  const data = (await res.json()) as Record<string, any>
   console.log('   Server status:', data.status)
   console.log('   Serper API:   ', data.serperApiConfigured ? '✓' : '✗ MISSING')
   console.log('   Groq API:     ', data.groqApiConfigured ? '✓' : '✗ MISSING')
@@ -58,7 +59,7 @@ async function runSearch() {
   const ms = Date.now() - t0
 
   if (res.status === 402) {
-    const body = await res.json()
+    const body = (await res.json()) as ApiErrorResponse & Record<string, unknown>
     console.log('\n⚡ Received HTTP 402 Payment Required')
     console.log('   Payment requirements:', JSON.stringify(body, null, 2))
     console.log('\nNote: In production, the x402 client auto-handles this.')
@@ -67,12 +68,12 @@ async function runSearch() {
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
+    const body = (await res.json().catch(() => ({ error: 'Unknown error' }))) as ApiErrorResponse
     console.error('✗ Error:', body.error || res.status)
     process.exit(1)
   }
 
-  const data = await res.json()
+  const data = (await res.json()) as SearchResponse
 
   console.log('\n✓ Results received!')
   console.log(`   Query:    "${data.query}"`)
@@ -83,7 +84,7 @@ async function runSearch() {
   if (data.txHash) console.log(`   TX Hash:  ${data.txHash}`)
 
   console.log('\n── Results ──')
-  data.results.forEach((r: any, i: number) => {
+  data.results.forEach((r: SearchResult, i: number) => {
     console.log(`\n${i + 1}. ${r.title}`)
     console.log(`   ${r.url}`)
     if (r.description) console.log(`   ${r.description.slice(0, 120)}${r.description.length > 120 ? '...' : ''}`)
@@ -100,7 +101,7 @@ async function runSearch() {
   })
 
   if (aiRes.ok) {
-    const aiData = await aiRes.json()
+    const aiData = (await aiRes.json()) as { model: string; content: string }
     console.log(`\n✓ Groq AI (${aiData.model}):`)
     console.log(`   ${aiData.content.slice(0, 200)}...`)
   } else {
@@ -121,7 +122,7 @@ async function runSearch() {
   } else if (!suggRes.ok) {
     console.error('✗ Suggestions request failed:', suggRes.status)
   } else {
-    const suggData = await suggRes.json()
+    const suggData = (await suggRes.json()) as SearchResponse
     const suggestions: string[] = suggData.suggestions ?? []
 
     if (!Array.isArray(suggestions)) {
@@ -145,7 +146,7 @@ async function runSearch() {
   const noSuggRes = await fetch(`${SERVER}/search?${noSuggParams}`)
 
   if (noSuggRes.status !== 402 && noSuggRes.ok) {
-    const noSuggData = await noSuggRes.json()
+    const noSuggData = (await noSuggRes.json()) as SearchResponse
     const noSuggestions: string[] = noSuggData.suggestions ?? []
     if (noSuggestions.length !== 0) {
       console.error(`✗ Expected 0 suggestions without ?suggestions=1, got ${noSuggestions.length}`)

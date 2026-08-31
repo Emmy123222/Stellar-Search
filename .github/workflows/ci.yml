@@ -33,6 +33,21 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Cache TypeScript intermediates
+        id: typecheck-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.cache
+          key: ${{ runner.os }}-typecheck-${{ hashFiles('package-lock.json', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-typecheck-${{ hashFiles('package-lock.json', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-
+            ${{ runner.os }}-typecheck-
+
+      - name: Log cache status
+        run: echo "Typecheck cache hit: ${{ steps.typecheck-cache.outputs.cache-hit || 'false' }}"
 
       - name: Install dependencies
         run: npm ci
@@ -42,6 +57,8 @@ jobs:
 
       - name: Run TypeScript typecheck
         run: npm run typecheck
+      - name: Run TypeScript typecheck (frontend, server, serverless, MCP, scripts)
+        run: npm run typecheck:all
 
   lint:
     name: Lint (Node ${{ matrix.node-version }})
@@ -59,6 +76,22 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Cache ESLint intermediates
+        id: lint-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.cache
+            .eslintcache
+          key: ${{ runner.os }}-lint-${{ hashFiles('package-lock.json', 'eslint.config.js') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-lint-${{ hashFiles('package-lock.json', 'eslint.config.js') }}-
+            ${{ runner.os }}-lint-
+
+      - name: Log cache status
+        run: echo "Lint cache hit: ${{ steps.lint-cache.outputs.cache-hit || 'false' }}"
 
       - name: Install dependencies
         run: npm ci
@@ -67,6 +100,7 @@ jobs:
         run: node scripts/check-node-version.js
 
       - name: Run ESLint
+      - name: Run ESLint (enforces zero warnings baseline --max-warnings=0)
         run: npm run lint
 
   test:
@@ -85,6 +119,22 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Cache Vite & Vitest intermediates
+        id: test-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.vite
+            node_modules/.cache
+          key: ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json', 'vite.config.ts', 'vitest.setup.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json', 'vite.config.ts', 'vitest.setup.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-
+            ${{ runner.os }}-vitest-
+
+      - name: Log cache status
+        run: echo "Vitest cache hit: ${{ steps.test-cache.outputs.cache-hit || 'false' }}"
 
       - name: Install dependencies
         run: npm ci
@@ -103,6 +153,41 @@ jobs:
           path: coverage/
           if-no-files-found: warn
 
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Cache Vite & build intermediates
+        id: build-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.vite
+            node_modules/.cache
+          key: ${{ runner.os }}-vite-build-${{ hashFiles('package-lock.json', 'vite.config.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json', 'tailwind.config.js', 'postcss.config.js') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-vite-build-${{ hashFiles('package-lock.json', 'vite.config.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json', 'tailwind.config.js', 'postcss.config.js') }}-
+            ${{ runner.os }}-vite-build-
+
+      - name: Log cache status
+        run: echo "Build cache hit: ${{ steps.build-cache.outputs.cache-hit || 'false' }}"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build
+        run: npm run build
+
   coverage:
     name: Coverage gate
     runs-on: ubuntu-latest
@@ -116,12 +201,28 @@ jobs:
         with:
           node-version: 22
           cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Cache Vite & Vitest intermediates
+        id: coverage-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.vite
+            node_modules/.cache
+          key: ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json', 'vite.config.ts', 'vitest.setup.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json', 'vite.config.ts', 'vitest.setup.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-
+            ${{ runner.os }}-vitest-
+
+      - name: Log cache status
+        run: echo "Coverage cache hit: ${{ steps.coverage-cache.outputs.cache-hit || 'false' }}"
 
       - name: Install dependencies
         run: npm ci
 
       - name: Verify coverage thresholds (statements, branches, functions, lines)
         run: npm run test:coverage -- --run
-        # thresholds defined in vite.config.ts: global 25/23/20/26 + per-file ratchets for
+        # thresholds defined in vite.config.ts: global 35/30/28/35 + per-file ratchets for
         # src/lib/constants, src/lib/stellar, server/corsConfig, api/search, etc.
         # CI fails if any threshold drops — ratchet upward as payment/wallet/API/MCP/UI tests land.
