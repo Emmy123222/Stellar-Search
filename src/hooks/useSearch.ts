@@ -10,58 +10,118 @@
  * Fix: convert Buffer → base64 string using Buffer.from(result).toString('base64')
  */
 
-import { useState, useCallback }              from 'react'
-import { toast }                               from 'sonner'
-import { x402Client, x402HTTPClient }          from '@x402/fetch'
-import { ExactStellarScheme }                  from '@x402/stellar/exact/client'
-import { signAuthEntry, getNetworkDetails }    from '@stellar/freighter-api'
-import { Networks }                            from '@stellar/stellar-sdk'
-import { Buffer }                              from 'buffer'
-import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
+import { useState, useCallback } from "react";
+import { toast } from "sonner";
+import { x402Client, x402HTTPClient } from "@x402/fetch";
+import { ExactStellarScheme } from "@x402/stellar/exact/client";
+import { signAuthEntry, getNetworkDetails } from "@stellar/freighter-api";
+import { Networks } from "@stellar/stellar-sdk";
+import { Buffer } from "buffer";
+import {
+  IS_MAINNET,
+  EXPECTED_WALLET_NETWORK,
+  explorerTxUrl,
+} from "../lib/stellar";
 
-const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
-  typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
+const SERVER_URL =
+  (import.meta as any).env?.VITE_SERVER_URL ??
+  (typeof window !== "undefined" &&
+  window.location.origin.includes("vercel.app")
     ? `${window.location.origin}/api`
-    : 'http://localhost:3001'
-)
+    : "http://localhost:3001");
 
 // Soroban RPC URLs
-const SOROBAN_RPC_TESTNET = 'https://soroban-testnet.stellar.org'
-const SOROBAN_RPC_MAINNET = 'https://soroban-rpc.mainnet.stellar.org' // Or another public RPC
-const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET
+const SOROBAN_RPC_TESTNET = "https://soroban-testnet.stellar.org";
+const SOROBAN_RPC_MAINNET = "https://soroban-rpc.mainnet.stellar.org"; // Or another public RPC
+const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET;
 
 export interface SearchReceipt {
-  txHash: string
-  query: string
-  amount: string
-  timestamp: string
-  network: string
+  txHash: string;
+  query: string;
+  amount: string;
+  timestamp: string;
+  network: string;
 }
 
 export interface SearchResult {
-  id: string
-  title: string
-  url: string
-  description: string
-  source: string
-  relevanceScore: number
-  publishedAt?: string
+  id: string;
+  title: string;
+  url: string;
+  description: string;
+  source: string;
+  relevanceScore: number;
+  publishedAt?: string;
+}
+
+export const PAYMENT_PHASES = [
+  "challenge",
+  "signing",
+  "settlement",
+  "provider",
+  "rendering",
+] as const;
+export type PaymentPhase = (typeof PAYMENT_PHASES)[number];
+
+export interface PaymentPhaseTimings {
+  challenge: number | null;
+  signing: number | null;
+  settlement: number | null;
+  provider: number | null;
+  rendering: number | null;
+}
+
+export const EMPTY_TIMINGS: PaymentPhaseTimings = {
+  challenge: null,
+  signing: null,
+  settlement: null,
+  provider: null,
+  rendering: null,
+};
+
+export function buildPhaseState({
+  phase,
+  completedPhases,
+  timings,
+}: {
+  phase: PaymentPhase;
+  completedPhases: PaymentPhase[];
+  timings: PaymentPhaseTimings;
+}) {
+  const currentStep = PAYMENT_PHASES.indexOf(phase) + 1;
+  const durationMs = PAYMENT_PHASES.reduce(
+    (sum, key) => sum + (timings[key] ?? 0),
+    0,
+  );
+
+  return {
+    activePhase: phase,
+    completedPhases: completedPhases.filter((p): p is PaymentPhase =>
+      PAYMENT_PHASES.includes(p as PaymentPhase),
+    ),
+    currentStep,
+    durationMs,
+    timings,
+  };
 }
 
 // x402 flow steps, per the official x402 quickstart:
 //   1 Request   2 402 Received   3 Sign Auth   4 Retry   5 Facilitate   6 Result
-export type PaymentStep = 1 | 2 | 3 | 4 | 5 | 6
+export type PaymentStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface SearchSession {
-  query: string
-  results: SearchResult[]
-  txHash: string | null
-  paidAmount: string | null
-  status: 'idle' | 'searching' | 'complete' | 'error'
-  step?: PaymentStep
-  error?: string
-  durationMs?: number
-  suggestions: string[]
+  query: string;
+  results: SearchResult[];
+  txHash: string | null;
+  paidAmount: string | null;
+  status: "idle" | "searching" | "complete" | "error";
+  step?: PaymentStep;
+  activePhase?: PaymentPhase;
+  completedPhases: PaymentPhase[];
+  timings: PaymentPhaseTimings;
+  currentStep?: number;
+  error?: string;
+  durationMs?: number;
+  suggestions: string[];
 }
 
 /**
@@ -72,212 +132,340 @@ export interface SearchSession {
  */
 export function useSearch(walletAddress: string | null = null) {
   const [session, setSession] = useState<SearchSession>({
-    query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
-  })
+    query: "",
+    results: [],
+    txHash: null,
+    paidAmount: null,
+    status: "idle",
+    activePhase: "challenge",
+    completedPhases: [],
+    timings: EMPTY_TIMINGS,
+    currentStep: 1,
+    suggestions: [],
+  });
 
   const search = useCallback(
     async (
       query: string,
       freshnessOrCount?: string | number,
-      countOverride = 5
+      countOverride = 5,
     ) => {
-      if (!query.trim()) return
+      if (!query.trim()) return;
 
-      let freshness = ''
-      let count = countOverride
+      let freshness = "";
+      let count = countOverride;
 
-      if (typeof freshnessOrCount === 'string') {
-        freshness = freshnessOrCount
-      } else if (typeof freshnessOrCount === 'number') {
-        count = freshnessOrCount
+      if (typeof freshnessOrCount === "string") {
+        freshness = freshnessOrCount;
+      } else if (typeof freshnessOrCount === "number") {
+        count = freshnessOrCount;
       }
 
-      setSession({
+      const createBaseSession = (): SearchSession => ({
         query,
         results: [],
         txHash: null,
         paidAmount: null,
-        status: 'searching',
+        status: "searching",
         step: 1,
+        activePhase: "challenge",
+        completedPhases: [],
+        timings: { ...EMPTY_TIMINGS },
+        currentStep: 1,
         suggestions: [],
-      })
+      });
 
-      const t0 = Date.now()
+      setSession(createBaseSession());
+
       const params = new URLSearchParams({
         q: query,
         count: String(count),
-        suggestions: '1',
-      })
+        suggestions: "1",
+      });
       if (freshness) {
-        params.set('freshness', freshness)
+        params.set("freshness", freshness);
       }
 
-    const advance = (step: PaymentStep) =>
-      setSession(prev => ({ ...prev, step }))
+      const updatePhase = (phase: PaymentPhase, startedAt: number) => {
+        const duration = Math.max(0, Date.now() - startedAt);
+        setSession((prev) => {
+          const timings = {
+            ...(prev.timings ?? EMPTY_TIMINGS),
+            [phase]: duration,
+          };
+          const completedPhases = Array.from(
+            new Set([...prev.completedPhases, phase]),
+          );
+          const phaseState = buildPhaseState({
+            phase,
+            completedPhases,
+            timings,
+          });
 
-    try {
-      if (!walletAddress) throw new Error('Connect your Freighter wallet first.')
+          return {
+            ...prev,
+            activePhase: phaseState.activePhase,
+            completedPhases: phaseState.completedPhases,
+            timings: phaseState.timings,
+            currentStep: phaseState.currentStep,
+            durationMs: phaseState.durationMs,
+            step: Math.min(phaseState.currentStep, 6) as PaymentStep,
+          };
+        });
+      };
 
-      console.log('🔍 Starting search with wallet:', walletAddress)
+      const t0 = Date.now();
 
-      // Step 1 — verify Freighter is on correct network
-      const net = await getNetworkDetails()
-      if (net.error)              throw new Error(net.error.message)
-      if (net.network !== EXPECTED_WALLET_NETWORK) {
-        throw new Error(`Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`)
-      }
-      console.log('✅ Network verified:', net.network)
+      try {
+        if (!walletAddress)
+          throw new Error("Connect your Freighter wallet first.");
 
-      // Step 2 — build the signer
-      const passphrase = IS_MAINNET ? Networks.PUBLIC : Networks.TESTNET
-      const signer = {
-        address: walletAddress,
-        signAuthEntry: async (
-          xdr: string,
-          opts?: { networkPassphrase?: string }
-        ): Promise<{ signedAuthEntry: string; signerAddress: string }> => {
-          console.log('🔑 Calling Freighter signAuthEntry...')
+        console.log("🔍 Starting search with wallet:", walletAddress);
 
-          const result = await signAuthEntry(xdr, {
-            networkPassphrase: opts?.networkPassphrase ?? passphrase,
-          })
-
-          if (result.error) throw new Error(result.error.message)
-          if (!result.signedAuthEntry) throw new Error('Freighter returned no signedAuthEntry')
-
-          console.log('✅ Freighter signed. Type:', typeof result.signedAuthEntry)
-
-          const raw = result.signedAuthEntry
-          const signedAuthEntry = typeof raw === 'string'
-            ? raw
-            : Buffer.from(raw as unknown as Uint8Array).toString('base64')
-
-          console.log('✅ signedAuthEntry base64 length:', signedAuthEntry.length)
-
-          return { signedAuthEntry, signerAddress: walletAddress }
-        },
-      }
-
-      // Step 3 — build the x402 client with correct .register() chain
-      const client     = new x402Client().register(
-        'stellar:*',
-        new ExactStellarScheme(signer, { url: SOROBAN_RPC_URL })
-      )
-      const httpClient = new x402HTTPClient(client)
-      console.log('✅ x402 client built')
-
-      // Flow step 1 — initial request, expect 402
-      advance(1)
-      console.log('🚀 Initial request:', `${SERVER_URL}/search?${params}`)
-      const firstRes = await fetch(`${SERVER_URL}/search?${params}`)
-      console.log('📡 Status:', firstRes.status)
-
-      if (firstRes.status !== 402) {
-        if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`)
-        const data = await firstRes.json()
-        return setSession({
-          query, results: data.results ?? [], txHash: null,
-          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
-        })
-      }
-
-      // Flow step 2 — parse the PAYMENT-REQUIRED header
-      advance(2)
-      console.log('💰 402 received, parsing payment requirements...')
-      const paymentRequired = httpClient.getPaymentRequiredResponse(
-        (name) => firstRes.headers.get(name)
-      )
-      console.log('💰 Payment requirements:', paymentRequired)
-
-      // Flow step 3 — createPaymentPayload() triggers the Freighter popup (signs auth entry)
-      advance(3)
-      console.log('🔐 Triggering Freighter popup via createPaymentPayload...')
-      const paymentPayload = await client.createPaymentPayload(paymentRequired)
-      console.log('✅ Freighter approved, payload created')
-
-      const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload)
-      console.log('✅ Payment headers encoded')
-
-      // Flow step 4 — retry with X-PAYMENT header
-      advance(4)
-      console.log('🔄 Retrying with payment...')
-      const paidResPromise = fetch(`${SERVER_URL}/search?${params}`, {
-        headers: paymentHeaders,
-      })
-
-      // Flow step 5 — facilitator settles on Stellar while the retry is in flight
-      advance(5)
-      const paidRes = await paidResPromise
-      console.log('📡 Paid response status:', paidRes.status)
-
-      if (!paidRes.ok) {
-        const text = await paidRes.text()
-        throw new Error(`Payment failed: server returned ${paidRes.status} — ${text}`)
-      }
-
-      const data = await paidRes.json()
-      console.log('✅ Search complete!')
-
-      // Flow step 6 — result received and rendered
-      setSession({
-        query,
-        results:     data.results    ?? [],
-        txHash:      data.txHash     ?? null,
-        paidAmount:  data.paidAmount ?? null,
-        status:      'complete',
-        step:        6,
-        durationMs:  Date.now() - t0,
-        suggestions: data.suggestions ?? [],
-      })
-
-      if (data.txHash) {
-        toast.success(`Payment settled: ${data.paidAmount || '0.001'} USDC`, {
-          description: 'View transaction on Stellar network',
-          action: {
-            label: 'Explorer',
-            onClick: () => window.open(explorerTxUrl(data.txHash), '_blank')
-          }
-        })
-      }
-
-      // Persist receipt
-      if (data.txHash) {
-        try {
-          const receiptsRaw = localStorage.getItem('stellarsearch_receipts')
-          const receipts: SearchReceipt[] = receiptsRaw ? JSON.parse(receiptsRaw) : []
-          
-          const newReceipt: SearchReceipt = {
-            txHash: data.txHash,
-            query: query.trim(),
-            amount: data.paidAmount || '0.001',
-            timestamp: new Date().toISOString(),
-            network: data.network || 'stellar:testnet',
-          }
-
-          // Keep only last 50 receipts
-          const updated = [newReceipt, ...receipts].slice(0, 50)
-          localStorage.setItem('stellarsearch_receipts', JSON.stringify(updated))
-          console.log('📄 Receipt persisted')
-        } catch (e) {
-          console.warn('Failed to persist receipt:', e)
+        // Step 1 — verify Freighter is on correct network
+        const net = await getNetworkDetails();
+        if (net.error) throw new Error(net.error.message);
+        if (net.network !== EXPECTED_WALLET_NETWORK) {
+          throw new Error(
+            `Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`,
+          );
         }
-      }
+        console.log("✅ Network verified:", net.network);
 
-    } catch (err: any) {
-      console.error('❌ Search failed:', err)
-      const msg = err.message || 'Search failed.'
-      toast.error('Search Payment Failed', { description: msg })
-      setSession(prev => ({
-        ...prev,
-        status: 'error',
-        error:  msg,
-      }))
-    }
-  }, [walletAddress])
+        // Step 2 — build the signer
+        const passphrase = IS_MAINNET ? Networks.PUBLIC : Networks.TESTNET;
+        const signer = {
+          address: walletAddress,
+          signAuthEntry: async (
+            xdr: string,
+            opts?: { networkPassphrase?: string },
+          ): Promise<{ signedAuthEntry: string; signerAddress: string }> => {
+            console.log("🔑 Calling Freighter signAuthEntry...");
+
+            const result = await signAuthEntry(xdr, {
+              networkPassphrase: opts?.networkPassphrase ?? passphrase,
+            });
+
+            if (result.error) throw new Error(result.error.message);
+            if (!result.signedAuthEntry)
+              throw new Error("Freighter returned no signedAuthEntry");
+
+            console.log(
+              "✅ Freighter signed. Type:",
+              typeof result.signedAuthEntry,
+            );
+
+            const raw = result.signedAuthEntry;
+            const signedAuthEntry =
+              typeof raw === "string"
+                ? raw
+                : Buffer.from(raw as unknown as Uint8Array).toString("base64");
+
+            console.log(
+              "✅ signedAuthEntry base64 length:",
+              signedAuthEntry.length,
+            );
+
+            return { signedAuthEntry, signerAddress: walletAddress };
+          },
+        };
+
+        // Step 3 — build the x402 client with correct .register() chain
+        const client = new x402Client().register(
+          "stellar:*",
+          new ExactStellarScheme(signer, { url: SOROBAN_RPC_URL }),
+        );
+        const httpClient = new x402HTTPClient(client);
+        console.log("✅ x402 client built");
+
+        const challengeStartedAt = Date.now();
+        console.log("🚀 Initial request:", `${SERVER_URL}/search?${params}`);
+        const firstRes = await fetch(`${SERVER_URL}/search?${params}`);
+        console.log("📡 Status:", firstRes.status);
+        updatePhase("challenge", challengeStartedAt);
+
+        if (firstRes.status !== 402) {
+          if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`);
+          const data = await firstRes.json();
+          const renderStartedAt = Date.now();
+          const finalTimings = { ...EMPTY_TIMINGS };
+          finalTimings.challenge = Math.max(0, Date.now() - challengeStartedAt);
+          setSession({
+            query,
+            results: data.results ?? [],
+            txHash: null,
+            paidAmount: null,
+            status: "complete",
+            step: 6,
+            activePhase: "rendering",
+            completedPhases: ["challenge"],
+            timings: finalTimings,
+            currentStep: PAYMENT_PHASES.length,
+            durationMs: PAYMENT_PHASES.reduce(
+              (sum, key) => sum + (finalTimings[key] ?? 0),
+              0,
+            ),
+            suggestions: data.suggestions ?? [],
+          });
+          const renderingMs = Math.max(0, Date.now() - renderStartedAt);
+          setSession((prev) => ({
+            ...prev,
+            activePhase: "rendering",
+            completedPhases: ["challenge", "rendering"],
+            timings: { ...prev.timings, rendering: renderingMs },
+            currentStep: PAYMENT_PHASES.length,
+            durationMs: PAYMENT_PHASES.reduce(
+              (sum, key) =>
+                sum +
+                (prev.timings[key] ?? 0) +
+                (key === "rendering" ? renderingMs : 0),
+              0,
+            ),
+          }));
+          return;
+        }
+
+        console.log("💰 402 received, parsing payment requirements...");
+        const paymentRequired = httpClient.getPaymentRequiredResponse((name) =>
+          firstRes.headers.get(name),
+        );
+        console.log("💰 Payment requirements:", paymentRequired);
+
+        const signingStartedAt = Date.now();
+        console.log(
+          "🔐 Triggering Freighter popup via createPaymentPayload...",
+        );
+        const paymentPayload =
+          await client.createPaymentPayload(paymentRequired);
+        console.log("✅ Freighter approved, payload created");
+        updatePhase("signing", signingStartedAt);
+
+        const paymentHeaders =
+          httpClient.encodePaymentSignatureHeader(paymentPayload);
+        console.log("✅ Payment headers encoded");
+
+        console.log("🔄 Retrying with payment...");
+        const settlementStartedAt = Date.now();
+        const paidResPromise = fetch(`${SERVER_URL}/search?${params}`, {
+          headers: paymentHeaders,
+        });
+        const paidRes = await paidResPromise;
+        console.log("📡 Paid response status:", paidRes.status);
+        updatePhase("settlement", settlementStartedAt);
+
+        if (!paidRes.ok) {
+          const text = await paidRes.text();
+          throw new Error(
+            `Payment failed: server returned ${paidRes.status} — ${text}`,
+          );
+        }
+
+        const providerStartedAt = Date.now();
+        const data = await paidRes.json();
+        console.log("✅ Search complete!");
+        updatePhase("provider", providerStartedAt);
+
+        const renderStartedAt = Date.now();
+        const renderDelay = Math.max(0, Date.now() - renderStartedAt);
+        const finalTimings = {
+          ...(session.timings ?? EMPTY_TIMINGS),
+          challenge: session.timings.challenge ?? 0,
+          signing: session.timings.signing ?? 0,
+          settlement: session.timings.settlement ?? 0,
+          provider: session.timings.provider ?? 0,
+          rendering: renderDelay,
+        };
+        const finalCompletedPhases = Array.from(
+          new Set([
+            "challenge",
+            "signing",
+            "settlement",
+            "provider",
+            "rendering",
+          ]),
+        );
+
+        setSession({
+          query,
+          results: data.results ?? [],
+          txHash: data.txHash ?? null,
+          paidAmount: data.paidAmount ?? null,
+          status: "complete",
+          step: 6,
+          activePhase: "rendering",
+          completedPhases: finalCompletedPhases,
+          timings: finalTimings,
+          currentStep: PAYMENT_PHASES.length,
+          durationMs: PAYMENT_PHASES.reduce(
+            (sum, key) => sum + (finalTimings[key] ?? 0),
+            0,
+          ),
+          suggestions: data.suggestions ?? [],
+        });
+
+        if (data.txHash) {
+          toast.success(`Payment settled: ${data.paidAmount || "0.001"} USDC`, {
+            description: "View transaction on Stellar network",
+            action: {
+              label: "Explorer",
+              onClick: () => window.open(explorerTxUrl(data.txHash), "_blank"),
+            },
+          });
+        }
+
+        // Persist receipt
+        if (data.txHash) {
+          try {
+            const receiptsRaw = localStorage.getItem("stellarsearch_receipts");
+            const receipts: SearchReceipt[] = receiptsRaw
+              ? JSON.parse(receiptsRaw)
+              : [];
+
+            const newReceipt: SearchReceipt = {
+              txHash: data.txHash,
+              query: query.trim(),
+              amount: data.paidAmount || "0.001",
+              timestamp: new Date().toISOString(),
+              network: data.network || "stellar:testnet",
+            };
+
+            const updated = [newReceipt, ...receipts].slice(0, 50);
+            localStorage.setItem(
+              "stellarsearch_receipts",
+              JSON.stringify(updated),
+            );
+            console.log("📄 Receipt persisted");
+          } catch (e) {
+            console.warn("Failed to persist receipt:", e);
+          }
+        }
+      } catch (err: any) {
+        console.error("❌ Search failed:", err);
+        const msg = err.message || "Search failed.";
+        toast.error("Search Payment Failed", { description: msg });
+        setSession((prev) => ({
+          ...prev,
+          status: "error",
+          error: msg,
+        }));
+      }
+    },
+    [walletAddress],
+  );
 
   const reset = useCallback(() => {
-    setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [] })
-  }, [])
+    setSession({
+      query: "",
+      results: [],
+      txHash: null,
+      paidAmount: null,
+      status: "idle",
+      activePhase: "challenge",
+      completedPhases: [],
+      timings: { ...EMPTY_TIMINGS },
+      suggestions: [],
+    });
+  }, []);
 
-  return { session, search, reset }
+  return { session, search, reset };
 }
