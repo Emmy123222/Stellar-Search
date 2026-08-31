@@ -90,6 +90,7 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 | `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Falls back to the public OpenZeppelin facilitator if missing. | `https://www.x402.org/facilitator` |
 | `PORT` | No | `3001` | Express server listen port. Falls back to `3001` if missing. | `3001` |
 | `VITE_SERVER_URL` | No | `http://localhost:3001` | Frontend URL for AI chat backend calls. On Vercel deployments auto-detects `${origin}/api`; locally falls back to `http://localhost:3001`. | `http://localhost:3001` |
+| `MCP_ENABLE_RECEIPTS` | No | `0` | Set `1` to opt-in MCP local receipt storage for `stellar-search://receipts/recent` (in-memory capped at 50) | `1` |
 
 ---
 
@@ -169,9 +170,16 @@ stellar-search/
 │   │   └── DashboardPage.tsx       # Live Horizon tx history
 │   └── lib/stellar.ts              # Horizon helpers
 ├── server/
-│   └── index.ts                # Express + @x402/express + Serper.dev + Groq
+│   └── index.ts                # Express + @x402/express + Serper.dev + Groq + batch/jsonl + jobs/webhooks
+├── api/
+│   ├── search.ts               # Vercel parity for GET /search
+│   ├── search/batch.ts         # Vercel parity for POST /search/batch (JSONL)
+│   ├── jobs.ts                 # POST /jobs (+ GET /jobs list)
+│   ├── jobs/[id].ts            # GET /jobs/:id status + verified payment
+│   ├── ai/chat.ts              # Vercel AI chat (streaming)
+│   └── health.ts               # Vercel health
 ├── mcp-server/
-│   └── index.ts                # MCP tools: web_search, ai_summarize, check_balance
+│   └── index.ts                # MCP tools + resources + prompts + progress
 ├── scripts/
 │   └── test-search.ts          # End-to-end test script
 ├── .env.example
@@ -200,6 +208,95 @@ stellar-search/
 ```
 
 Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.
+
+### MCP progress notifications (#327)
+
+Paid MCP tools (`web_search`, `image_search`, `news_search`) emit **bounded** `notifications/progress` events for actual payment/search phases **only when the client sends `_meta.progressToken`**:
+
+| progress | total | phase | message |
+|---:|---:|---|---|
+| 1 | 4 | challenge | Requesting payment challenge |
+| 2 | 4 | signing | Signing Soroban auth |
+| 3 | 4 | settlement | Settling 0.001 USDC on Stellar |
+| 4 | 4 | search | Searching Serper |
+
+Cancellation (`notifications/cancelled`) and errors terminate progress cleanly **without false completion** — the tool returns `isError: true` and no additional progress after abort. Progress is never sent without a `progressToken`; free tools never emit progress.
+
+### MCP resources & prompts (#326)
+
+Resources (no payment required):
+
+- `stellar-search://capabilities` — network, price, x402 scheme, endpoint map
+- `stellar-search://schema/search` — JSON schema for `SearchResponse`, batch JSONL events, and job contracts
+- `stellar-search://receipts/recent` — recent paid receipts **only when opted-in** (`MCP_ENABLE_RECEIPTS=1`, capped at 50, in-memory, no secrets). Otherwise returns guidance to opt-in.
+
+Prompts (no silent payment):
+
+- `research_brief` — proposes 3–5 queries, **asks for explicit user approval** before calling any paid `web_search`, then synthesizes via `ai_summarize`
+- `summarize_results` — free Groq summarization of pasted results
+- `compare_sources` — free comparison with citations
+
+Prompts never call paid tools themselves; the agent must obtain user approval before initiating `x402` settlement. This preserves explicit user approval and verified settlement for paid actions.
+
+### Batch JSON Lines streaming (#325)
+
+```
+POST /search/batch  (Express: POST /search/batch, Vercel: POST /api/search/batch)
+Content-Type: application/json  →  Response: application/x-ndjson (versioned JSONL)
+```
+
+Bounded to **10 queries** and **0.01 USDC aggregate** (10 × 0.001). Idempotency via `Idempotency-Key` header or `body.idempotencyKey` (24 h). Events are `v:1` versioned:
+
+- `quote` — price preview (also returned as 402 `PAYMENT-REQUIRED` when no `X-Payment` header)
+- `settlement` — verified `paymentId`/`txHash` after `consumePaymentPayload`
+- `result` — per-query normalized results (one line per query, machine-readable)
+- `error` — per-item failures without aborting the batch (`UPSTREAM_ERROR`, `SEARCH_FAILED`, `CLIENT_DISCONNECT`, `SKIPPED`)
+- `done` — aggregate `succeeded`/`failed`/`totalUsdcSpent`/`aggregateLatencyMs`
+
+Disconnect aborts the in-flight Serper fetch via `AbortController`, emits `CLIENT_DISCONNECT`/`SKIPPED` errors for remaining items, and ends without a false `done` `succeeded` count. Partial completion is explicit in `done`. Example:
+
+```bash
+curl -N -X POST http://localhost:3001/search/batch \
+  -H "Content-Type: application/json" \
+  -H "X-Payment: <base64-signed-auth>" \
+  -H "Idempotency-Key: my-batch-123" \
+  -d '{"queries":["stellar x402","serper.dev"],"count":5}'
+# each line is JSON: {"v":1,"type":"result",...}
+```
+
+### Async paid search jobs with webhooks (#324)
+
+```
+POST /jobs  → 202 { jobId, statusUrl, paymentVerified, paymentId, txHash }
+GET  /jobs/:id → { job, paymentVerified, statusUrl }
+GET  /jobs     → { jobs, count }
+```
+
+- Idempotent creation via `Idempotency-Key` (24 h, returns existing `jobId`/`statusUrl` on replay).
+- Payment verified via `x402` header + `consumePaymentPayload` replay protection; `GET /jobs/:id` exposes verified payment state (`paymentVerified`, `txHash`, `paidAmount`).
+- Optional webhook: `{ webhookUrl, webhookSecret }` — `webhookSecret` ≥16 chars. Delivery is **signed** (`X-Webhook-Signature: HMAC-SHA256(timestamp.payload)`, `X-Webhook-Timestamp`, `X-Webhook-Attempt`, `X-Job-Id`) and **retries with backoff** (5 attempts, `1s·2^n` + jitter, 5 s timeout, non-retryable 4xx except 429). Protects against replay via `timestamp` (5 min window) + `nonce`, and **SSRF** by rejecting `http`, private IPs (`10/8`, `192.168/16`, `172.16/12`, `169.254/16`, `fc00::/7`, `fe80::/10`, `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`) and URLs with credentials.
+
+```bash
+curl -X POST http://localhost:3001/jobs \
+  -H "Content-Type: application/json" \
+  -H "X-Payment: <base64>" \
+  -H "Idempotency-Key: job-123" \
+  -d '{"query":"stellar x402","webhookUrl":"https://example.com/hook","webhookSecret":"s3cr3t-16-chars-min"}'
+# → {"jobId":"...","statusUrl":"http://localhost:3001/jobs/...","paymentVerified":true}
+curl http://localhost:3001/jobs/<jobId>
+```
+
+Webhook verification (receiver):
+
+```js
+import crypto from 'crypto'
+function verify(payload, signature, secret, tsHeader) {
+  const expected = crypto.createHmac('sha256', secret).update(`${tsHeader}.${payload}`).digest('hex')
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature)) && Date.now() - parseInt(tsHeader) < 5*60*1000
+}
+```
+
+Express/Vercel/browser/MCP contracts stay aligned: `STELLAR_NETWORK`, `USDC_CONTRACT`, `AMOUNT_STROOPS=10000` (0.001 USDC), and verified settlement remain the single source of truth (`src/lib/constants`).
 
 ---
 
