@@ -146,6 +146,16 @@ sequenceDiagram
     Browser-->>User: Display paid search results
 ```
 
+### AI Chat (`POST /ai/chat`)
+
+A single Express route handles the Groq AI chat endpoint with three capabilities:
+
+- **Streaming:** When the client sends `Accept: text/event-stream` or `?stream=1`, responses are streamed as Server-Sent Events (SSE) with `delta`, `done`, and `error` events.
+- **JSON fallback:** Non-streaming requests receive a complete JSON response with `{ content, model }`.
+- **Model selection:** Clients can request a specific model via `model` field in the body. Valid models: `llama-3.3-70b-versatile` (default), `llama-3.1-8b-instant`, `mixtral-8x7b-32768`. Invalid models fall back to the default.
+
+Validation: `messages` array is required; empty or missing returns `400`. Unsupported methods return `405` with `Allow: POST, OPTIONS`.
+
 ---
 
 ## Project structure
