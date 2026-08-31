@@ -30,6 +30,7 @@ import {
   AMOUNT_USDC,
   AMOUNT_STROOPS,
   assertValidStellarConfig,
+  USDC_CONTRACT,
 } from '../src/lib/constants'
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
 import {
