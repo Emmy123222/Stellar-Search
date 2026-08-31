@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
+import { consumeSSE } from '../../lib/sse'
 
 interface Props {
   results: SearchResult[]
@@ -147,41 +148,9 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
 
       const isSSE = res.headers.get('content-type')?.includes('text/event-stream')
       if (isSSE && res.body) {
-        const reader  = res.body.getReader()
-        const decoder = new TextDecoder('utf-8')
-        let   buffer  = ''
-        while (true) {
-          const { value, done } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          let blank: number
-          while ((blank = buffer.indexOf('\n\n')) !== -1) {
-            const raw = buffer.slice(0, blank)
-            buffer = buffer.slice(blank + 2)
-            let event = 'message'
-            let data  = ''
-            for (const line of raw.split('\n')) {
-              if (line.startsWith('event:')) event = line.slice(6).trim()
-              else if (line.startsWith('data:')) data += line.slice(5).trim()
-            }
-            if (!data) continue
-            if (event === 'delta') {
-              try {
-                const { content } = JSON.parse(data) as { content?: string }
-                if (content) setSummary(prev => prev + content)
-              } catch { /* skip malformed */ }
-            } else if (event === 'done') {
-              break
-            } else if (event === 'error') {
-              try {
-                const { error } = JSON.parse(data) as { error?: string }
-                throw new Error(error || 'stream error')
-              } catch (e) {
-                throw e instanceof Error ? e : new Error('stream error')
-              }
-            }
-          }
-        }
+        await consumeSSE(res.body, (delta) => {
+          setSummary(prev => prev + delta)
+        })
       } else {
         const data = await res.json()
         setSummary(data.content ?? 'No summary returned.')

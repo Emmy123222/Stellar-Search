@@ -39,58 +39,7 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
     : 'http://localhost:3001'
 )
 
-// Parse an SSE stream from `/ai/chat` and invoke `onDelta` for each token.
-// Stops cleanly on `event: done` or `event: error`.
-async function consumeSSE(
-  body: ReadableStream<Uint8Array>,
-  onDelta: (delta: string) => void,
-  onModel?: (model: string) => void,
-): Promise<void> {
-  const reader  = body.getReader()
-  const decoder = new TextDecoder('utf-8')
-  let   buffer  = ''
-
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-
-    // SSE events are delimited by a blank line.
-    let blankLine: number
-    while ((blankLine = buffer.indexOf('\n\n')) !== -1) {
-      const rawEvent = buffer.slice(0, blankLine)
-      buffer = buffer.slice(blankLine + 2)
-
-      let event = 'message'
-      let data  = ''
-      for (const line of rawEvent.split('\n')) {
-        if (line.startsWith('event:')) event = line.slice(6).trim()
-        else if (line.startsWith('data:')) data += line.slice(5).trim()
-      }
-      if (!data) continue
-
-      if (event === 'delta') {
-        try {
-          const { content } = JSON.parse(data) as { content?: string }
-          if (content) onDelta(content)
-        } catch { /* malformed chunk; skip */ }
-      } else if (event === 'done') {
-        try {
-          const { model } = JSON.parse(data) as { model?: string }
-          if (model && onModel) onModel(model)
-        } catch { /* ignore malformed done event */ }
-        return
-      } else if (event === 'error') {
-        try {
-          const { error } = JSON.parse(data) as { error?: string }
-          throw new Error(error || 'stream error')
-        } catch (e) {
-          throw e instanceof Error ? e : new Error('stream error')
-        }
-      }
-    }
-  }
-}
+import { consumeSSE } from '../../lib/sse'
 
 // Build a system message that gives Groq context from the user's most recent
 // paid search so follow-up questions can be answered without re-asking.
