@@ -35,6 +35,45 @@ import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSe
 export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
 
 /**
+ * Advanced search operator supported by the visual builder.
+ */
+export type AdvancedSearchOperator =
+  | { type: 'exclude'; value: string }
+  | { type: 'exact'; value: string }
+  | { type: 'filetype'; value: string }
+  | { type: 'site'; value: string }
+
+export interface AdvancedSearchQuery {
+  terms: string[]
+  operators: AdvancedSearchOperator[]
+}
+
+/**
+ * Maximum generated query length. The visual builder validates against this
+ * so composing operators never silently changes the query or payment amount.
+ */
+export const ADVANCED_QUERY_MAX_LENGTH = 500
+
+/**
+ * Compose structured advanced search operators into a visible editable query.
+ * The returned string is validated against ADVANCED_QUERY_MAX_LENGTH before use.
+ */
+export function composeAdvancedSearchQuery(query: AdvancedSearchQuery): string {
+  const parts = [...query.terms]
+  for (const op of query.operators) {
+    if (op.type === 'exclude') parts.push(`-${op.value}`)
+    else if (op.type === 'exact') parts.push(`"${op.value}"`)
+    else if (op.type === 'filetype') parts.push(`filetype:${op.value}`)
+    else if (op.type === 'site') parts.push(`site:${op.value}`)
+  }
+  const generated = parts.filter(Boolean).join(' ').trim()
+  if (generated.length > ADVANCED_QUERY_MAX_LENGTH) {
+    throw new Error(`Advanced query length ${generated.length} exceeds maximum ${ADVANCED_QUERY_MAX_LENGTH}`)
+  }
+  return generated
+}
+
+/**
  * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
  *
  * @param walletAddress - The Stellar public key address of the connected wallet, or `null` if unauthenticated.
@@ -47,10 +86,18 @@ export function useSearch(walletAddress: string | null = null) {
 
   const search = useCallback(
     async (
-      query: string,
+      inputQuery: string | AdvancedSearchQuery,
       freshnessOrCount?: string | number,
       countOverride = 5
     ) => {
+      let query: string
+      try {
+        query = typeof inputQuery === 'string' ? inputQuery : composeAdvancedSearchQuery(inputQuery)
+      } catch (err: any) {
+        toast.error('Invalid Advanced Query', { description: err.message })
+        setSession(prev => ({ ...prev, status: 'error', error: err.message }))
+        return
+      }
       if (!query.trim()) return
 
       let freshness = ''
