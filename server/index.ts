@@ -30,6 +30,7 @@ import {
   AMOUNT_STROOPS
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { enforceTokenBudget } from '../src/lib/tokenBudget'
 
 dotenv.config()
 
@@ -507,7 +508,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
     (req.headers.accept || '').includes('text/event-stream') ||
     req.query.stream === '1'
 
-  const groqMessages = [
+  const rawGroqMessages = [
     {
       role: 'system' as const,
       content:
@@ -515,6 +516,8 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
     },
     ...messages,
   ]
+
+  const { truncatedMessages: groqMessages, wasTruncated } = enforceTokenBudget(rawGroqMessages)
 
   if (!wantsStream) {
     try {
@@ -526,7 +529,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
       })
 
       const content = completion.choices[0]?.message?.content || 'No response.'
-      return res.json({ content, model: completion.model })
+      return res.json({ content, model: completion.model, truncated: wasTruncated })
     } catch (err: any) {
       console.error('[groq error]', err.message)
       return res.status(500).json({ error: `Groq AI error: ${err.message}` })
@@ -566,7 +569,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
       const delta = chunk.choices[0]?.delta?.content
       if (delta) sendEvent('delta', { content: delta })
     }
-    sendEvent('done', { model })
+    sendEvent('done', { model, truncated: wasTruncated })
     res.end()
   } catch (err: any) {
     if (controller.signal.aborted) return res.end()

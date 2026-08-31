@@ -7,6 +7,7 @@ interface Message {
   role: 'system' | 'user' | 'assistant'
   content: string
   model?: string // Add model info to messages
+  truncated?: boolean // Add truncation info
 }
 
 interface LastSearch {
@@ -44,7 +45,7 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
 async function consumeSSE(
   body: ReadableStream<Uint8Array>,
   onDelta: (delta: string) => void,
-  onModel?: (model: string) => void,
+  onModel?: (model: string, truncated?: boolean) => void,
 ): Promise<void> {
   const reader  = body.getReader()
   const decoder = new TextDecoder('utf-8')
@@ -76,8 +77,8 @@ async function consumeSSE(
         } catch { /* malformed chunk; skip */ }
       } else if (event === 'done') {
         try {
-          const { model } = JSON.parse(data) as { model?: string }
-          if (model && onModel) onModel(model)
+          const { model, truncated } = JSON.parse(data) as { model?: string, truncated?: boolean }
+          if (model && onModel) onModel(model, truncated)
         } catch { /* ignore malformed done event */ }
         return
       } else if (event === 'error') {
@@ -228,13 +229,13 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               return next
             })
           },
-          model => {
+          (model, truncated) => {
             // Update the model info in the last message
             setMessages(prev => {
               const next = [...prev]
               const last = next[next.length - 1]
               if (last?.role === 'assistant') {
-                next[next.length - 1] = { ...last, model }
+                next[next.length - 1] = { ...last, model, truncated }
               }
               return next
             })
@@ -248,7 +249,8 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
           next[next.length - 1] = { 
             role: 'assistant', 
             content: data.content ?? 'No response.',
-            model: data.model || selectedModel
+            model: data.model || selectedModel,
+            truncated: data.truncated
           }
           return next
         })
@@ -416,9 +418,10 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                     {msg.content}
                   </div>
                   {/* Show model metadata for assistant messages */}
-                  {msg.role === 'assistant' && msg.model && (
-                    <div className="text-[10px] text-white/30 mt-1 px-1">
-                      {getModelLabel(msg.model)}
+                  {msg.role === 'assistant' && (msg.model || msg.truncated) && (
+                    <div className="text-[10px] text-white/30 mt-1 px-1 flex items-center gap-2">
+                      {msg.model && <span>{getModelLabel(msg.model)}</span>}
+                      {msg.truncated && <span className="text-yellow-500/70" title="Older context was truncated to fit the token budget">Truncated context</span>}
                     </div>
                   )}
                 </motion.div>
