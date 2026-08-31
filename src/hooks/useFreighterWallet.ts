@@ -17,6 +17,29 @@ import type { WalletState, StellarTransaction } from '../types'
 
 export type { WalletState, StellarTransaction }
 
+const EXPECTED_NETWORK = 'TESTNET'
+const PREFLIGHT_TIMEOUT_MS = 5000
+
+export type PaymentPreflightResult =
+  | {
+      ok: true
+      publicKey: string
+      network: string
+      xlmBalance: string
+      usdcBalance: string
+    }
+  | {
+      ok: false
+      reason: string
+      recoveryAction: string
+    }
+
+export interface PaymentPreflightOptions {
+  amount: string
+  publicKey?: string | null
+  expectedNetwork?: string
+}
+
 const horizon = new Horizon.Server(HORIZON_URL)
 
 /**
@@ -61,10 +84,157 @@ export function extractSafeMemo(
 }
 
 /**
+ * Bounded preflight for x402 payment readiness.
+ *
+ * Checks Freighter connection, active account, expected network, USDC trustline,
+ * spendable balance, and signer availability. Returns a targeted recovery action
+ * when the preflight fails so callers can avoid creating a payment payload.
+ */
+export async function preflightPayment({
+  amount,
+  publicKey,
+  expectedNetwork = EXPECTED_NETWORK,
+}: PaymentPreflightOptions): Promise<PaymentPreflightResult> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+  try {
+    return await Promise.race([
+      (async (): Promise<PaymentPreflightResult> => {
+        const connected = await isConnected()
+        if (!connected.isConnected) {
+          return {
+            ok: false,
+            reason: 'Freighter is not connected.',
+            recoveryAction: 'Open Freighter and connect an account.',
+          }
+        }
+
+        // Requesting access verifies that Freighter has an active signer.
+        const access = await requestAccess()
+        if (access.error) {
+          return {
+            ok: false,
+            reason: access.error.message,
+            recoveryAction: 'Approve Freighter access for this app.',
+          }
+        }
+
+        const address = await getAddress()
+        if (address.error || !address.address) {
+          return {
+            ok: false,
+            reason: 'No active Freighter account found.',
+            recoveryAction: 'Create or select an account in Freighter.',
+          }
+        }
+
+        if (!publicKey) {
+          return {
+            ok: false,
+            reason: 'No active Stellar account.',
+            recoveryAction: 'Connect a Freighter wallet first.',
+          }
+        }
+
+        if (publicKey && publicKey !== address.address) {
+          return {
+            ok: false,
+            reason: 'Freighter selected account does not match the active account.',
+            recoveryAction: 'Select the matching account in Freighter.',
+          }
+        }
+
+        const networkResult = await getNetwork()
+        const network = networkResult.network || EXPECTED_NETWORK
+        if (network !== expectedNetwork) {
+          return {
+            ok: false,
+            reason: `Wrong network: expected ${expectedNetwork}, got ${network}.`,
+            recoveryAction: `Switch Freighter to ${expectedNetwork}.`,
+          }
+        }
+
+        const account = await horizon.loadAccount(address.address)
+        let xlmBalance = '0'
+        let usdcBalance = '0'
+        let hasUsdcTrustline = false
+
+        for (const balance of account.balances) {
+          if (balance.asset_type === 'native') {
+            xlmBalance = parseFloat(balance.balance).toFixed(4)
+          } else if (
+            balance.asset_type === 'credit_alphanum4' &&
+            (balance as any).asset_code === 'USDC' &&
+            (balance as any).asset_issuer === USDC_ISSUER
+          ) {
+            hasUsdcTrustline = true
+            usdcBalance = parseFloat(balance.balance).toFixed(6)
+          }
+        }
+
+        if (!hasUsdcTrustline) {
+          return {
+            ok: false,
+            reason: 'USDC trustline is missing.',
+            recoveryAction: 'Add the USDC trustline in Freighter.',
+          }
+        }
+
+        const requiredAmount = Number(amount)
+        const availableAmount = Number(usdcBalance)
+        if (!Number.isFinite(requiredAmount) || requiredAmount <= 0) {
+          return {
+            ok: false,
+            reason: 'Payment amount is invalid.',
+            recoveryAction: 'Enter a valid payment amount.',
+          }
+        }
+
+        if (availableAmount < requiredAmount) {
+          return {
+            ok: false,
+            reason: `Insufficient USDC balance: ${usdcBalance} available, ${amount} required.`,
+            recoveryAction: 'Add USDC or reduce the payment amount.',
+          }
+        }
+
+        return {
+          ok: true,
+          publicKey: address.address,
+          network,
+          xlmBalance,
+          usdcBalance,
+        }
+      })(),
+      new Promise<PaymentPreflightResult>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error('Preflight timed out.')),
+          PREFLIGHT_TIMEOUT_MS
+        )
+      }),
+    ])
+  } catch (err: any) {
+    const message = err.message || 'Preflight check failed.'
+    return {
+      ok: false,
+      reason: message,
+      recoveryAction:
+        message === 'Preflight timed out.'
+          ? 'Retry the preflight check.'
+          : 'Review Freighter connection and try again.',
+    }
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+    }
+  }
+}
+
+/**
  * Custom React hook to manage connection, balances (XLM & USDC), and recent transaction history for the Freighter wallet on Stellar.
  *
  * @returns Object containing the current wallet state (`wallet`), list of recent transactions (`transactions`),
- * transaction loading state (`txLoading`), and action callbacks (`connect`, `disconnect`, `refresh`).
+ * transaction loading state (`txLoading`), preflight readiness check (`preflight`), and action callbacks (`connect`, `disconnect`, `refresh`).
  */
 export function useFreighterWallet() {
   const [wallet, setWallet] = useState<WalletState>({
@@ -204,6 +374,36 @@ export function useFreighterWallet() {
     }
   }, [])
 
+  const preflight = useCallback(
+    async (
+      amount: string,
+      expectedNetwork?: string
+    ): Promise<PaymentPreflightResult> => {
+      const result = await preflightPayment({
+        amount,
+        publicKey: wallet.publicKey,
+        expectedNetwork,
+      })
+
+      if (result.ok) {
+        setWallet((prev: WalletState) => ({
+          ...prev,
+          error: null,
+          xlmBalance: result.xlmBalance,
+          usdcBalance: result.usdcBalance,
+        }))
+      } else {
+        setWallet((prev: WalletState) => ({
+          ...prev,
+          error: result.reason,
+        }))
+      }
+
+      return result
+    },
+    [wallet.publicKey]
+  )
+
   // Connect Freighter wallet
   const connect = useCallback(async () => {
     setWallet((prev: WalletState) => ({ ...prev, loading: true, error: null }))
@@ -304,5 +504,6 @@ export function useFreighterWallet() {
     connect,
     disconnect,
     refresh,
+    preflight,
   }
 }
