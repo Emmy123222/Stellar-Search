@@ -1,4 +1,4 @@
-# Contributing to StellarSearch
+# Contributing to Stellar Search
 
 Thank you for taking the time to contribute! StellarSearch is an open-source, pay-per-query web search API built on the Stellar blockchain using the x402 payment protocol. Every improvement — from a one-line typo fix to a full feature implementation — is welcome.
 
