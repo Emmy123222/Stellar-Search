@@ -13,4 +13,13 @@ const logger = winston.createLogger({
   ],
 });
 
+/**
+ * Enhanced logger with request ID support
+ * Logs can include requestId for distributed tracing
+ */
+export function logWithId(level: string, message: string, requestId?: string, meta?: any) {
+  const logMeta = { requestId, ...meta }
+  logger.log(level, message, logMeta)
+}
+
 export default logger;

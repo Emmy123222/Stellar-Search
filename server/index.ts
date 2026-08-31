@@ -23,7 +23,8 @@ import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
-import logger from './logger'
+import logger, { logWithId } from './logger'
+import { requestIdMiddleware } from './requestId'
 import {
   STELLAR_NETWORK,
   HORIZON_URL, 
@@ -49,6 +50,7 @@ const limiter = rateLimit({
 })
 
 // ─── Security Headers & Middleware ────────────────────────────────────────
+app.use(requestIdMiddleware)
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -136,13 +138,14 @@ app.use((req, res, next) => {
   if (req.path === '/search') {
     const { q } = req.query as Record<string, string>;
     const truncatedQ = q ? String(q).substring(0, 50) : '';
+    const requestId = (req as any).id;
 
     res.on('finish', () => {
       let paymentStatus = 'error';
       if (res.statusCode === 200) paymentStatus = 'paid';
       else if (res.statusCode === 402) paymentStatus = '402';
 
-      logger.info('Payment attempt', {
+      logWithId('info', 'Payment attempt', requestId, {
         timestamp: new Date().toISOString(),
         ip: req.ip,
         query: truncatedQ,
@@ -180,6 +183,7 @@ function validateQuery(
 
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {
+  const requestId = (req as any).id
   const { q, count = '5', freshness } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -211,13 +215,14 @@ app.get('/search', async (req: Request, res: Response) => {
       headers: {
         'X-API-KEY': SERPER_API_KEY,
         'Content-Type': 'application/json',
+        'X-Request-ID': requestId,
       },
       body: JSON.stringify(requestBody),
     })
 
     if (!serperRes.ok) {
       const err = await serperRes.text()
-      console.error('[serper]', serperRes.status, err)
+      logWithId('error', '[serper]', requestId, { status: serperRes.status, error: err })
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
@@ -266,11 +271,12 @@ app.get('/search', async (req: Request, res: Response) => {
         const match = raw.match(/\[[\s\S]*\]/)
         if (match) suggestions = JSON.parse(match[0]).slice(0, 3)
       } catch (err: any) {
-        console.warn('[suggestions] Groq error:', err.message)
+        logWithId('warn', '[suggestions] Groq error', requestId, { message: err.message })
       }
     }
 
     return res.json({
+      requestId,
       query: cleanQ,
       results,
       count: results.length,
@@ -282,13 +288,14 @@ app.get('/search', async (req: Request, res: Response) => {
       suggestions,
     })
   } catch (err: any) {
-    console.error('[search error]', err.message)
+    logWithId('error', '[search error]', requestId, { message: err.message })
     return res.status(500).json({ error: 'Search failed. Check server logs.' })
   }
 })
 
 // ─── GET /images ──────────────────────────────────────────────────────────
 app.get('/images', async (req: Request, res: Response) => {
+  const requestId = (req as any).id
   const { q, count = '10' } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -303,6 +310,7 @@ app.get('/images', async (req: Request, res: Response) => {
       headers: {
         'X-API-KEY': SERPER_API_KEY,
         'Content-Type': 'application/json',
+        'X-Request-ID': requestId,
       },
       body: JSON.stringify({
         q: cleanQ,
@@ -312,7 +320,7 @@ app.get('/images', async (req: Request, res: Response) => {
 
     if (!serperRes.ok) {
       const err = await serperRes.text()
-      console.error('[serper images]', serperRes.status, err)
+      logWithId('error', '[serper images]', requestId, { status: serperRes.status, error: err })
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
@@ -338,6 +346,7 @@ app.get('/images', async (req: Request, res: Response) => {
     const txHash = (req.headers['x-payment-response'] as string) || null
 
     return res.json({
+      requestId,
       query: cleanQ,
       results,
       count: results.length,
@@ -348,13 +357,14 @@ app.get('/images', async (req: Request, res: Response) => {
       latencyMs,
     })
   } catch (err: any) {
-    console.error('[images error]', err.message)
+    logWithId('error', '[images error]', requestId, { message: err.message })
     return res.status(500).json({ error: 'Image search failed. Check server logs.' })
   }
 })
 
 // ─── GET /news ────────────────────────────────────────────────────────────
 app.get('/news', async (req: Request, res: Response) => {
+  const requestId = (req as any).id
   const { q, count = '10', freshness } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -385,13 +395,14 @@ app.get('/news', async (req: Request, res: Response) => {
       headers: {
         'X-API-KEY': SERPER_API_KEY,
         'Content-Type': 'application/json',
+        'X-Request-ID': requestId,
       },
       body: JSON.stringify(requestBody),
     })
 
     if (!serperRes.ok) {
       const err = await serperRes.text()
-      console.error('[serper news]', serperRes.status, err)
+      logWithId('error', '[serper news]', requestId, { status: serperRes.status, error: err })
       return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
     }
 
@@ -416,6 +427,7 @@ app.get('/news', async (req: Request, res: Response) => {
     const txHash = (req.headers['x-payment-response'] as string) || null
 
     return res.json({
+      requestId,
       query: cleanQ,
       results,
       count: results.length,
@@ -426,7 +438,7 @@ app.get('/news', async (req: Request, res: Response) => {
       latencyMs,
     })
   } catch (err: any) {
-    console.error('[news error]', err.message)
+    logWithId('error', '[news error]', requestId, { message: err.message })
     return res.status(500).json({ error: 'News search failed. Check server logs.' })
   }
 })
@@ -436,6 +448,7 @@ app.get('/news', async (req: Request, res: Response) => {
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
 // (back-compat fallback for callers that don't support SSE).
 app.post('/ai/chat', async (req: Request, res: Response) => {
+  const requestId = (req as any).id
   const { messages } = req.body as {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
   }
@@ -467,9 +480,10 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
       })
 
       const content = completion.choices[0]?.message?.content || 'No response.'
-      return res.json({ content, model: completion.model })
+      logWithId('info', '[ai/chat]', requestId, { model: completion.model })
+      return res.json({ requestId, content, model: completion.model })
     } catch (err: any) {
-      console.error('[groq error]', err.message)
+      logWithId('error', '[groq error]', requestId, { message: err.message })
       return res.status(500).json({ error: `Groq AI error: ${err.message}` })
     }
   }
@@ -507,11 +521,11 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
       const delta = chunk.choices[0]?.delta?.content
       if (delta) sendEvent('delta', { content: delta })
     }
-    sendEvent('done', { model: 'llama-3.3-70b-versatile' })
+    sendEvent('done', { model: 'llama-3.3-70b-versatile', requestId })
     res.end()
   } catch (err: any) {
     if (controller.signal.aborted) return res.end()
-    console.error('[groq stream error]', err.message)
+    logWithId('error', '[groq stream error]', requestId, { message: err.message })
     sendEvent('error', { error: `Groq AI error: ${err.message}` })
     res.end()
   }
@@ -541,106 +555,6 @@ app.get('/health', (_req: Request, res: Response) => {
     receivingAddressConfigured: !!RECEIVING_ADDRESS,
   })
 })
-
-// ─── POST /ai/chat ────────────────────────────────────────────────────────
-// Streams responses as Server-Sent Events when the client sends
-// `Accept: text/event-stream`; otherwise returns the full completion as JSON
-// (back-compat fallback for callers that don't support SSE).
-app.post('/ai/chat', async (req: Request, res: Response) => {
-  const { messages, model: requestedModel } = req.body as {
-    messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
-    model?: string
-  }
-
-  if (!messages?.length) {
-    return res.status(400).json({ error: 'messages array required' })
-  }
-
-  // Available models whitelist
-  const AVAILABLE_MODELS = [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
-    'mixtral-8x7b-32768',
-  ]
-  
-  // Use requested model if valid, otherwise fall back to default
-  const model = requestedModel && AVAILABLE_MODELS.includes(requestedModel)
-    ? requestedModel
-    : 'llama-3.3-70b-versatile'
-
-  const wantsStream =
-    (req.headers.accept || '').includes('text/event-stream') ||
-    req.query.stream === '1'
-
-  const groqMessages = [
-    {
-      role: 'system' as const,
-      content:
-        'You are StellarSearch AI, a concise research assistant. Help users craft better search queries and understand results. Keep responses under 200 words.',
-    },
-    ...messages,
-  ]
-
-  if (!wantsStream) {
-    try {
-      const completion = await groq.chat.completions.create({
-        model,
-        messages: groqMessages,
-        max_tokens:  512,
-        temperature: 0.7,
-      })
-
-      const content = completion.choices[0]?.message?.content || 'No response.'
-      return res.json({ content, model: completion.model })
-    } catch (err: any) {
-      console.error('[groq error]', err.message)
-      return res.status(500).json({ error: `Groq AI error: ${err.message}` })
-    }
-  }
-
-  // SSE path
-  res.setHeader('Content-Type', 'text/event-stream')
-  res.setHeader('Cache-Control', 'no-cache, no-transform')
-  res.setHeader('Connection', 'keep-alive')
-  // Disable proxy buffering (e.g. nginx) so chunks flush immediately
-  res.setHeader('X-Accel-Buffering', 'no')
-  res.flushHeaders?.()
-
-  const sendEvent = (event: string, data: Record<string, unknown>) => {
-    res.write(`event: ${event}\n`)
-    res.write(`data: ${JSON.stringify(data)}\n\n`)
-  }
-
-  // Abort the Groq stream if the client disconnects mid-response.
-  const controller = new AbortController()
-  req.on('close', () => controller.abort())
-
-  try {
-    const stream = await groq.chat.completions.create(
-      {
-        model,
-        messages: groqMessages,
-        max_tokens:  512,
-        temperature: 0.7,
-        stream: true,
-      },
-      { signal: controller.signal },
-    )
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content
-      if (delta) sendEvent('delta', { content: delta })
-    }
-    sendEvent('done', { model })
-    res.end()
-  } catch (err: any) {
-    if (controller.signal.aborted) return res.end()
-    console.error('[groq stream error]', err.message)
-    sendEvent('error', { error: `Groq AI error: ${err.message}` })
-    res.end()
-  }
-})
-
 
 
 

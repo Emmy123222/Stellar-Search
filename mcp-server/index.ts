@@ -15,6 +15,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import Groq from 'groq-sdk'
 import dotenv from 'dotenv'
+import { randomUUID } from 'crypto'
 import { 
   HORIZON_URL, 
   USDC_ISSUER, 
@@ -122,6 +123,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── web_search ────────────────────────────────────────────────────────
   if (name === 'web_search') {
     const { query, count = 5, freshness } = args as { query: string; count?: number; freshness?: string }
+    const requestId = randomUUID()
 
     try {
       const params = new URLSearchParams({ q: query, count: String(count) })
@@ -130,7 +132,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       // The server's x402 middleware handles the full payment flow.
       // In server-to-server mode the server needs a funded Stellar key.
       // For MCP usage we call the server which itself holds the paying wallet.
-      const res = await fetch(`${SERVER_URL}/search?${params}`)
+      const res = await fetch(`${SERVER_URL}/search?${params}`, {
+        headers: {
+          'X-Request-ID': requestId,
+        },
+      })
 
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
@@ -149,7 +155,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `🔍 Results for: "${query}"`,
             `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
             `⚡ Latency: ${data.latencyMs}ms`,
-            `📊 ${data.count} results\n`,
+            `📊 ${data.count} results`,
+            `📋 Request ID: ${data.requestId}\n`,
             formatted,
           ].join('\n'),
         }],
@@ -162,12 +169,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── image_search ──────────────────────────────────────────────────────
   if (name === 'image_search') {
     const { query, count = 5 } = args as { query: string; count?: number }
+    const requestId = randomUUID()
 
     try {
       const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 10)
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
 
-      const res = await fetch(`${SERVER_URL}/images?${params}`)
+      const res = await fetch(`${SERVER_URL}/images?${params}`, {
+        headers: {
+          'X-Request-ID': requestId,
+        },
+      })
 
       if (!res.ok) {
         const e: any = await res.json().catch(() => ({}))
@@ -186,7 +198,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `🖼️  Image results for: "${query}"`,
             `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
             `⚡ Latency: ${data.latencyMs}ms`,
-            `📊 ${data.count} results\n`,
+            `📊 ${data.count} results`,
+            `📋 Request ID: ${data.requestId}\n`,
             formatted,
           ].join('\n'),
         }],
@@ -201,13 +214,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { query, count = 10, freshness } = args as {
       query: string; count?: number; freshness?: string
     }
+    const requestId = randomUUID()
 
     try {
       const safeCount = Math.min(Math.max(parseInt(String(count)) || 10, 1), 20)
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
       if (freshness) params.set('freshness', freshness)
 
-      const res = await fetch(`${SERVER_URL}/news?${params}`)
+      const res = await fetch(`${SERVER_URL}/news?${params}`, {
+        headers: {
+          'X-Request-ID': requestId,
+        },
+      })
 
       if (!res.ok) {
         const e: any = await res.json().catch(() => ({}))
@@ -229,7 +247,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `📰 News results for: "${query}"`,
             `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
             `⚡ Latency: ${data.latencyMs}ms`,
-            `📊 ${data.count} results\n`,
+            `📊 ${data.count} results`,
+            `📋 Request ID: ${data.requestId}\n`,
             formatted,
           ].join('\n'),
         }],
@@ -300,8 +319,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── get_search_stats ──────────────────────────────────────────────────
   if (name === 'get_search_stats') {
+    const requestId = randomUUID()
     try {
-      const res = await fetch(`${SERVER_URL}/health`)
+      const res = await fetch(`${SERVER_URL}/health`, {
+        headers: {
+          'X-Request-ID': requestId,
+        },
+      })
       if (!res.ok) throw new Error(`Server health check returned ${res.status}`)
 
       const stats = await res.json()
@@ -320,6 +344,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             `   Price per Query:  ${stats.pricePerQuery}`,
             `   Facilitator:      ${stats.facilitator}`,
             `   APIs Configured:  Serper: ${stats.serperApiConfigured ? '✅' : '❌'}, Groq: ${stats.groqApiConfigured ? '✅' : '❌'}`,
+            `   Request ID:       ${requestId}`,
           ].join('\n'),
         }],
       }
