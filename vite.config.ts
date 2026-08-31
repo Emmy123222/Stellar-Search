@@ -37,6 +37,7 @@ export default defineConfig({
         'src/lib/hashing.ts': { statements: 95, branches: 95, functions: 100, lines: 95 },
         'src/lib/serperNormalizer.ts': { statements: 95, branches: 90, functions: 100, lines: 95 },
         'src/lib/paramValidation.ts': { statements: 95, branches: 90, functions: 100, lines: 95 },
+        'src/lib/queryValidator.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
         'server/corsConfig.ts': { statements: 90, branches: 85, functions: 95, lines: 90 },
         'src/components/search/SearchBar.tsx': { statements: 80, branches: 80, functions: 90, lines: 80 },
         'src/components/search/SpellingCorrectionBanner.tsx': { statements: 85, branches: 90, functions: 70, lines: 85 },

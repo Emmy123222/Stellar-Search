@@ -23,6 +23,7 @@ vi.mock('../src/lib/paymentIntegrity', async (importOriginal) => {
 
 import handler from './search'
 import { resetConsumedPayments, consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { queryValidationCases } from '../src/lib/queryValidator.fixtures'
 
 function mockReqRes(overrides: any = {}) {
   const req: any = {
@@ -238,6 +239,30 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
 
     expect(successes).toHaveLength(1)
     expect(rejections).toHaveLength(numConcurrent - 1)
+  })
+
+  // Same table drives server/payment.test.ts — asserts Express and Vercel
+  // agree on which queries pass validation and on the cleaned query used.
+  describe('shared query-validator table — /api/search (Vercel)', () => {
+    it.each(queryValidationCases)('$name', async ({ input, expectedStatus, expectedCleanQ }) => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ organic: [] }),
+      } as any)
+
+      const fakeTx = Buffer.from(JSON.stringify({ transactionHash: `tx_table_${Math.random()}` })).toString('base64')
+      const { req, res } = mockReqRes({
+        method: 'GET',
+        query: typeof input === 'string' ? { q: input } : {},
+        headers: { 'x-payment': fakeTx },
+      })
+
+      await handler(req, res)
+      expect(res._status ?? 200).toBe(expectedStatus)
+      if (expectedStatus === 200 && expectedCleanQ !== undefined) {
+        expect(res._json.query).toBe(expectedCleanQ)
+      }
+    })
   })
 
   it('safely normalizes malformed Serper payloads by filtering out rows with invalid links', async () => {

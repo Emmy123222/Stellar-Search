@@ -33,6 +33,7 @@ import {
 } from '../src/lib/constants'
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
+import { validateQuery } from '../src/lib/queryValidator.js'
 import {
   normalizeOrganicResults,
   normalizeImageResults,
@@ -392,29 +393,6 @@ function recordReconciliation(params: {
   } catch (err: any) {
     console.error('[reconciliation] failed to record:', err.message)
   }
-}
-
-export const MAX_QUERY_LENGTH = 256
-
-// Validate and sanitize the user-supplied `q` parameter. Returns either the
-// cleaned string or a 400 response body to send back. Centralised so /search
-// and /images share the same rules.
-export function validateQuery(
-  q: unknown,
-): { ok: true; cleanQ: string } | { ok: false; error: string } {
-  if (typeof q !== 'string' || !q.trim()) {
-    return { ok: false, error: 'Missing required parameter: q' }
-  }
-  if (q.length > MAX_QUERY_LENGTH) {
-    return { ok: false, error: `Query too long. Maximum ${MAX_QUERY_LENGTH} characters.` }
-  }
-  // Strip null bytes and ASCII control characters (C0 + DEL) to prevent
-  // log injection and odd Serper behavior.
-  const cleanQ = q.replace(/[\x00-\x1F\x7F]/g, '').trim()
-  if (!cleanQ) {
-    return { ok: false, error: 'Query contains no valid characters.' }
-  }
-  return { ok: true, cleanQ }
 }
 
 // ─── GET /search ──────────────────────────────────────────────────────────

@@ -5,6 +5,9 @@ import {
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
+import { validateQuery } from '../src/lib/queryValidator'
+import { normalizeOrganicResults, normalizeQueryMetadata } from '../src/lib/serperNormalizer'
+import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 let config
@@ -47,10 +50,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { q, count = '5', freshness } = req.query as Record<string, string>
 
-  if (!q?.trim()) {
-    const errorBody: ApiErrorResponse = { error: 'Missing required parameter: q' }
+  const v = validateQuery(q)
+  if (!v.ok) {
+    const errorBody: ApiErrorResponse = { error: v.error }
     return res.status(400).json(errorBody)
   }
+  const cleanQ = v.cleanQ
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -114,7 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // ─── Serper.dev ──────────────────────────────────────────────────────────
     const requestBody: Record<string, unknown> = {
-      q:   q.trim(),
+      q:   cleanQ,
       num: Math.min(parseInt(count) || 5, 20),
     }
 
@@ -147,7 +152,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const latencyMs    = Date.now() - t0
 
     const results = normalizeOrganicResults(data)
-    const queryMeta = normalizeQueryMetadata(data, q.trim())
+    const queryMeta = normalizeQueryMetadata(data, cleanQ)
 
     const responseBody: SearchResponse = {
       query:          queryMeta.executedQuery,

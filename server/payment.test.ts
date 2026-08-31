@@ -15,6 +15,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
+import { queryValidationCases } from '../src/lib/queryValidator.fixtures'
 
 // ─── Mock x402 + heavy deps before app import ───────────────────────────────
 vi.mock('@x402/express', () => ({
@@ -114,6 +115,24 @@ describe('challenge — query validation gate (pre-payment)', () => {
     const res = await request(app).get('/news')
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/Missing required parameter/)
+  })
+})
+
+// ─── Shared validator table (Express side) ────────────────────────────────
+// Same table drives api/search.test.ts — asserts Express and Vercel agree on
+// which queries pass validation and on the cleaned query that reaches Serper.
+
+describe('shared query-validator table — /search (Express)', () => {
+  it.each(queryValidationCases)('$name', async ({ input, expectedStatus, expectedCleanQ }) => {
+    const res = await request(app)
+      .get('/search')
+      .query(typeof input === 'string' ? { q: input } : {})
+      .set('x-payment', makeReceipt(`tx_table_${Math.random()}`))
+
+    expect(res.status).toBe(expectedStatus)
+    if (expectedStatus === 200 && expectedCleanQ !== undefined) {
+      expect(res.body.query).toBe(expectedCleanQ)
+    }
   })
 })
 
