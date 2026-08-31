@@ -99,15 +99,18 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 ```
 Browser (Freighter) → GET /search?q=...
                      ← HTTP 402 + payment requirements
+                     → Preflight: account, network, trustline, balance, signer
                      → Sign Soroban auth entry (Freighter prompt)
                      → GET /search + X-Payment: <signature>
                      ← OpenZeppelin facilitator verifies + settles 0.001 USDC
                      ← 200 OK + Search results
 ```
 
+Before signing, a bounded preflight verifies the active account, expected network, USDC trustline, spendable amount, and signer availability. If any check fails, no payment payload is created and the user gets a single targeted recovery action (e.g. "Add USDC", "Switch to testnet", or "Enable signer").
+
 1. Agent hits `/search` — the `@x402/express` middleware intercepts
 2. Returns `HTTP 402 Payment Required` with price + network + payTo address
-3. The x402 client signs a Soroban authorization entry via Freighter wallet
+3. After the preflight passes, the x402 client signs a Soroban authorization entry via Freighter wallet
 4. Retries with `X-Payment` header containing the signed entry
 5. OpenZeppelin facilitator at `channels.openzeppelin.com/x402/testnet` verifies the signature and settles 0.001 USDC on Stellar testnet
 6. Server enforces payment integrity (`src/lib/paymentIntegrity.ts`), rejecting replayed or duplicate payloads within the 300-second validity window, and returns search results
