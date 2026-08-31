@@ -15,23 +15,12 @@ const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
 const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
 const SERPER_API_KEY    = process.env.SERPER_API_KEY!
 
+import { applyServerlessCors } from '../server/corsConfig'
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ─── CORS ─────────────────────────────────────────────────────────────────
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', [
-    'Content-Type',
-    'Authorization',
-    'X-Payment',
-    'payment-signature',
-    'x-payment',
-    'X-PAYMENT',
-  ].join(', '))
-  res.setHeader('Access-Control-Expose-Headers', [
-    'PAYMENT-REQUIRED',
-    'X-Payment-Response',
-  ].join(', '))
+  applyServerlessCors(req, res)
 
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET') {

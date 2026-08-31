@@ -75,3 +75,27 @@ export function buildCorsOptions(): CorsOptions {
     },
   }
 }
+export function applyServerlessCors(req: { headers: { origin?: string } }, res: { setHeader: (key: string, value: string) => void }) {
+  res.setHeader('Access-Control-Allow-Methods', CORS_METHODS.join(', '))
+  res.setHeader('Access-Control-Allow-Headers', CORS_ALLOWED_HEADERS.join(', '))
+  res.setHeader('Access-Control-Expose-Headers', CORS_EXPOSED_HEADERS.join(', '))
+
+  const origin = req.headers.origin
+
+  if (!isProductionEnv()) {
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    return
+  }
+
+  const allowed = parseAllowedOrigins(process.env.ALLOWED_ORIGINS)
+
+  if (!origin) {
+    // No origin (e.g. MCP, server-to-server)
+    return
+  }
+
+  if (allowed.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+    res.setHeader('Vary', 'Origin')
+  }
+}

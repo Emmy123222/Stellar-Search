@@ -107,7 +107,7 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
     expect(res._json.error).toBe('Payment required')
   })
 
-  it('sets CORS headers (Vercel browser alignment)', async () => {
+  it('sets CORS headers (Vercel browser alignment via applyServerlessCors)', async () => {
     const { req, res } = mockReqRes({ method: 'GET', query: {} })
     await handler(req, res)
     expect(res.setHeader).toHaveBeenCalledWith('Access-Control-Allow-Origin', '*')
