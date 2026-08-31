@@ -31,7 +31,7 @@ import {
   AMOUNT_STROOPS,
   USDC_CONTRACT
 } from '../src/lib/constants'
-import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
+import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import {
   normalizeOrganicResults,
   normalizeImageResults,
@@ -497,7 +497,9 @@ app.get(['/search', '/api/search'], async (req: Request, res: Response) => {
     // Record opted-in receipt (cap 50, in-memory)
     try {
       addRecentReceipt({ id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, query: cleanQ, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
-    } catch {}
+    } catch (err) {
+      void err
+    }
 
     return res.json(responseBody)
   } catch (err: any) {
@@ -688,9 +690,9 @@ app.post('/search/batch', async (req: Request, res: Response) => {
   // Payment verification: require X-Payment covering aggregate amount, verified via integrity + x402 facilitator header.
   // For batch we enforce that payment header is present; x402 middleware already guards but we also check replay.
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
-  let paymentId: string | null = null
+  let paymentId: string | null
   let txHash: string | null = (req.headers['x-payment-response'] as string) || null
-  let verified = false
+  let verified: boolean
   if (paymentHeader) {
     const consumption = consumePaymentPayload(paymentHeader)
     if (!consumption.ok) {
@@ -702,7 +704,9 @@ app.post('/search/batch', async (req: Request, res: Response) => {
       const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
       const parsed = JSON.parse(decoded)
       txHash = parsed.transactionHash || parsed.txHash || txHash
-    } catch {}
+    } catch (err) {
+      void err
+    }
   } else {
     // No payment: return 402 with quote so caller can pay and retry with Idempotency-Key
     const quoteEvent: BatchJsonlQuoteEvent = {
@@ -751,12 +755,6 @@ app.post('/search/batch', async (req: Request, res: Response) => {
   // Emit settlement event immediately after payment verification
   const settlementEvent: BatchJsonlSettlementEvent = { v: 1, type: 'settlement', requestId, paymentId, txHash, verified, settledAt: new Date().toISOString() }
   writeEvent(settlementEvent)
-
-  // Also emit quote for audit
-  const quoteEvent: BatchJsonlQuoteEvent = { v: 1, type: 'quote', requestId, totalQueries: cleanQueries.length, pricePerQuery: AMOUNT_USDC, totalAmount, currency: 'USDC', network: NETWORK, payTo: RECEIVING_ADDRESS, idempotencyKey }
-  // quote already validated, but emit after settlement for streaming consumers that missed 402
-  // (not duplicative for paying caller)
-  // we skip re-emitting quote here to keep bounded events tight; settlement is the anchor
 
   let succeeded = 0
   let failed = 0
@@ -865,9 +863,9 @@ app.post('/jobs', async (req: Request, res: Response) => {
 
   // Payment verification via x402 header
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
-  let paymentId: string | null = null
+  let paymentId: string | null
   let txHash: string | null = (req.headers['x-payment-response'] as string) || null
-  let verified = false
+  let verified: boolean
   if (!paymentHeader) {
     // Return 402 with payment requirements and statusUrl hint
     const paymentRequired = {
@@ -887,7 +885,9 @@ app.post('/jobs', async (req: Request, res: Response) => {
     const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
     const parsed = JSON.parse(decoded)
     txHash = parsed.transactionHash || parsed.txHash || txHash
-  } catch {}
+  } catch (err) {
+    void err
+  }
 
   const jobId = crypto.randomUUID()
   const now = new Date().toISOString()

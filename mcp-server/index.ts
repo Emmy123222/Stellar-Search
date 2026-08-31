@@ -62,6 +62,7 @@ export interface McpReceipt {
 }
 
 export const MAX_MCP_RECEIPTS = 50
+export const MAX_BATCH_SIZE = 10
 export const mcpReceipts: McpReceipt[] = []
 export const MCP_RECEIPTS_OPT_IN = process.env.MCP_ENABLE_RECEIPTS === '1' || process.env.MCP_RECEIPTS_OPT_IN === '1'
 
@@ -476,7 +477,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           latencyMs: data.latencyMs ?? 0,
           count: data.count ?? 0,
         })
-      } catch {}
+      } catch (err) {
+        void err
+      }
       const formatted = (data.results as any[])
         .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
         .join('\n\n')
@@ -764,7 +767,9 @@ try {
       })
     }
   }
-} catch {}
+} catch (err) {
+  void err
+}
 
 const transport = new StdioServerTransport()
 await server.connect(transport)

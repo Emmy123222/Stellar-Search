@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../../../src/lib/constants'
-import { consumePaymentPayload } from '../../../src/lib/paymentIntegrity'
-import { normalizeOrganicResults } from '../../../src/lib/serperNormalizer'
+import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../../src/lib/constants'
+import { consumePaymentPayload } from '../../src/lib/paymentIntegrity'
+import { normalizeOrganicResults } from '../../src/lib/serperNormalizer'
 import crypto from 'crypto'
 
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -69,9 +69,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const parsedCount = Math.min(Math.max(parseInt(String(rawCount ?? '5')) || 5, 1), 20)
 
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT']) as string | undefined
-  let paymentId: string | null = null
+  let paymentId: string | null
   let txHash: string | null = null
-  let verified = false
+  let verified: boolean
   if (!paymentHeader) {
     const quoteEvent = {
       v: 1, type: 'quote', requestId, totalQueries: cleanQueries.length,
@@ -94,7 +94,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const decoded = Buffer.from(paymentHeader as string, 'base64').toString('utf8')
     const parsed = JSON.parse(decoded)
     txHash = parsed.transactionHash || parsed.txHash || null
-  } catch {}
+  } catch (err) {
+    void err
+  }
 
   if (idempotencyKey) {
     batchIdempotencyStore.set(idempotencyKey, { requestId, expiresAt: Date.now() + 24 * 3600 * 1000 })
