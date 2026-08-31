@@ -64,6 +64,10 @@ export function useSearch(walletAddress: string | null = null) {
 
       setSession({
         query,
+        originalQuery: query,
+        executedQuery: query,
+        suggestedQuery: undefined,
+        isCorrected: false,
         results: [],
         txHash: null,
         paidAmount: null,
@@ -146,8 +150,18 @@ export function useSearch(walletAddress: string | null = null) {
         if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`)
         const data = (await firstRes.json()) as SearchResponse
         return setSession({
-          query, results: data.results ?? [], txHash: null,
-          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
+          query: data.executedQuery ?? data.query ?? query,
+          originalQuery: data.originalQuery ?? query,
+          executedQuery: data.executedQuery ?? data.query ?? query,
+          suggestedQuery: data.suggestedQuery,
+          isCorrected: data.isCorrected ?? false,
+          results: data.results ?? [],
+          txHash: null,
+          paidAmount: null,
+          status: 'complete',
+          step: 6,
+          durationMs: Date.now() - t0,
+          suggestions: data.suggestions ?? [],
         })
       }
 
@@ -190,14 +204,18 @@ export function useSearch(walletAddress: string | null = null) {
 
       // Flow step 6 — result received and rendered
       setSession({
-        query,
-        results:     data.results    ?? [],
-        txHash:      data.txHash     ?? null,
-        paidAmount:  data.paidAmount ?? null,
-        status:      'complete',
-        step:        6,
-        durationMs:  Date.now() - t0,
-        suggestions: data.suggestions ?? [],
+        query:        data.executedQuery ?? data.query ?? query,
+        originalQuery: data.originalQuery ?? query,
+        executedQuery: data.executedQuery ?? data.query ?? query,
+        suggestedQuery: data.suggestedQuery,
+        isCorrected:  data.isCorrected ?? false,
+        results:      data.results    ?? [],
+        txHash:       data.txHash     ?? null,
+        paidAmount:   data.paidAmount ?? null,
+        status:       'complete',
+        step:         6,
+        durationMs:   Date.now() - t0,
+        suggestions:  data.suggestions ?? [],
       })
 
       if (data.txHash) {
@@ -247,7 +265,18 @@ export function useSearch(walletAddress: string | null = null) {
   }, [walletAddress])
 
   const reset = useCallback(() => {
-    setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [] })
+    setSession({
+      query: '',
+      originalQuery: '',
+      executedQuery: '',
+      suggestedQuery: undefined,
+      isCorrected: false,
+      results: [],
+      txHash: null,
+      paidAmount: null,
+      status: 'idle',
+      suggestions: [],
+    })
   }, [])
 
   return { session, search, reset }
