@@ -23,7 +23,7 @@ StellarSearch is a pay-per-query web search API for autonomous AI agents. Every 
 | Wallet connect | `@stellar/freighter-api` (real Freighter extension) |
 | Balances / tx | Stellar Horizon REST API (live, not mocked) |
 | Search results | Serper.dev API (real Google search results) |
-| AI assistant | `groq-sdk` · Llama 3.3 70B (real Groq API) |
+| AI assistant | `groq-sdk` · Dynamic Model Selection via capability endpoint |
 | Frontend | React 18, TypeScript, Tailwind CSS, Framer Motion |
 
 ---

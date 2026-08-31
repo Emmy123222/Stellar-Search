@@ -18,14 +18,13 @@ interface Props {
   lastSearch?: LastSearch | null
 }
 
-// Available Groq models
-const AVAILABLE_MODELS = [
-  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B', description: 'Most capable' },
-  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B', description: 'Fastest' },
-  { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B', description: 'Balanced' },
-] as const
+interface AIModel {
+  id: string
+  label: string
+  description: string
+}
 
-type ModelId = typeof AVAILABLE_MODELS[number]['id']
+type ModelId = string
 
 const SYSTEM_INTRO: Message = {
   role: 'assistant',
@@ -113,10 +112,26 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
   const [messages, setMessages] = useState<Message[]>([SYSTEM_INTRO])
   const [input, setInput]       = useState('')
   const [loading, setLoading]   = useState(false)
-  const [selectedModel, setSelectedModel] = useState<ModelId>('llama-3.3-70b-versatile')
+  const [availableModels, setAvailableModels] = useState<AIModel[]>([])
+  const [selectedModel, setSelectedModel] = useState<ModelId>('')
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const bottomRef               = useRef<HTMLDivElement>(null)
   const contextInjectedFor      = useRef<string | null>(null)
+
+  // Fetch models from capability endpoint
+  useEffect(() => {
+    fetch(`${SERVER_URL}/ai/models`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.models && Array.isArray(data.models)) {
+          setAvailableModels(data.models)
+        }
+        if (data.default) {
+          setSelectedModel(data.default)
+        }
+      })
+      .catch(err => console.error('Failed to fetch AI models', err))
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -213,7 +228,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
   }
 
   const getModelLabel = (modelId: string) => {
-    const model = AVAILABLE_MODELS.find(m => m.id === modelId)
+    const model = availableModels.find(m => m.id === modelId)
     return model?.label || modelId
   }
 
@@ -322,7 +337,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                           border: '1px solid rgba(0,245,255,0.2)',
                         }}
                       >
-                        {AVAILABLE_MODELS.map(model => (
+                        {availableModels.map(model => (
                           <button
                             key={model.id}
                             onClick={() => {

@@ -30,6 +30,7 @@ import {
   AMOUNT_STROOPS
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { AVAILABLE_MODELS, DEFAULT_MODEL, isValidModel } from '../src/lib/aiModels'
 
 dotenv.config()
 
@@ -477,6 +478,14 @@ app.get('/health', (_req: Request, res: Response) => {
   })
 })
 
+// ─── GET /ai/models ───────────────────────────────────────────────────────
+app.get('/ai/models', (_req: Request, res: Response) => {
+  res.json({
+    models: AVAILABLE_MODELS,
+    default: DEFAULT_MODEL,
+  })
+})
+
 // ─── POST /ai/chat ────────────────────────────────────────────────────────
 // Streams responses as Server-Sent Events when the client sends
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
@@ -490,18 +499,12 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   if (!messages?.length) {
     return res.status(400).json({ error: 'messages array required' })
   }
-
-  // Available models whitelist
-  const AVAILABLE_MODELS = [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
-    'mixtral-8x7b-32768',
-  ]
   
-  // Use requested model if valid, otherwise fall back to default
-  const model = requestedModel && AVAILABLE_MODELS.includes(requestedModel)
-    ? requestedModel
-    : 'llama-3.3-70b-versatile'
+  // Use requested model if provided, else default. Validate against known IDs.
+  const model = requestedModel || DEFAULT_MODEL
+  if (!isValidModel(model)) {
+    return res.status(400).json({ error: `Unsupported model ID: ${model}` })
+  }
 
   const wantsStream =
     (req.headers.accept || '').includes('text/event-stream') ||

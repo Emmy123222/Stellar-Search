@@ -244,8 +244,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { text, instruction = 'summarise' } = args as { text: string; instruction?: string }
 
     try {
+      // Dynamic import to use shared constants from src/lib
+      const { DEFAULT_MODEL } = await import('../src/lib/aiModels.js')
       const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: DEFAULT_MODEL,
         messages: [
           { role: 'system', content: 'You are a concise research assistant. Be brief and accurate.' },
           { role: 'user', content: `Please ${instruction} the following:\n\n${text}` },

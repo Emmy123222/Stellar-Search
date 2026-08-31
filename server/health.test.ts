@@ -81,6 +81,18 @@ describe('GET /health and GET /', () => {
   })
 })
 
+describe('GET /ai/models', () => {
+  it('returns valid models and default model', async () => {
+    const res = await request(app).get('/ai/models')
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveProperty('models')
+    expect(res.body).toHaveProperty('default')
+    expect(Array.isArray(res.body.models)).toBe(true)
+    expect(res.body.models.length).toBeGreaterThan(0)
+    expect(res.body.default).toBeTruthy()
+  })
+})
+
 describe('POST /ai/chat validation', () => {
   it('returns 400 when messages missing', async () => {
     const res = await request(app).post('/ai/chat').send({}).set('Content-Type', 'application/json')
@@ -91,6 +103,15 @@ describe('POST /ai/chat validation', () => {
   it('returns 400 when messages empty', async () => {
     const res = await request(app).post('/ai/chat').send({ messages: [] }).set('Content-Type', 'application/json')
     expect(res.status).toBe(400)
+  })
+
+  it('returns 400 when model ID is unknown', async () => {
+    const res = await request(app)
+      .post('/ai/chat')
+      .send({ messages: [{ role: 'user', content: 'hi' }], model: 'unknown-model-123' })
+      .set('Content-Type', 'application/json')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/Unsupported model ID/)
   })
 })
 

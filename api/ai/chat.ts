@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import Groq from 'groq-sdk'
+import { DEFAULT_MODEL, isValidModel } from '../../src/lib/aiModels'
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! })
 
@@ -8,17 +9,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { messages } = req.body as {
+  const { messages, model: requestedModel } = req.body as {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+    model?: string
   }
 
   if (!messages?.length) {
     return res.status(400).json({ error: 'messages array required' })
   }
 
+  const model = requestedModel || DEFAULT_MODEL
+  if (!isValidModel(model)) {
+    return res.status(400).json({ error: `Unsupported model ID: ${model}` })
+  }
+
   try {
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
+      model,
       messages: [
         {
           role: 'system',
