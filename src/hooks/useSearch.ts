@@ -40,12 +40,24 @@ import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSe
 
 export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
 
-async function preflightStellarAccount(address: string, requiredAmount?: string) {
+async function preflightStellarAccount(
+  address: string,
+  requiredAmount?: string,
+  expectedNetwork = EXPECTED_WALLET_NETWORK
+) {
   if (!StrKey.isValidEd25519PublicKey(address)) {
     throw new Error('Invalid Stellar account. Reconnect your Freighter wallet.')
   }
   if (typeof signAuthEntry !== 'function') {
     throw new Error('Freighter signer unavailable. Install or unlock Freighter.')
+  }
+
+  const net = await getNetworkDetails()
+  if (net.error) {
+    throw new Error(net.error.message)
+  }
+  if (net.network !== expectedNetwork) {
+    throw new Error(`Switch Freighter to ${expectedNetwork}. Currently: ${net.network}`)
   }
 
   let activeAccount: string
@@ -73,14 +85,16 @@ async function preflightStellarAccount(address: string, requiredAmount?: string)
       balance.asset_type === 'credit_alphanum4' &&
       balance.asset_code === 'USDC' &&
       balance.asset_issuer === USDC_ISSUER
-  )?.balance
+  )
 
   if (!usdcBalance) {
     throw new Error('No USDC trustline found. Add the USDC trustline to your wallet and try again.')
   }
 
-  if (requiredAmount !== undefined && Number(usdcBalance) < Number(requiredAmount)) {
-    throw new Error(`Insufficient USDC balance. Required: ${requiredAmount}, available: ${usdcBalance}.`)
+  const spendableUsdc = Number(usdcBalance.balance) - Number(usdcBalance.selling_liabilities ?? 0)
+
+  if (requiredAmount !== undefined && spendableUsdc < Number(requiredAmount)) {
+    throw new Error(`Insufficient USDC balance. Required: ${requiredAmount}, available: ${spendableUsdc}.`)
   }
 }
 
