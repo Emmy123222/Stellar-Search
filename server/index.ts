@@ -30,6 +30,7 @@ import {
   AMOUNT_STROOPS
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { validateAndNormalizeUrl } from '../src/lib/urlSanitizer'
 
 dotenv.config()
 
@@ -250,15 +251,28 @@ app.get('/search', async (req: Request, res: Response) => {
     stats.latencies.push(latencyMs)
     if (stats.latencies.length > 200) stats.latencies.shift()
 
-    const results = (data.organic || []).map((r: any, i: number) => ({
-      id: String(i + 1),
-      title: r.title || 'No title',
-      url: r.link,
-      description: r.snippet || '',
-      source: (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
-      relevanceScore: Math.max(0.5, 1 - i * 0.06),
-      publishedAt: r.date || undefined,
-    }))
+    const results = (data.organic || []).map((r: any, i: number) => {
+      const v = validateAndNormalizeUrl(r.link)
+      return {
+        id: String(i + 1),
+        title: r.title || 'No title',
+        url: v.isValid ? v.normalizedUrl! : (typeof r.link === 'string' ? r.link : ''),
+        description: r.snippet || '',
+        source: v.isValid ? v.source : (typeof r.link === 'string' ? r.link : 'blocked'),
+        relevanceScore: Math.max(0.5, 1 - i * 0.06),
+        publishedAt: r.date || undefined,
+        isBlocked: !v.isValid,
+        blockReason: v.error,
+      }
+    })
+
+    const safeCount = results.filter((r: any) => !r.isBlocked).length
+    const blockedCount = results.length - safeCount
+    const diagnostics = {
+      total: results.length,
+      safe: safeCount,
+      blocked: blockedCount,
+    }
 
     // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
     const txHash = (req.headers['x-payment-response'] as string) || null
@@ -295,6 +309,7 @@ app.get('/search', async (req: Request, res: Response) => {
       query: cleanQ,
       results,
       count: results.length,
+      diagnostics,
       network: NETWORK,
       paidAmount: AMOUNT_USDC,
       currency: 'USDC',
@@ -345,16 +360,35 @@ app.get('/images', async (req: Request, res: Response) => {
     stats.latencies.push(latencyMs)
     if (stats.latencies.length > 200) stats.latencies.shift()
 
-    const results = (data.images || []).map((r: any, i: number) => ({
-      id: String(i + 1),
-      title: r.title || 'No title',
-      imageUrl: r.imageUrl,
-      thumbnailUrl: r.thumbnailUrl || r.imageUrl,
-      sourceUrl: r.link,
-      source: (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
-      width: r.imageWidth,
-      height: r.imageHeight,
-    }))
+    const results = (data.images || []).map((r: any, i: number) => {
+      const vImg = validateAndNormalizeUrl(r.imageUrl)
+      const vThumb = validateAndNormalizeUrl(r.thumbnailUrl || r.imageUrl)
+      const vSource = validateAndNormalizeUrl(r.link)
+
+      const isBlocked = !vImg.isValid || !vSource.isValid
+      const blockReason = !vImg.isValid ? vImg.error : vSource.error
+
+      return {
+        id: String(i + 1),
+        title: r.title || 'No title',
+        imageUrl: vImg.isValid ? vImg.normalizedUrl! : r.imageUrl,
+        thumbnailUrl: vThumb.isValid ? vThumb.normalizedUrl! : (vImg.isValid ? vImg.normalizedUrl! : r.imageUrl),
+        sourceUrl: vSource.isValid ? vSource.normalizedUrl! : r.link,
+        source: vSource.isValid ? vSource.source : 'blocked',
+        width: r.imageWidth,
+        height: r.imageHeight,
+        isBlocked,
+        blockReason,
+      }
+    })
+
+    const safeCount = results.filter((r: any) => !r.isBlocked).length
+    const blockedCount = results.length - safeCount
+    const diagnostics = {
+      total: results.length,
+      safe: safeCount,
+      blocked: blockedCount,
+    }
 
     const txHash = (req.headers['x-payment-response'] as string) || null
 
@@ -362,6 +396,7 @@ app.get('/images', async (req: Request, res: Response) => {
       query: cleanQ,
       results,
       count: results.length,
+      diagnostics,
       network: NETWORK,
       paidAmount: AMOUNT_USDC,
       currency: 'USDC',
@@ -424,15 +459,33 @@ app.get('/news', async (req: Request, res: Response) => {
     stats.latencies.push(latencyMs)
     if (stats.latencies.length > 200) stats.latencies.shift()
 
-    const results = (data.news || []).map((r: any, i: number) => ({
-      id: String(i + 1),
-      title: r.title || 'No title',
-      url: r.link,
-      snippet: r.snippet || '',
-      source: r.source || (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
-      publishedAt: r.date || undefined,
-      imageUrl: r.imageUrl || undefined,
-    }))
+    const results = (data.news || []).map((r: any, i: number) => {
+      const vUrl = validateAndNormalizeUrl(r.link)
+      const vImg = r.imageUrl ? validateAndNormalizeUrl(r.imageUrl) : null
+
+      const isBlocked = !vUrl.isValid || (vImg !== null && !vImg.isValid)
+      const blockReason = !vUrl.isValid ? vUrl.error : vImg?.error
+
+      return {
+        id: String(i + 1),
+        title: r.title || 'No title',
+        url: vUrl.isValid ? vUrl.normalizedUrl! : r.link,
+        snippet: r.snippet || '',
+        source: r.source || (vUrl.isValid ? vUrl.source : 'blocked'),
+        publishedAt: r.date || undefined,
+        imageUrl: vImg?.isValid ? vImg.normalizedUrl! : undefined,
+        isBlocked,
+        blockReason,
+      }
+    })
+
+    const safeCount = results.filter((r: any) => !r.isBlocked).length
+    const blockedCount = results.length - safeCount
+    const diagnostics = {
+      total: results.length,
+      safe: safeCount,
+      blocked: blockedCount,
+    }
 
     const txHash = (req.headers['x-payment-response'] as string) || null
 
@@ -440,6 +493,7 @@ app.get('/news', async (req: Request, res: Response) => {
       query: cleanQ,
       results,
       count: results.length,
+      diagnostics,
       network: NETWORK,
       paidAmount: AMOUNT_USDC,
       currency: 'USDC',

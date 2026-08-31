@@ -233,4 +233,33 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
     expect(successes).toHaveLength(1)
     expect(rejections).toHaveLength(numConcurrent - 1)
   })
+
+  it('returns diagnostics and validates URLs on Vercel search route', async () => {
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_vercel_norm' })).toString('base64')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        organic: [
+          { title: 'Good', link: 'https://stellar.org/docs', snippet: 'Docs' },
+          { title: 'Bad', link: 'javascript:alert(1)', snippet: 'Bad link' },
+        ],
+      }),
+    } as any)
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(req, res)
+    expect(res._json.diagnostics).toEqual({
+      total: 2,
+      safe: 1,
+      blocked: 1,
+    })
+    expect(res._json.results[0].isBlocked).toBe(false)
+    expect(res._json.results[0].url).toBe('https://stellar.org/docs')
+    expect(res._json.results[1].isBlocked).toBe(true)
+    expect(res._json.results[1].blockReason).toBe('non_http_protocol')
+  })
 })

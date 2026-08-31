@@ -46,6 +46,8 @@ export interface SearchResult {
   source: string
   relevanceScore: number
   publishedAt?: string
+  isBlocked?: boolean
+  blockReason?: string
 }
 
 // x402 flow steps, per the official x402 quickstart:
@@ -62,6 +64,11 @@ export interface SearchSession {
   error?: string
   durationMs?: number
   suggestions: string[]
+  diagnostics?: {
+    total: number
+    safe: number
+    blocked: number
+  }
 }
 
 /**
@@ -178,6 +185,7 @@ export function useSearch(walletAddress: string | null = null) {
         return setSession({
           query, results: data.results ?? [], txHash: null,
           paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
+          diagnostics: data.diagnostics,
         })
       }
 
@@ -221,13 +229,14 @@ export function useSearch(walletAddress: string | null = null) {
       // Flow step 6 — result received and rendered
       setSession({
         query,
-        results:     data.results    ?? [],
-        txHash:      data.txHash     ?? null,
-        paidAmount:  data.paidAmount ?? null,
+        results:     data.results     ?? [],
+        txHash:      data.txHash      ?? null,
+        paidAmount:  data.paidAmount  ?? null,
         status:      'complete',
         step:        6,
         durationMs:  Date.now() - t0,
         suggestions: data.suggestions ?? [],
+        diagnostics: data.diagnostics,
       })
 
       if (data.txHash) {

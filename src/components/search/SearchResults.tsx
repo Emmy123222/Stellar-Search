@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy, ShieldAlert } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
+import { validateAndNormalizeUrl } from '../../lib/urlSanitizer'
 
 interface Props {
   results: SearchResult[]
@@ -193,12 +194,22 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
     }
   }
 
+  const safeDiagnostics = results.reduce(
+    (acc, r) => {
+      const v = validateAndNormalizeUrl(r.url)
+      if (!r.isBlocked && v.isValid) acc.safe++
+      else acc.blocked++
+      return acc
+    },
+    { safe: 0, blocked: 0 }
+  )
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2.5 flex-wrap">
           <p className="font-display text-xs text-white/35 tracking-widest" aria-live="polite">
-            {results.length} RESULTS · SERPER.DEV · PAID VIA x402
+            {results.length} RESULTS · SAFE DIAGNOSTICS: {safeDiagnostics.safe} SAFE{safeDiagnostics.blocked > 0 ? `, ${safeDiagnostics.blocked} BLOCKED` : ''} · SERPER.DEV · PAID VIA x402
           </p>
           {txHash && (
             <a
@@ -325,39 +336,42 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
         )}
       </AnimatePresence>
 
-      {results.map((r, i) => (
-        <motion.a
-          key={r.id}
-          href={r.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          role="article"
-          aria-label={r.title}
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.06 }}
-          className="block group rounded-xl p-4 hover:border-neon-cyan/25 transition-all relative"
-          style={{
-            background: 'rgba(6,13,20,0.6)',
-            border: '1px solid rgba(255,255,255,0.06)',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
+      {results.map((r, i) => {
+        const urlValidation = validateAndNormalizeUrl(r.url)
+        const isRowBlocked = Boolean(r.isBlocked) || !urlValidation.isValid
+        const safeUrl = isRowBlocked ? undefined : urlValidation.normalizedUrl!
+
+        const content = (
           <div className="flex items-start justify-between gap-3 flex-col sm:flex-row">
             <div className="flex-1 min-w-0 w-full">
               {/* Source + score */}
               <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                <span
-                  className="inline-flex items-center py-0.5 px-2 rounded-full font-display border"
-                  style={{
-                    background: 'rgba(0,245,255,0.08)',
-                    borderColor: 'rgba(0,245,255,0.2)',
-                    color: '#00f5ff',
-                    fontSize: '10px',
-                  }}
-                >
-                  {r.source}
-                </span>
+                {isRowBlocked ? (
+                  <span
+                    className="inline-flex items-center gap-1 py-0.5 px-2 rounded-full font-display border"
+                    style={{
+                      background: 'rgba(239,68,68,0.1)',
+                      borderColor: 'rgba(239,68,68,0.3)',
+                      color: '#f87171',
+                      fontSize: '10px',
+                    }}
+                  >
+                    <ShieldAlert className="w-3 h-3 flex-shrink-0" />
+                    BLOCKED LINK
+                  </span>
+                ) : (
+                  <span
+                    className="inline-flex items-center py-0.5 px-2 rounded-full font-display border"
+                    style={{
+                      background: 'rgba(0,245,255,0.08)',
+                      borderColor: 'rgba(0,245,255,0.2)',
+                      color: '#00f5ff',
+                      fontSize: '10px',
+                    }}
+                  >
+                    {urlValidation.source}
+                  </span>
+                )}
                 <div className="flex items-center gap-1 text-neon-amber/60">
                   <Star className="w-3 h-3 fill-current" />
                   <span className="font-display text-xs">{(r.relevanceScore * 100).toFixed(0)}%</span>
@@ -370,50 +384,58 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
                 )}
               </div>
 
-              <h3 className="text-white font-medium text-sm leading-snug mb-1 group-hover:text-neon-cyan transition-colors">
+              <h3 className={`font-medium text-sm leading-snug mb-1 transition-colors ${isRowBlocked ? 'text-white/60' : 'text-white group-hover:text-neon-cyan'}`}>
                 {r.title}
               </h3>
 
               <div className="flex items-center gap-2 mb-2">
-                <p className="font-mono text-xs truncate" style={{ color: 'rgba(0,245,255,0.35)' }}>
-                  {r.url}
-                </p>
-                {/* Copy button */}
-                <button
-                  onClick={(e) => copyToClipboard(r.url, e)}
-                  className="relative flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10"
-                  style={{
-                    border: copiedUrl === r.url ? '1px solid rgba(0,255,0,0.3)' : '1px solid rgba(255,255,255,0.1)',
-                    color: copiedUrl === r.url ? '#00ff00' : 'rgba(255,255,255,0.4)',
-                  }}
-                  aria-label="Copy URL to clipboard"
-                  title="Copy URL"
-                >
-                  {copiedUrl === r.url ? (
-                    <Check className="w-3 h-3" />
-                  ) : (
-                    <Copy className="w-3 h-3" />
-                  )}
-                  
-                  {/* Tooltip */}
-                  <AnimatePresence>
-                    {copiedUrl === r.url && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 5, scale: 0.8 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 5, scale: 0.8 }}
-                        className="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap pointer-events-none"
-                        style={{
-                          background: 'rgba(0,0,0,0.9)',
-                          border: '1px solid rgba(0,255,0,0.3)',
-                          color: '#00ff00',
-                        }}
-                      >
-                        Copied!
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </button>
+                {isRowBlocked ? (
+                  <p className="font-mono text-xs truncate text-red-400/70" title={r.blockReason || urlValidation.error || 'Blocked URL'}>
+                    [Blocked Link: {r.blockReason || urlValidation.error || 'non-http(s) or unsafe'}]
+                  </p>
+                ) : (
+                  <>
+                    <p className="font-mono text-xs truncate" style={{ color: 'rgba(0,245,255,0.35)' }}>
+                      {safeUrl}
+                    </p>
+                    {/* Copy button */}
+                    <button
+                      onClick={(e) => copyToClipboard(safeUrl!, e)}
+                      className="relative flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10"
+                      style={{
+                        border: copiedUrl === safeUrl ? '1px solid rgba(0,255,0,0.3)' : '1px solid rgba(255,255,255,0.1)',
+                        color: copiedUrl === safeUrl ? '#00ff00' : 'rgba(255,255,255,0.4)',
+                      }}
+                      aria-label="Copy URL to clipboard"
+                      title="Copy URL"
+                    >
+                      {copiedUrl === safeUrl ? (
+                        <Check className="w-3 h-3" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                      
+                      {/* Tooltip */}
+                      <AnimatePresence>
+                        {copiedUrl === safeUrl && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 5, scale: 0.8 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 5, scale: 0.8 }}
+                            className="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap pointer-events-none"
+                            style={{
+                              background: 'rgba(0,0,0,0.9)',
+                              border: '1px solid rgba(0,255,0,0.3)',
+                              color: '#00ff00',
+                            }}
+                          >
+                            Copied!
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </button>
+                  </>
+                )}
               </div>
 
               <p className="text-white/45 text-xs leading-relaxed line-clamp-2">
@@ -421,22 +443,75 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
               </p>
             </div>
 
-            <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border border-white/8 text-white/25 group-hover:text-neon-cyan group-hover:border-neon-cyan/30 transition-all mt-0.5">
-              <ExternalLink className="w-3.5 h-3.5" />
+            <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border transition-all mt-0.5 ${
+              isRowBlocked
+                ? 'border-red-500/20 text-red-400/50 bg-red-500/5'
+                : 'border-white/8 text-white/25 group-hover:text-neon-cyan group-hover:border-neon-cyan/30'
+            }`}>
+              {isRowBlocked ? <ShieldAlert className="w-3.5 h-3.5" /> : <ExternalLink className="w-3.5 h-3.5" />}
             </div>
           </div>
+        )
 
-          <div className="mt-3 h-px bg-white/5 rounded-full overflow-hidden">
+        const cardStyle = {
+          background: isRowBlocked ? 'rgba(15,8,12,0.6)' : 'rgba(6,13,20,0.6)',
+          border: isRowBlocked ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(255,255,255,0.06)',
+          backdropFilter: 'blur(8px)',
+        }
+
+        if (isRowBlocked) {
+          return (
             <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${r.relevanceScore * 100}%` }}
-              transition={{ delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
-              className="h-full rounded-full"
-              style={{ background: 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))' }}
-            />
-          </div>
-        </motion.a>
-      ))}
+              key={r.id}
+              role="article"
+              aria-label={r.title}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.06 }}
+              className="block rounded-xl p-4 relative"
+              style={cardStyle}
+            >
+              {content}
+              <div className="mt-3 h-px bg-white/5 rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${r.relevanceScore * 100}%` }}
+                  transition={{ delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
+                  className="h-full rounded-full"
+                  style={{ background: 'linear-gradient(90deg, rgba(239,68,68,0.5), rgba(239,68,68,0.1))' }}
+                />
+              </div>
+            </motion.div>
+          )
+        }
+
+        return (
+          <motion.a
+            key={r.id}
+            href={safeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            role="article"
+            aria-label={r.title}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.06 }}
+            className="block group rounded-xl p-4 hover:border-neon-cyan/25 transition-all relative"
+            style={cardStyle}
+          >
+            {content}
+            <div className="mt-3 h-px bg-white/5 rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${r.relevanceScore * 100}%` }}
+                transition={{ delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
+                className="h-full rounded-full"
+                style={{ background: 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))' }}
+              />
+            </div>
+          </motion.a>
+        )
+      })}
     </motion.div>
   )
 }

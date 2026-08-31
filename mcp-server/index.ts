@@ -22,6 +22,7 @@ import {
   STELLAR_EXPERT_URL,
   AMOUNT_USDC
 } from '../src/lib/constants'
+import { validateAndNormalizeUrl } from '../src/lib/urlSanitizer'
 
 dotenv.config()
 
@@ -139,7 +140,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const data = await res.json() as any
       const formatted = data.results
-        .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
+        .map((r: any, i: number) => {
+          const v = validateAndNormalizeUrl(r.url)
+          const displayUrl = r.isBlocked || !v.isValid ? '[Blocked Link: unsafe protocol or credentials]' : v.normalizedUrl!
+          return `${i + 1}. **${r.title}**\n   ${displayUrl}\n   ${r.description}`
+        })
         .join('\n\n')
 
       return {
@@ -176,7 +181,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const data: any = await res.json()
       const formatted = data.results
-        .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   Image: ${r.imageUrl}\n   Source: ${r.sourceUrl} (${r.source})`)
+        .map((r: any, i: number) => {
+          const vImg = validateAndNormalizeUrl(r.imageUrl)
+          const vSource = validateAndNormalizeUrl(r.sourceUrl)
+          const displayImg = r.isBlocked || !vImg.isValid ? '[Blocked Image Link]' : vImg.normalizedUrl!
+          const displaySource = r.isBlocked || !vSource.isValid ? '[Blocked Source Link]' : `${vSource.normalizedUrl!} (${vSource.source})`
+          return `${i + 1}. **${r.title}**\n   Image: ${displayImg}\n   Source: ${displaySource}`
+        })
         .join('\n\n')
 
       return {
@@ -217,8 +228,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const data: any = await res.json()
       const formatted = data.results
         .map((r: any, i: number) => {
+          const vUrl = validateAndNormalizeUrl(r.url)
+          const displayUrl = r.isBlocked || !vUrl.isValid ? '[Blocked News Link]' : vUrl.normalizedUrl!
           const date = r.publishedAt ? ` · ${r.publishedAt}` : ''
-          return `${i + 1}. **${r.title}** (${r.source}${date})\n   ${r.url}\n   ${r.snippet}`
+          return `${i + 1}. **${r.title}** (${r.source}${date})\n   ${displayUrl}\n   ${r.snippet}`
         })
         .join('\n\n')
 

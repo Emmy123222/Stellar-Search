@@ -6,6 +6,7 @@ import {
   AMOUNT_USDC
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { validateAndNormalizeUrl } from '../src/lib/urlSanitizer'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -128,23 +129,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const data      = await serperRes.json() as any
     const latencyMs = Date.now() - t0
 
-    const results = (data.organic || []).map((r: any, i: number) => ({
-      id:             String(i + 1),
-      title:          r.title   || 'No title',
-      url:            r.link,
-      description:    r.snippet || '',
-      source:         (() => {
-        try { return new URL(r.link).hostname.replace('www.', '') }
-        catch { return r.link }
-      })(),
-      relevanceScore: Math.max(0.5, 1 - i * 0.06),
-      publishedAt:    r.date || undefined,
-    }))
+    const results = (data.organic || []).map((r: any, i: number) => {
+      const v = validateAndNormalizeUrl(r.link)
+      return {
+        id:             String(i + 1),
+        title:          r.title   || 'No title',
+        url:            v.isValid ? v.normalizedUrl! : (typeof r.link === 'string' ? r.link : ''),
+        description:    r.snippet || '',
+        source:         v.isValid ? v.source : (typeof r.link === 'string' ? r.link : 'blocked'),
+        relevanceScore: Math.max(0.5, 1 - i * 0.06),
+        publishedAt:    r.date || undefined,
+        isBlocked:      !v.isValid,
+        blockReason:    v.error,
+      }
+    })
+
+    const safeCount = results.filter((r: any) => !r.isBlocked).length
+    const blockedCount = results.length - safeCount
+    const diagnostics = {
+      total: results.length,
+      safe: safeCount,
+      blocked: blockedCount,
+    }
 
     return res.json({
       query:      q.trim(),
       results,
       count:      results.length,
+      diagnostics,
       network:    NETWORK,
       paidAmount: AMOUNT_USDC,
       currency:   'USDC',

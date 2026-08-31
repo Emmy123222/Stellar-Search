@@ -391,4 +391,28 @@ describe('x402 settlement semantics — Express + Vercel constants aligned', () 
     expect(res.status).toBe(200)
     expect(res.body.latencyMs).toBeGreaterThanOrEqual(0)
   })
+
+  it('normalizes result URLs and includes safe diagnostics on /search', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        organic: [
+          { title: 'Safe', link: 'https://example.com', snippet: 'safe snippet' },
+          { title: 'Malicious', link: 'javascript:alert(1)', snippet: 'bad link' },
+        ],
+      }),
+    } as any))
+
+    const res = await request(app).get('/search?q=security').set('x-payment', makeReceipt('tx_url_norm'))
+    expect(res.status).toBe(200)
+    expect(res.body.diagnostics).toEqual({
+      total: 2,
+      safe: 1,
+      blocked: 1,
+    })
+    expect(res.body.results[0].isBlocked).toBe(false)
+    expect(res.body.results[0].url).toBe('https://example.com/')
+    expect(res.body.results[1].isBlocked).toBe(true)
+    expect(res.body.results[1].blockReason).toBe('non_http_protocol')
+  })
 })
