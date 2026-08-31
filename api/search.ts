@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { HTTPFacilitatorClient } from '@x402/core/server'
 import { 
   STELLAR_NETWORK, 
   USDC_CONTRACT, 
@@ -90,16 +91,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(402).json(errorBody)
   }
 
-  // ─── Payment present — proceed with search ────────────────────────────────
-  console.log('✅ Payment header received')
-
+  // ─── Confirm settlement before calling Serper ─────────────────────────────
   let txHash: string | null = null
   try {
+    const FACILITATOR_URL = process.env.FACILITATOR_URL || 'https://www.x402.org/facilitator'
+    const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR_URL })
+
     const decoded = Buffer.from(paymentHeader as string, 'base64').toString('utf8')
-    const parsed  = JSON.parse(decoded)
-    txHash = parsed.transactionHash || parsed.txHash || null
-  } catch {
-    // payment header not base64 JSON — fine, tx hash just won't show
+    const payload = JSON.parse(decoded)
+    
+    const settleRes = await facilitatorClient.settle(payload, { accepts: paymentRequired.accepts })
+    
+    if (!settleRes.success) {
+      const errorBody: ApiErrorResponse = { error: `Settlement failed: ${settleRes.errorReason || settleRes.errorMessage || 'unknown'}` }
+      return res.status(402).json(errorBody)
+    }
+
+    txHash = settleRes.transaction || payload.transactionHash || payload.txHash || null
+    console.log(`✅ Payment settled. tx: ${txHash}`)
+  } catch (err: any) {
+    if (err.message && (err.message.includes('fetch') || err.message.includes('timeout'))) {
+      return res.status(502).json({ error: 'Facilitator timeout or network error' } as ApiErrorResponse)
+    }
+    return res.status(400).json({ error: 'Malformed payment payload' } as ApiErrorResponse)
   }
 
   const t0 = Date.now()

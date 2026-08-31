@@ -20,8 +20,17 @@ import request from 'supertest'
 vi.mock('@x402/express', () => ({
   paymentMiddlewareFromConfig: () => (_req: any, _res: any, next: any) => next(),
 }))
+// Using global mock for HTTPFacilitatorClient
 vi.mock('@x402/core/server', () => ({
-  HTTPFacilitatorClient: class { constructor(_opts: any) {} },
+  HTTPFacilitatorClient: class {
+    constructor() {}
+    async settle(payload: any) {
+      if (payload.shouldFail) return { success: false, errorReason: 'mock failure' }
+      if (payload.shouldTimeout) throw new Error('fetch timeout')
+      if (payload.malformed) throw new Error('Malformed payment payload')
+      return { success: true, transaction: payload.transactionHash || 'mock-tx' }
+    }
+  }
 }))
 vi.mock('@x402/stellar/exact/server', () => ({
   ExactStellarScheme: class { constructor() {} },
@@ -456,6 +465,36 @@ describe('malformed upstream Serper payloads — server normalization', () => {
     expect(res.status).toBe(200)
     expect(res.body.results).toHaveLength(1)
     expect(res.body.results[0].title).toBe('Good News')
+  })
+})
+
+// ─── Settlement Rejection / Network Errors ─────────────────────────────────────
+describe('facilitator settlement validation', () => {
+  it('returns 402 if facilitator settlement fails', async () => {
+    global.fetch = vi.fn()
+    const fakeTx = Buffer.from(JSON.stringify({ shouldFail: true, transactionHash: 'fail' })).toString('base64')
+    const res = await request(app).get('/search?q=stellar').set('x-payment', fakeTx)
+    expect(res.status).toBe(402)
+    expect(res.body.error).toMatch(/Settlement failed: mock failure/)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('returns 502 if facilitator times out or network error', async () => {
+    global.fetch = vi.fn()
+    const fakeTx = Buffer.from(JSON.stringify({ shouldTimeout: true, transactionHash: 'timeout' })).toString('base64')
+    const res = await request(app).get('/search?q=stellar').set('x-payment', fakeTx)
+    expect(res.status).toBe(502)
+    expect(res.body.error).toMatch(/timeout or network error/)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 if payment payload is malformed JSON', async () => {
+    global.fetch = vi.fn()
+    const fakeTx = Buffer.from(JSON.stringify({ malformed: true, transactionHash: 'malformed' })).toString('base64')
+    const res = await request(app).get('/search?q=stellar').set('x-payment', fakeTx)
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/Malformed/)
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 })
 
