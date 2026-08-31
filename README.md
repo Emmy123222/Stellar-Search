@@ -161,8 +161,9 @@ stellar-search/
 │   │   ├── WalletPanel.tsx         # Real Freighter connect + live balances
 │   │   ├── PaymentFlowVisualizer.tsx
 │   │   ├── SearchResults.tsx
-│   │   ├── StatsGrid.tsx           # Polls real /health endpoint
-│   │   └── GroqAssistant.tsx       # Real Groq AI chat
+│   │   ├── StatsGrid.tsx           # Polls real /health
+│   │   ├── ai/
+│   │   │   └── GroqAssistant.tsx       # Real Groq AI chat with Clear & Export
 │   ├── pages/
 │   │   ├── SearchPage.tsx
 │   │   ├── DocsPage.tsx

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bot, Send, X, ChevronDown } from 'lucide-react'
+import { Bot, Send, X, ChevronDown, Trash2, Download } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 
 interface Message {
@@ -217,6 +217,42 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
     return model?.label || modelId
   }
 
+  const handleClear = () => {
+    if (window.confirm('Clear conversation?')) {
+      setMessages([SYSTEM_INTRO])
+      contextInjectedFor.current = null
+    }
+  }
+
+  const handleExport = () => {
+    const format = window.confirm('Export as JSON? (Cancel for Markdown)') ? 'json' : 'markdown'
+    const includeSystem = window.confirm('Include system messages?')
+    
+    const exportMsgs = messages.filter(m => includeSystem || m.role !== 'system')
+    
+    let content = ''
+    let mimeType = ''
+    let ext = ''
+    
+    if (format === 'json') {
+      content = JSON.stringify(exportMsgs, null, 2)
+      mimeType = 'application/json'
+      ext = 'json'
+    } else {
+      content = exportMsgs.map(m => `**${m.role.toUpperCase()}**:\n${m.content}\n\n`).join('')
+      mimeType = 'text/markdown'
+      ext = 'md'
+    }
+    
+    const blob = new Blob([content], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `conversation-export.${ext}`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <>
       {/* Floating button */}
@@ -309,12 +345,28 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                   </AnimatePresence>
                 </div>
               </div>
-              <button
-                onClick={() => setOpen(false)}
-                className="text-white/30 hover:text-white/60 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExport}
+                  title="Export conversation"
+                  className="text-white/30 hover:text-white/60 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleClear}
+                  title="Clear conversation"
+                  className="text-white/30 hover:text-white/60 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setOpen(false)}
+                  className="text-white/30 hover:text-white/60 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Messages */}
