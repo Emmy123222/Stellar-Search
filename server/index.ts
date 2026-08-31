@@ -29,7 +29,8 @@ import {
   AMOUNT_USDC,
   AMOUNT_STROOPS
 } from '../src/lib/constants'
-import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
+import { issueSearchCredit, redeemCredit, getCredit, serializeCredit } from '../src/lib/creditLedger.js'
 import {
   normalizeOrganicResults,
   normalizeImageResults,
@@ -40,6 +41,7 @@ import type {
   ImageSearchResponse,
   NewsSearchResponse,
   ApiErrorResponse,
+  CreditReceipt,
 } from '../src/types/index.js'
 
 dotenv.config()
@@ -210,6 +212,34 @@ export function validateQuery(
   return { ok: true, cleanQ }
 }
 
+// Eligible failures (a settled payment followed by a provider-side error) get
+// an auditable credit linked to the settled receipt. Returns undefined when
+// no payment header is present, since only paid attempts can be credited.
+function issueCreditForFailure(
+  req: Request,
+  route: string,
+  query: string,
+  reason: string,
+): CreditReceipt | undefined {
+  const paymentHeader =
+    req.headers['x-payment'] ||
+    req.headers['payment-signature'] ||
+    req.headers['x-payment-response'] ||
+    req.headers['authorization']
+
+  const receiptId = extractPaymentIdentifier(paymentHeader)
+  if (!receiptId) return undefined
+
+  const credit = issueSearchCredit({
+    receiptId,
+    route,
+    query,
+    amount: AMOUNT_USDC,
+    reason,
+  })
+  return serializeCredit(credit)
+}
+
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {
   const { q, count = '5', freshness } = req.query as Record<string, string>
@@ -253,7 +283,8 @@ app.get('/search', async (req: Request, res: Response) => {
     if (!serperRes.ok) {
       const err = await serperRes.text()
       console.error('[serper]', serperRes.status, err)
-      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
+      const credit = issueCreditForFailure(req, '/search', cleanQ, `Serper.dev API error: ${serperRes.status}`)
+      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}`, credit }
       return res.status(502).json(errorBody)
     }
 
@@ -321,7 +352,8 @@ app.get('/search', async (req: Request, res: Response) => {
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[search error]', err.message)
-    const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.' }
+    const credit = issueCreditForFailure(req, '/search', cleanQ, `Search failed: ${err.message}`)
+    const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.', credit }
     return res.status(500).json(errorBody)
   }
 })
@@ -355,7 +387,8 @@ app.get('/images', async (req: Request, res: Response) => {
     if (!serperRes.ok) {
       const err = await serperRes.text()
       console.error('[serper images]', serperRes.status, err)
-      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
+      const credit = issueCreditForFailure(req, '/images', cleanQ, `Serper.dev API error: ${serperRes.status}`)
+      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}`, credit }
       return res.status(502).json(errorBody)
     }
 
@@ -385,7 +418,8 @@ app.get('/images', async (req: Request, res: Response) => {
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[images error]', err.message)
-    const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.' }
+    const credit = issueCreditForFailure(req, '/images', cleanQ, `Image search failed: ${err.message}`)
+    const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.', credit }
     return res.status(500).json(errorBody)
   }
 })
@@ -432,7 +466,8 @@ app.get('/news', async (req: Request, res: Response) => {
     if (!serperRes.ok) {
       const err = await serperRes.text()
       console.error('[serper news]', serperRes.status, err)
-      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
+      const credit = issueCreditForFailure(req, '/news', cleanQ, `Serper.dev API error: ${serperRes.status}`)
+      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}`, credit }
       return res.status(502).json(errorBody)
     }
 
@@ -462,9 +497,38 @@ app.get('/news', async (req: Request, res: Response) => {
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[news error]', err.message)
-    const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.' }
+    const credit = issueCreditForFailure(req, '/news', cleanQ, `News search failed: ${err.message}`)
+    const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.', credit }
     return res.status(500).json(errorBody)
   }
+})
+
+// ─── GET /credits/:creditId ───────────────────────────────────────────────
+// Auditable lookup for a credit issued after a paid search failed post-
+// settlement. Free — reading a credit's status is not itself a paid action.
+app.get('/credits/:creditId', (req: Request, res: Response) => {
+  const credit = getCredit(req.params.creditId)
+  if (!credit) {
+    const errorBody: ApiErrorResponse = { error: 'Credit not found' }
+    return res.status(404).json(errorBody)
+  }
+  return res.json(serializeCredit(credit))
+})
+
+// ─── POST /credits/:creditId/redeem ────────────────────────────────────────
+// Redemption is idempotent (a redeemed credit cannot be redeemed twice) and
+// bounded (expires DEFAULT_CREDIT_VALIDITY_WINDOW_MS after issuance). This is
+// distinct from an on-chain refund: redeeming only marks the off-chain credit
+// as used, it does not itself move USDC — see README.md → "Failed-Search
+// Credits" for how a redeemed credit should be applied.
+app.post('/credits/:creditId/redeem', (req: Request, res: Response) => {
+  const result = redeemCredit(req.params.creditId)
+  if (!result.ok) {
+    const errorBody: ApiErrorResponse = { error: result.error }
+    const status = result.error === 'Credit not found' ? 404 : 409
+    return res.status(status).json(errorBody)
+  }
+  return res.json(serializeCredit(result.credit))
 })
 
 // ─── GET /health ──────────────────────────────────────────────────────────
@@ -607,6 +671,8 @@ app.get('/', (_req: Request, res: Response) => {
       'GET /news?q=<query>':   '0.001 USDC via x402 — news articles',
       'POST /ai/chat':         'Groq AI — free',
       'GET /health':           'Live server stats',
+      'GET /credits/:creditId':        'Look up a failed-search credit — free',
+      'POST /credits/:creditId/redeem': 'Redeem a failed-search credit — free',
     },
   })
 })

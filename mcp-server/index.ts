@@ -39,6 +39,15 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY!
 
 const groq = new Groq({ apiKey: GROQ_API_KEY })
 
+// Surfaces the auditable credit (see server/index.ts → issueCreditForFailure)
+// issued when a paid search fails after settlement, so agents can see their
+// recovery record instead of just a bare error string.
+function formatFailureMessage(e: ApiErrorResponse, status: number): string {
+  const base = e.error || `HTTP ${status}`
+  if (!e.credit) return base
+  return `${base} — credit issued: ${e.credit.creditId} (expires ${e.credit.expiresAt}, redeem via POST /credits/${e.credit.creditId}/redeem)`
+}
+
 // ─── MCP server ───────────────────────────────────────────────────────────
 const server = new Server(
   { name: 'stellar-search', version: '1.0.0' },
@@ -143,7 +152,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (!res.ok) {
         const e = (await res.json().catch(() => ({ error: '' }))) as ApiErrorResponse
-        throw new Error(e.error || `HTTP ${res.status}`)
+        throw new Error(formatFailureMessage(e, res.status))
       }
 
       const data = (await res.json()) as SearchResponse
@@ -180,7 +189,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (!res.ok) {
         const e = (await res.json().catch(() => ({ error: '' }))) as ApiErrorResponse
-        throw new Error(e.error || `HTTP ${res.status}`)
+        throw new Error(formatFailureMessage(e, res.status))
       }
 
       const data = (await res.json()) as ImageSearchResponse
@@ -220,7 +229,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       if (!res.ok) {
         const e = (await res.json().catch(() => ({ error: '' }))) as ApiErrorResponse
-        throw new Error(e.error || `HTTP ${res.status}`)
+        throw new Error(formatFailureMessage(e, res.status))
       }
 
       const data = (await res.json()) as NewsSearchResponse

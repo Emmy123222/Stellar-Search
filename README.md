@@ -117,6 +117,18 @@ To guarantee that each payment identifier authorizes **exactly one provider call
 - **Payload Invalidation:** Extracts transaction hashes (or SHA-256 fallback hashes of payment headers) and invalidates consumed payloads for a 300-second window.
 - **Concurrency Throttling:** Rapid parallel requests using identical payment payloads are throttled so only one search query proceeds; concurrent duplicates immediately receive HTTP 402 (`Payment payload already consumed`).
 
+### Failed-Search Credits
+
+A provider outage (Serper.dev 5xx/timeout) can happen **after** x402 settlement — the payer's USDC has already moved, but no results came back. `src/lib/creditLedger.ts` issues an auditable, off-chain credit for that case:
+
+- **When it fires:** any `/search`, `/images`, or `/news` request that has a payment header (i.e. settlement already happened) but ends in a Serper error (502) or an unhandled exception (500). The failing response includes a `credit` object alongside `error`.
+- **Linked to the receipt:** the credit is keyed by the same payment identifier used for replay protection (`extractPaymentIdentifier` in `src/lib/paymentIntegrity.ts`), so it's traceable back to the exact settled payment.
+- **Idempotent issuance:** calling the failure path twice for the same settled payment (e.g. a client retry) returns the original credit instead of minting a new one.
+- **Idempotent, bounded redemption:** `GET /credits/:creditId` looks up a credit; `POST /credits/:creditId/redeem` redeems it once. A redeemed credit cannot be redeemed again, and a credit expires 30 days after issuance (`DEFAULT_CREDIT_VALIDITY_WINDOW_MS`). Both endpoints are free (no x402 gate).
+- **Not an on-chain refund:** redeeming a credit only flips its off-chain `redeemed` flag — it does not itself move USDC. An actual refund is a separate, manually-triggered Stellar transfer back to the payer; the credit is the machine-readable record that one is owed.
+- **Runtime alignment:** the same ledger backs Express (`server/index.ts`), Vercel (`api/credits/[creditId].ts`), and the MCP server, which surfaces the credit ID and expiry in its error text (`mcp-server/index.ts`) so agents see a recovery record instead of a bare error string.
+- **Storage caveat:** like `paymentIntegrity.ts`'s replay-protection store, the ledger is in-memory per process — consistent with this project's current single-instance deployment model, but not durable across restarts or multiple serverless instances.
+
 ### Sequence diagram
 
 ```mermaid

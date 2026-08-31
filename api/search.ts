@@ -6,8 +6,9 @@ import {
   AMOUNT_USDC
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { issueSearchCredit, serializeCredit } from '../src/lib/creditLedger.js'
 import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
-import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
+import type { SearchResponse, ApiErrorResponse, CreditReceipt } from '../src/types/index.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -132,7 +133,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!serperRes.ok) {
       const errText = await serperRes.text()
       console.error('[serper]', serperRes.status, errText)
-      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
+      const credit = issueCreditForFailure(consumption.paymentId, q.trim(), `Serper.dev API error: ${serperRes.status}`)
+      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}`, credit }
       return res.status(502).json(errorBody)
     }
 
@@ -156,7 +158,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (err: any) {
     console.error('[search error]', err.message)
-    const errorBody: ApiErrorResponse = { error: 'Search failed.' }
+    const credit = issueCreditForFailure(consumption.paymentId, q.trim(), `Search failed: ${err.message}`)
+    const errorBody: ApiErrorResponse = { error: 'Search failed.', credit }
     return res.status(500).json(errorBody)
   }
+}
+
+// Eligible failures (a settled payment followed by a provider-side error) get
+// an auditable credit linked to the settled receipt. Idempotent per receiptId.
+function issueCreditForFailure(receiptId: string, query: string, reason: string): CreditReceipt {
+  const credit = issueSearchCredit({
+    receiptId,
+    route: '/search',
+    query,
+    amount: AMOUNT_USDC,
+    reason,
+  })
+  return serializeCredit(credit)
 }
