@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['src/**/*.{test,spec}.{ts,tsx}', 'server/**/*.test.{ts,tsx}', 'mcp-server/**/*.test.{ts,tsx}', 'api/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'server/**/*.test.{ts,tsx}', 'mcp-server/**/*.test.{ts,tsx}', 'api/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}'],
     setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',

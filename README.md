@@ -167,6 +167,7 @@ stellar-search/
 ├── mcp-server/
 │   └── index.ts                # MCP tools: web_search, ai_summarize, check_balance
 ├── scripts/
+│   ├── check-node-version.ts     # Node version validation (CI gate)
 │   └── test-search.ts          # End-to-end test script
 ├── .env.example
 ├── claude_mcp.json
@@ -204,9 +205,21 @@ Coverage is enforced via **Vitest + @vitest/coverage-v8** with thresholds for **
 ```bash
 npm run test              # unit tests without coverage
 npm run test:coverage     # run with coverage + thresholds (CI gate)
+node scripts/check-node-version.ts  # validate Node version against engines
 ```
 
 Reports are generated to `coverage/` (`text`, `json`, `html`, `lcov`). CI uploads the `coverage/` artifact and fails if thresholds are not met.
+
+### CI Node version matrix
+
+CI runs typecheck, lint, and test jobs across a matrix of Node versions:
+
+| Node version | Role |
+|---|---|
+| **18** | Minimum supported (per `package.json` engines) |
+| **22** | Current LTS |
+
+Unsupported versions fail early via `node scripts/check-node-version.ts` before any build or test steps run.
 
 ### Current thresholds (ratchet upward)
 

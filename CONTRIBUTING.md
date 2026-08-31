@@ -66,7 +66,7 @@ Before you begin, make sure you have:
 
 | Requirement | Version | Notes |
 |---|---|---|
-| **Node.js** | ≥ 18.0.0 | ESM support required |
+| **Node.js** | ≥ 18.0.0 | ESM support required; CI tests Node 18 and 22 |
 | **npm** | ≥ 9.0.0 | Comes with Node 18 |
 | **Git** | any recent | — |
 | **Freighter** | latest | [freighter.app](https://freighter.app) browser extension |
@@ -303,6 +303,7 @@ docs: add CONTRIBUTING.md
 
 4. Make sure:
    - [ ] `npx tsc --noEmit` passes with no errors.
+   - [ ] `node scripts/check-node-version.ts` passes (validates Node version against engines).
    - [ ] The app starts and the affected feature works manually.
    - [ ] No new `console.log` / debug statements left in.
    - [ ] No secrets or `.env` values committed.
@@ -402,6 +403,7 @@ Vitest + @vitest/coverage-v8 enforces **coverage thresholds for statements, bran
 ```bash
 npm run test              # run tests without coverage
 npm run test:coverage     # run with coverage + thresholds (CI gate)
+node scripts/check-node-version.ts  # validate Node version against engines
 # reports in coverage/ (text, json, html, lcov)
 open coverage/index.html  # view HTML report
 ```
@@ -443,6 +445,17 @@ For UI changes:
 - [ ] Test at 375px (mobile), 768px (tablet), 1280px (desktop) widths.
 - [ ] No horizontal scroll at any breakpoint.
 - [ ] Light and dark mode look acceptable (if theme toggle exists).
+
+### CI Node version matrix
+
+CI runs typecheck, lint, and test jobs across a matrix of Node versions to ensure compatibility:
+
+| Node version | Role |
+|---|---|
+| **18** | Minimum supported (per `package.json` engines) |
+| **22** | Current LTS |
+
+Each job includes a `node scripts/check-node-version.ts` step that validates the running version against the `engines` field before any build or test steps run. Unsupported versions fail early with a clear error message.
 
 ### Running the TypeScript compiler
 
