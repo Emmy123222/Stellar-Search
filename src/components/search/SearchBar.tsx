@@ -16,8 +16,19 @@ export const FRESHNESS_OPTIONS: FreshnessOption[] = [
   { label: 'Past Month', value: 'pm' },
 ]
 
+export interface SafeSearchOption {
+  label: string
+  value: string
+}
+
+export const SAFE_SEARCH_OPTIONS: SafeSearchOption[] = [
+  { label: 'Strict', value: 'strict' },
+  { label: 'Moderate', value: 'moderate' },
+  { label: 'Off', value: 'off' },
+]
+
 interface Props {
-  onSearch: (query: string, freshness?: string) => void
+  onSearch: (query: string, freshness?: string, safeSearch?: string) => void
   isSearching: boolean
   walletConnected: boolean
   usdcBalance: string
@@ -35,6 +46,7 @@ export function SearchBar({
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [freshness, setFreshness] = useState<string>('')
+  const [safeSearch, setSafeSearch] = useState<string>('moderate')
 
   const isWrongNetwork = walletConnected && walletNetwork !== EXPECTED_WALLET_NETWORK
 
@@ -52,7 +64,7 @@ export function SearchBar({
     }
 
     const q = (e.currentTarget.elements.namedItem('q') as HTMLInputElement).value.trim()
-    if (q) onSearch(q, freshness)
+    if (q) onSearch(q, freshness, safeSearch)
   }
 
   return (
@@ -169,6 +181,40 @@ export function SearchBar({
               key={opt.value}
               type="button"
               onClick={() => setFreshness(opt.value)}
+              className="px-2.5 py-1 rounded-lg font-display text-xs transition-all border cursor-pointer"
+              style={{
+                background: isSelected
+                  ? 'rgba(0,245,255,0.15)'
+                  : 'rgba(255,255,255,0.03)',
+                borderColor: isSelected
+                  ? 'rgba(0,245,255,0.5)'
+                  : 'rgba(255,255,255,0.08)',
+                color: isSelected ? '#00f5ff' : 'rgba(255,255,255,0.4)',
+              }}
+              aria-pressed={isSelected}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Safe Search Filter Chips */}
+      <div
+        className="flex items-center gap-2 mt-3 px-1 flex-wrap"
+        role="group"
+        aria-label="Safe search filters"
+      >
+        <span className="inline-flex items-center gap-1 font-display text-xs text-white/30 tracking-wider uppercase mr-1">
+          <AlertTriangle className="w-3 h-3 text-neon-cyan/60" /> SafeSearch:
+        </span>
+        {SAFE_SEARCH_OPTIONS.map((opt) => {
+          const isSelected = safeSearch === opt.value
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setSafeSearch(opt.value)}
               className="px-2.5 py-1 rounded-lg font-display text-xs transition-all border cursor-pointer"
               style={{
                 background: isSelected

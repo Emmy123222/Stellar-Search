@@ -33,9 +33,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET')    return res.status(405).json({ error: 'Method not allowed' })
 
-  const { q, count = '5', freshness } = req.query as Record<string, string>
+  const { q, count = '5', freshness, safeSearch = 'moderate' } = req.query as Record<string, string>
 
   if (!q?.trim()) return res.status(400).json({ error: 'Missing required parameter: q' })
+
+  const validSafeSearch = ['strict', 'moderate', 'off'].includes(safeSearch) ? safeSearch : 'moderate'
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -109,6 +111,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
     }
+    requestBody.safeSearch = validSafeSearch === 'strict' ? 'active' : (validSafeSearch === 'off' ? 'off' : 'moderate')
 
     const serperRes = await fetch('https://google.serper.dev/search', {
       method:  'POST',
@@ -143,6 +146,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.json({
       query:      q.trim(),
+      safeSearch: validSafeSearch,
       results,
       count:      results.length,
       network:    NETWORK,

@@ -247,3 +247,5 @@ Coverage verifies the **x402 settlement semantics** for paid routes (`/search`, 
 | Real Stellar testnet transactions | ✅ Every search settles 0.001 USDC via OpenZeppelin facilitator |
 | x402 protocol | ✅ `@x402/express` + `@x402/stellar` |
 | Addresses explicit demand signal | ✅ "pay-per-query web search instead of monthly subscriptions" |
+SafeSearch Option  
+The SafeSearch option is supported for web and image queries. Available values are strict, moderate (default), and off. They map to Serper.dev's ctive, moderate, and off. 

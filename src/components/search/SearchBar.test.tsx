@@ -42,7 +42,7 @@ describe('SearchBar — UI pay-per-query', () => {
     // Submit form
     const form = screen.getByRole('search')
     fireEvent.submit(form)
-    expect(onSearch).toHaveBeenCalledWith('stellar x402', 'pw')
+    expect(onSearch).toHaveBeenCalledWith('stellar x402', 'pw', 'moderate')
   })
 
   it('does not call onSearch when query empty', () => {

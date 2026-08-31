@@ -79,7 +79,8 @@ export function useSearch(walletAddress: string | null = null) {
     async (
       query: string,
       freshnessOrCount?: string | number,
-      countOverride = 5
+      countOverride = 5,
+      safeSearch?: string
     ) => {
       if (!query.trim()) return
 
@@ -110,6 +111,9 @@ export function useSearch(walletAddress: string | null = null) {
       })
       if (freshness) {
         params.set('freshness', freshness)
+      }
+      if (safeSearch) {
+        params.set('safeSearch', safeSearch)
       }
 
     const advance = (step: PaymentStep) =>

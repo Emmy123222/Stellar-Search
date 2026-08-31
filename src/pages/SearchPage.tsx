@@ -21,9 +21,9 @@ interface Props {
 }
 
 export function SearchPage({ wallet, onConnectWallet, session, search, reset }: Props) {
-  const handleSearch = (query: string, freshness?: string) => {
+  const handleSearch = (query: string, freshness?: string, safeSearch?: string) => {
     if (!wallet.connected) { onConnectWallet(); return }
-    search(query, freshness)
+    search(query, freshness, 5, safeSearch)
   }
 
   const isSearching = session.status === 'searching'
