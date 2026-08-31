@@ -76,7 +76,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
     if (!selectedResults.length) return
     const metadata = buildExportMetadata()
     const escapeCSVCell = (value: string | number | null | undefined) => {
-      const str = value === undefined ? '' : (typeof value === 'object' ? (JSON.stringify(value) ?? '') : String(value))
+      const str = value === null || value === undefined ? '' : (typeof value === 'object' ? (JSON.stringify(value) ?? '') : String(value))
       return `"${str.replace(/"/g, '""')}"`
     }
     const metaLines = Object.entries(metadata).map(([key, value]) => {
@@ -263,11 +263,12 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
           )}
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+          <div role="group" aria-label="Result selection controls" className="flex items-center gap-2">
             <button
               type="button"
               onClick={selectAll}
               aria-pressed={allSelected}
+              aria-label="Select all results"
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-white/70 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-colors"
               style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)' }}
             >
@@ -278,13 +279,14 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
               type="button"
               onClick={selectNone}
               aria-pressed={selectedCount === 0}
+              aria-label="Select no results"
               disabled={selectedCount === 0}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-white/70 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-colors disabled:opacity-40"
               style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)' }}
             >
               NONE
             </button>
-            <span className="font-display text-[10px] text-white/35">{selectedCount} SELECTED</span>
+            <span aria-live="polite" aria-atomic="true" className="font-display text-[10px] text-white/35">{selectedCount} SELECTED</span>
           </div>
           {/* Export Button with Format Selector */}
           <div className="relative">
