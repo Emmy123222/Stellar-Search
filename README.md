@@ -158,8 +158,8 @@ sequenceDiagram
 stellar-search/
 ├── src/                        # React frontend
 │   ├── hooks/
-│   │   ├── useFreighterWallet.ts   # Real Freighter + Horizon integration
-│   │   └── useSearch.ts            # Calls real server endpoint
+│   │   ├── useFreighterWallet.ts   # Real Freighter + Horizon integration with preflight checks
+│   │   └── useSearch.ts            # Calls real server endpoint; refuses to sign until preflight passes
 │   ├── components/
 │   │   ├── AnimatedBackground.tsx  # Canvas animation
 │   │   ├── WalletPanel.tsx         # Real Freighter connect + live balances
@@ -184,7 +184,7 @@ stellar-search/
 ├── mcp-server/
 │   └── index.ts                # MCP tools + resources + prompts + progress
 ├── scripts/
-│   └── test-search.ts          # End-to-end test script
+│   └── test-search.ts          # End-to-end test script (includes preflight checks)
 ├── .env.example
 ├── claude_mcp.json
 └── README.md
