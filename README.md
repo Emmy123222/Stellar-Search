@@ -89,6 +89,7 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 | `VITE_STELLAR_NETWORK` | No | `stellar:testnet` | Frontend copy of `STELLAR_NETWORK` (must be prefixed `VITE_` for browser access). Falls back to testnet if missing. | `stellar:testnet` |
 | `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Falls back to the public OpenZeppelin facilitator if missing. | `https://www.x402.org/facilitator` |
 | `PORT` | No | `3001` | Express server listen port. Falls back to `3001` if missing. | `3001` |
+| `TRUST_PROXY_HOPS` | No | `0` | Reverse-proxy hops to trust so the rate limiter resolves real client IPs (e.g. `1` for Vercel). `0`/unset disables trusting `X-Forwarded-For` (spoof-safe); `true` trusts all proxies. | `1` |
 | `VITE_SERVER_URL` | No | `http://localhost:3001` | Frontend URL for AI chat backend calls. On Vercel deployments auto-detects `${origin}/api`; locally falls back to `http://localhost:3001`. | `http://localhost:3001` |
 
 ---

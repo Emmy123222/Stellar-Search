@@ -122,9 +122,26 @@ FACILITATOR_URL=https://www.x402.org/facilitator
 # Server
 PORT=3001
 
+# Hops between clients and the backend (0 = no proxy, 1 = Vercel/nginx)
+TRUST_PROXY_HOPS=0
+
 # Frontend — points the React app at your local backend
 VITE_SERVER_URL=http://localhost:3001
 ```
+
+> **Trusting proxies (Vercel / nginx / load balancers).** `express-rate-limit`
+> keys clients by `req.ip`. Behind a proxy, `req.ip` is the proxy's IP unless the
+> app is told how many hops to trust — otherwise distinct clients share one bucket
+> and, without validation, spoofed `X-Forwarded-For` headers could be honored.
+> Set `TRUST_PROXY_HOPS` explicitly per deployment:
+>
+> | Value | Behavior |
+> |---|---|
+> | unset / `0` | Trust no proxy (default). `req.ip` ignores `X-Forwarded-For` entirely — safe directly or in single-process setups. |
+> | `1`, `2`, … | Trust exactly that many hops (e.g. `1` for Vercel). Distinct real clients get separate rate-limit buckets. |
+> | `true` | Trust all proxies — only for opaque, fully-controlled networks. |
+>
+> This is wired in `server/index.ts` via `app.set('trust proxy', …)`.
 
 ### 4. Set up Freighter (for payment flow work)
 
@@ -480,6 +497,7 @@ npm run test:search "Stellar blockchain"
 | `global is not defined` | Stellar SDK needs `globalThis` polyfill | Already handled in `vite.config.ts` — do not remove the `define` block |
 | Buffer errors in browser | `buffer` package not aliased | `resolve.alias` in `vite.config.ts` handles this |
 | CORS errors in dev | Frontend calling server directly | Use the Vite proxy (`/search`, `/ai`, `/health` already proxied) |
+| All users share one rate-limit bucket / spoofed IPs bypass limits | `TRUST_PROXY_HOPS` not set behind Vercel/nginx | Set `TRUST_PROXY_HOPS=1` (or your proxy hop count); see *Trusting proxies* above |
 
 ### Stellar / Horizon
 
