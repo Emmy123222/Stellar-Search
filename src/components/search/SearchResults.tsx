@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
@@ -24,9 +24,45 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [copiedUrl, setCopiedUrl]           = useState<string | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
 
+  const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null)
+
+  useEffect(() => {
+    setSelectedIds(null)
+  }, [results])
+
+  const selectedResults = selectedIds === null ? results : results.filter(r => selectedIds.has(r.id))
+  const selectedCount = selectedIds === null ? results.length : selectedResults.length
+  const allSelected = results.length > 0 && selectedCount === results.length
+  const isSelected = (id: string) => selectedIds === null || selectedIds.has(id)
+
+  const toggleOne = (id: string) => {
+    setSelectedIds(prev => {
+      if (prev === null) {
+        return new Set(results.filter(r => r.id !== id).map(r => r.id))
+      }
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAll = () => setSelectedIds(null)
+  const selectNone = () => setSelectedIds(new Set())
+
+  const buildExportMetadata = () => ({
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    query,
+    filters: {},
+    network: 'public',
+    receiptReference: txHash ?? null,
+  })
+
   const exportAsJSON = () => {
-    if (!results.length) return
-    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' })
+    if (!selectedResults.length) return
+    const metadata = buildExportMetadata()
+    const blob = new Blob([JSON.stringify({ metadata, results: selectedResults }, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -37,16 +73,25 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   }
 
   const exportAsCSV = () => {
-    if (!results.length) return
+    if (!selectedResults.length) return
+    const metadata = buildExportMetadata()
+    const escapeCSVCell = (value: string | number | null | undefined) => {
+      const str = value === undefined ? '' : (typeof value === 'object' ? (JSON.stringify(value) ?? '') : String(value))
+      return `"${str.replace(/"/g, '""')}"`
+    }
+    const metaLines = Object.entries(metadata).map(([key, value]) => {
+      const str = value === undefined ? '' : (typeof value === 'object' ? (JSON.stringify(value) ?? '') : String(value))
+      return `# ${key}: ${str.replace(/"/g, '""')}`
+    })
     const headers = ['Title', 'URL', 'Description', 'Source', 'Relevance Score']
-    const rows = results.map(r => [
-      `"${r.title.replace(/"/g, '""')}"`,
-      `"${r.url.replace(/"/g, '""')}"`,
-      `"${r.description.replace(/"/g, '""')}"`,
-      `"${r.source.replace(/"/g, '""')}"`,
-      r.relevanceScore
+    const rows = selectedResults.map(r => [
+      escapeCSVCell(r.title),
+      escapeCSVCell(r.url),
+      escapeCSVCell(r.description),
+      escapeCSVCell(r.source),
+      escapeCSVCell(r.relevanceScore),
     ])
-    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n')
+    const csvContent = [...metaLines, headers.join(','), ...rows.map(row => row.join(','))].join('\n')
     const blob = new Blob([csvContent], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -218,6 +263,26 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
           )}
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={selectAll}
+              aria-pressed={allSelected}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-white/70 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-colors"
+              style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)' }}
+            >
+              <Check className={`w-3 h-3 ${allSelected ? 'text-neon-cyan' : 'text-white/30'}`} />
+              ALL
+            </button>
+            <button
+              onClick={selectNone}
+              disabled={selectedCount === 0}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-white/70 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-colors disabled:opacity-40"
+              style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)' }}
+            >
+              NONE
+            </button>
+            <span className="font-display text-[10px] text-white/35">{selectedCount} SELECTED</span>
+          </div>
           {/* Export Button with Format Selector */}
           <div className="relative">
             <button
@@ -347,6 +412,15 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
             <div className="flex-1 min-w-0 w-full">
               {/* Source + score */}
               <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                <input
+                  type="checkbox"
+                  checked={isSelected(r.id)}
+                  onChange={() => toggleOne(r.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={`Select result: ${r.title}`}
+                  className="w-3.5 h-3.5 rounded-sm cursor-pointer flex-shrink-0"
+                  style={{ accentColor: '#00f5ff' }}
+                />
                 <span
                   className="inline-flex items-center py-0.5 px-2 rounded-full font-display border"
                   style={{
