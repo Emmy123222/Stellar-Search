@@ -153,7 +153,7 @@ Testnet assets have no real-world value. Never share your secret key or seed phr
 - Use Tailwind CSS utility classes for styling. **Do not add inline styles.**
 - Keep changes focused and avoid unrelated formatting, refactors, or dependency updates.
 - Use clear names and handle errors explicitly, especially around wallet, network, and payment operations.
-- Run the relevant checks before opening a pull request. At minimum, run `npm run build`; also run the applicable search scripts when changing the backend or search flow.
+- Run the relevant checks before opening a pull request. At minimum, run `npm run build` and `npm run typecheck:all` (covers the frontend `src`, `server`, `api`, `mcp-server`, and `scripts` boundaries — the same checks CI runs; `npx tsc --noEmit` only checks `src` and will miss regressions in the other runtimes). Also run the applicable search scripts when changing the backend or search flow.
 
 ## Pull requests
 
