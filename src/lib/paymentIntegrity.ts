@@ -1,14 +1,18 @@
 import crypto from 'crypto'
 
-/**
- * Default validity window for consumed payment payloads in milliseconds.
- * Aligned with x402 maxTimeoutSeconds (300 seconds = 5 minutes).
- */
 export const DEFAULT_PAYMENT_VALIDITY_WINDOW_MS = 300 * 1000
+
+export const PAYMENT_METADATA_VERSION = '1.0'
 
 export interface ConsumedPayment {
   consumedAt: number
   expiresAt: number
+}
+
+export interface PaymentMetadata {
+  version: string
+  receiptReference: string | null
+  network: string | null
 }
 
 // In-memory store for consumed payment identifiers and their expiration timestamps
@@ -40,6 +44,25 @@ export function getConsumedPaymentsCount(): number {
 }
 
 /**
+ * Deterministically serializes a JSON-like value into a canonical string.
+ * Object keys are sorted recursively so that semantically identical headers
+ * produce the same hash regardless of key insertion order.
+ */
+function canonicalStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value)
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalStringify(item)).join(','}]`
+  }
+
+  const obj = value as Record<string, unknown>
+  const keys = Object.keys(obj).sort()
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalStringify(obj[key])}).join(',')}`
+}
+
+/**
  * Extracts a unique, deterministic payment identifier from a payment header string or object.
  *
  * Checks if the header contains structured JSON with a transaction hash/id/signature.
@@ -50,7 +73,7 @@ export function extractPaymentIdentifier(header: unknown): string | null {
     return null
   }
 
-  const rawString = typeof header === 'string' ? header.trim() : JSON.stringify(header)
+  const rawString = typeof header === 'string' ? header.trim() : canonicalStringify(header)
   if (!rawString) return null
 
   // 1. Try parsing JSON (or base64-decoded JSON)
@@ -82,11 +105,59 @@ export function extractPaymentIdentifier(header: unknown): string | null {
     if (typeof explicitId === 'string' && explicitId.trim()) {
       return `tx:${explicitId.trim()}`
     }
+
+    // For object-like headers, use canonical serialization for a reproducible hash.
+    const canonical = canonicalStringify(obj)
+    const hash = crypto.createHash('sha256').update(canonical).digest('hex')
+    return `hash:${hash}`
   }
 
   // 2. Fallback: SHA-256 hash of the raw header string
   const hash = crypto.createHash('sha256').update(rawString).digest('hex')
   return `hash:${hash}`
+}
+
+/**
+ * Extracts versioned, reproducible payment metadata for export envelopes.
+ */
+export function extractPaymentMetadata(header: unknown): PaymentMetadata {
+  let obj: any = null
+  if (typeof header === 'object' && header !== null) {
+    obj = header
+  } else if (typeof header === 'string') {
+    const stripped = header.trim()
+    try {
+      obj = JSON.parse(stripped)
+    } catch {
+      try {
+        const decoded = Buffer.from(stripped, 'base64').toString('utf8')
+        obj = JSON.parse(decoded)
+      } catch {
+        // Not structured
+      }
+    }
+  }
+
+  const explicitReceipt =
+    obj?.receiptReference ||
+    obj?.receipt?.reference ||
+    obj?.reference ||
+    obj?.receiptId ||
+    obj?.receipt_id ||
+    null
+
+  const receiptReference =
+    typeof explicitReceipt === 'string' && explicitReceipt.trim()
+      ? explicitReceipt.trim()
+      : extractPaymentIdentifier(header)
+
+  const network = obj?.network || obj?.chainId || obj?.networkId || obj?.chain || null
+
+  return {
+    version: PAYMENT_METADATA_VERSION,
+    receiptReference,
+    network: typeof network === 'string' && network.trim() ? network.trim() : null,
+  }
 }
 
 /**
