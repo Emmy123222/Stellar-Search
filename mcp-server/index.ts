@@ -28,6 +28,7 @@ import type {
   NewsSearchResponse,
   ApiErrorResponse,
   SearchResult,
+import logger from '../server/logger.js';
   ImageResult,
   NewsResult,
 } from '../src/types/index.js'
@@ -126,7 +127,9 @@ Use for breaking stories, current events, and time-sensitive reporting.`,
 }))
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params
+  const { name, arguments: args } = request.params;
+  const requestId = (request as any).id;
+  const start = Date.now();
 
   // ── web_search ────────────────────────────────────────────────────────
   if (name === 'web_search') {
@@ -151,18 +154,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         .map((r: SearchResult, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
         .join('\n\n')
 
-      return {
-        content: [{
-          type: 'text',
-          text: [
-            `🔍 Results for: "${query}"`,
-            `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
-            `⚡ Latency: ${data.latencyMs}ms`,
-            `📊 ${data.count} results\n`,
-            formatted,
-          ].join('\n'),
-        }],
-      }
+        // Log request details before responding
+        const durationMs = Date.now() - start;
+        logger.info('Tool execution', {
+          requestId,
+          tool: name,
+          durationMs,
+          outcome: 'success',
+          paidAmount: data.paidAmount,
+          currency: data.currency,
+          network: data.network,
+        });
+        return {
+          content: [{
+            type: 'text',
+            text: [
+              `🔍 Results for: "${query}"`,
+              `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
+              `⚡ Latency: ${data.latencyMs}ms`,
+              `📊 ${data.count} results\n`,
+              formatted,
+            ].join('\n'),
+          }],
+        };
     } catch (err: any) {
       return { content: [{ type: 'text', text: `Search failed: ${err.message}` }], isError: true }
     }
