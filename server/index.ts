@@ -161,12 +161,33 @@ app.use((req, res, next) => {
 
 app.use(paymentMiddlewareFromConfig(x402Routes, facilitatorClient, schemes))
 
-const MAX_QUERY_LENGTH = 256
+// ─── Payment Replay Protection Middleware ─────────────────────────────────
+app.use((req, res, next) => {
+  const paidRoutes = ['/search', '/images', '/news']
+  if (paidRoutes.includes(req.path)) {
+    const paymentHeader =
+      req.headers['payment-signature'] ||
+      req.headers['x-payment'] ||
+      req.headers['X-PAYMENT'] ||
+      req.headers['x-payment-response'] ||
+      req.headers['authorization']
+
+    if (paymentHeader) {
+      const consumption = consumePaymentPayload(paymentHeader)
+      if (!consumption.ok) {
+        return res.status(402).json({ error: consumption.error })
+      }
+    }
+  }
+  next()
+})
+
+export const MAX_QUERY_LENGTH = 256
 
 // Validate and sanitize the user-supplied `q` parameter. Returns either the
 // cleaned string or a 400 response body to send back. Centralised so /search
 // and /images share the same rules.
-function validateQuery(
+export function validateQuery(
   q: unknown,
 ): { ok: true; cleanQ: string } | { ok: false; error: string } {
   if (typeof q !== 'string' || !q.trim()) {
@@ -691,7 +712,7 @@ app.get('/', (_req: Request, res: Response) => {
 })
 
 // ─── Start ────────────────────────────────────────────────────────────────
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`\n🚀 StellarSearch on http://localhost:${PORT}`)
     console.log(`   Network:     ${NETWORK}`)

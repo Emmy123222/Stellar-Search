@@ -305,7 +305,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (res.status === 404) throw new Error(`Account not found on Stellar ${STELLAR_NETWORK.split(':')[1]}`)
       if (!res.ok) throw new Error(`Horizon returned ${res.status}`)
 
-      const account = await res.json()
+      const account = await res.json() as any
       let xlm = '0', usdc = '0'
 
       for (const b of account.balances) {
@@ -340,7 +340,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const res = await fetch(`${SERVER_URL}/health`)
       if (!res.ok) throw new Error(`Server health check returned ${res.status}`)
 
-      const stats = await res.json()
+      const stats = await res.json() as any
       
       // Health now includes latency percentiles and checks — surface them
       const latencyLine = stats.latency

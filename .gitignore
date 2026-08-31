@@ -11,3 +11,4 @@ smoke-report.md
 
 # Local scripts
 create_issues.py
+coverage/

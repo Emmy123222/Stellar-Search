@@ -3,9 +3,8 @@
     "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2020", "DOM"],
-    "types": ["node"],
-    "outDir": "./dist",
+    "lib": ["ES2020"],
+    "outDir": "./dist/mcp-server",
     "rootDir": ".",
     "strict": true,
     "skipLibCheck": true,
@@ -13,6 +12,6 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["server/**/*", "mcp-server/**/*", "scripts/**/*", "src/lib/redactor.ts", "src/lib/timing.ts", "src/lib/constants.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["mcp-server/**/*", "src/lib/constants.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
