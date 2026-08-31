@@ -34,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const content = completion.choices[0]?.message?.content || 'No response.'
     return res.json({ content, model: completion.model })
   } catch (err: any) {
-    console.error('[groq error]', err.message)
-    return res.status(500).json({ error: `Groq AI error: ${err.message}` })
+    console.error('[groq error]', err)
+    return res.status(502).json({ error: 'AI assistant is temporarily unavailable. Please try again later.' })
   }
 }
