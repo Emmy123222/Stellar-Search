@@ -91,6 +91,8 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 | `PORT` | No | `3001` | Express server listen port. Falls back to `3001` if missing. | `3001` |
 | `VITE_SERVER_URL` | No | `http://localhost:3001` | Frontend URL for AI chat backend calls. On Vercel deployments auto-detects `${origin}/api`; locally falls back to `http://localhost:3001`. | `http://localhost:3001` |
 
+> Startup validation: the server validates `STELLAR_NETWORK` and `STELLAR_RECEIVING_ADDRESS` before the paid routes are mounted. Invalid values fail fast with a clear error that redacts the actual address instead of logging secret material.
+
 ---
 
 ## How the x402 payment flow works

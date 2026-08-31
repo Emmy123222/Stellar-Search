@@ -27,7 +27,8 @@ import logger from './logger'
 import {
   STELLAR_NETWORK,
   AMOUNT_USDC,
-  AMOUNT_STROOPS
+  AMOUNT_STROOPS,
+  assertValidStellarConfig,
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import {
@@ -98,13 +99,17 @@ const stats = {
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────
-const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
+const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS ?? ''
 const FACILITATOR_URL   = process.env.FACILITATOR_URL   || 'https://www.x402.org/facilitator'
-const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
+const NETWORK           = (process.env.STELLAR_NETWORK ?? STELLAR_NETWORK) as 'stellar:testnet' | 'stellar:mainnet'
 const SERPER_API_KEY    = process.env.SERPER_API_KEY!
 const GROQ_API_KEY      = process.env.GROQ_API_KEY!
 
-if (!RECEIVING_ADDRESS) console.warn('⚠  STELLAR_RECEIVING_ADDRESS not set')
+assertValidStellarConfig({
+  STELLAR_NETWORK: NETWORK,
+  STELLAR_RECEIVING_ADDRESS: RECEIVING_ADDRESS,
+})
+
 if (!SERPER_API_KEY)    console.warn('⚠  SERPER_API_KEY not set')
 if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
 

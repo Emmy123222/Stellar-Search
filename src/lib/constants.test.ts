@@ -17,6 +17,10 @@ import {
   USDC_CONTRACT_MAINNET,
   AMOUNT_STROOPS,
   AMOUNT_USDC,
+  assertValidStellarConfig,
+  isValidStellarNetwork,
+  isValidStellarReceivingAddress,
+  VALID_STELLAR_NETWORKS,
 } from './constants'
 
 describe('constants — Express, Vercel, browser, MCP alignment', () => {
@@ -77,5 +81,32 @@ describe('constants — Express, Vercel, browser, MCP alignment', () => {
     expect(isNaN(parseFloat(AMOUNT_USDC))).toBe(false)
     expect(isNaN(parseInt(AMOUNT_STROOPS))).toBe(false)
     expect(parseFloat(AMOUNT_USDC)).toBeGreaterThan(0)
+  })
+
+  it('accepts only the supported Stellar network identifiers', () => {
+    expect(VALID_STELLAR_NETWORKS).toContain('stellar:testnet')
+    expect(VALID_STELLAR_NETWORKS).toContain('stellar:mainnet')
+    expect(isValidStellarNetwork('stellar:testnet')).toBe(true)
+    expect(isValidStellarNetwork('stellar:mainnet')).toBe(true)
+    expect(isValidStellarNetwork('stellar:regtest')).toBe(false)
+  })
+
+  it('accepts valid public keys and rejects malformed Stellar receiving addresses', () => {
+    const validAddress = 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3'
+    expect(isValidStellarReceivingAddress(validAddress)).toBe(true)
+    expect(isValidStellarReceivingAddress('not-a-public-key')).toBe(false)
+    expect(isValidStellarReceivingAddress('')).toBe(false)
+  })
+
+  it('throws a clear startup error when the Stellar runtime config is invalid', () => {
+    expect(() => assertValidStellarConfig({
+      STELLAR_NETWORK: 'stellar:regtest',
+      STELLAR_RECEIVING_ADDRESS: 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3',
+    })).toThrow(/STELLAR_NETWORK/)
+
+    expect(() => assertValidStellarConfig({
+      STELLAR_NETWORK: 'stellar:testnet',
+      STELLAR_RECEIVING_ADDRESS: 'not-a-public-key',
+    })).toThrow(/STELLAR_RECEIVING_ADDRESS/)
   })
 })

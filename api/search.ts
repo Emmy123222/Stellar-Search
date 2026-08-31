@@ -1,18 +1,24 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { 
-  STELLAR_NETWORK, 
-  USDC_CONTRACT, 
+import {
+  STELLAR_NETWORK,
+  USDC_CONTRACT,
   AMOUNT_STROOPS,
-  AMOUNT_USDC
+  AMOUNT_USDC,
+  assertValidStellarConfig,
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
 import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────
-const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
-const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
+const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS ?? ''
+const NETWORK           = (process.env.STELLAR_NETWORK ?? STELLAR_NETWORK) as 'stellar:testnet' | 'stellar:mainnet'
 const SERPER_API_KEY    = process.env.SERPER_API_KEY!
+
+assertValidStellarConfig({
+  STELLAR_NETWORK: NETWORK,
+  STELLAR_RECEIVING_ADDRESS: RECEIVING_ADDRESS,
+})
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
