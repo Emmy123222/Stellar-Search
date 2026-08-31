@@ -78,6 +78,61 @@ describe('GET /health and GET /', () => {
     // facilitator URL present
     expect(typeof res.body.facilitator).toBe('string')
     expect(res.body.facilitator.length).toBeGreaterThan(0)
+    expect(res.body.facilitatorCompatibility).toBeDefined()
+    expect(res.body.facilitatorCompatibility.compatible).toBe(true)
+    expect(res.body.facilitatorCompatibility.scheme).toBe('exact')
+  })
+})
+
+describe('Facilitator Compatibility Guard & Readiness Errors', () => {
+  const originalFacilitator = process.env.FACILITATOR_URL
+  const originalNetwork = process.env.STELLAR_NETWORK
+
+  afterEach(() => {
+    if (originalFacilitator !== undefined) process.env.FACILITATOR_URL = originalFacilitator
+    else delete process.env.FACILITATOR_URL
+    if (originalNetwork !== undefined) process.env.STELLAR_NETWORK = originalNetwork
+    else delete process.env.STELLAR_NETWORK
+  })
+
+  it('reports degraded status on /health when facilitator URL is incompatible with network', async () => {
+    process.env.STELLAR_NETWORK = 'stellar:mainnet'
+    process.env.FACILITATOR_URL = 'https://channels.openzeppelin.com/x402/testnet'
+
+    const res = await request(app).get('/health')
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('degraded')
+    expect(res.body.facilitatorCompatibility.compatible).toBe(false)
+    expect(res.body.facilitatorCompatibility.errors.length).toBeGreaterThan(0)
+  })
+
+  it('blocks GET /search with 503 readiness error when facilitator is incompatible', async () => {
+    process.env.STELLAR_NETWORK = 'stellar:mainnet'
+    process.env.FACILITATOR_URL = 'https://channels.openzeppelin.com/x402/testnet'
+
+    const res = await request(app).get('/search?q=test')
+    expect(res.status).toBe(503)
+    expect(res.body.code).toBe('FACILITATOR_NETWORK_INCOMPATIBLE')
+    expect(res.body.error).toContain('incompatible with the selected Stellar network')
+    expect(res.body.details.length).toBeGreaterThan(0)
+  })
+
+  it('blocks GET /images with 503 readiness error when facilitator is incompatible', async () => {
+    process.env.STELLAR_NETWORK = 'stellar:testnet'
+    process.env.FACILITATOR_URL = 'https://channels.openzeppelin.com/x402/mainnet'
+
+    const res = await request(app).get('/images?q=test')
+    expect(res.status).toBe(503)
+    expect(res.body.code).toBe('FACILITATOR_NETWORK_INCOMPATIBLE')
+  })
+
+  it('blocks GET /news with 503 readiness error when facilitator is incompatible', async () => {
+    process.env.STELLAR_NETWORK = 'stellar:testnet'
+    process.env.FACILITATOR_URL = 'invalid-url'
+
+    const res = await request(app).get('/news?q=test')
+    expect(res.status).toBe(503)
+    expect(res.body.code).toBe('FACILITATOR_NETWORK_INCOMPATIBLE')
   })
 })
 
@@ -113,3 +168,4 @@ describe('GET /search validation (x402 middleware bypassed via mock)', () => {
     expect(res.body.error).toMatch(/Query too long/)
   })
 })
+

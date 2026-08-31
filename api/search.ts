@@ -3,7 +3,8 @@ import {
   STELLAR_NETWORK, 
   USDC_CONTRACT, 
   AMOUNT_STROOPS,
-  AMOUNT_USDC
+  AMOUNT_USDC,
+  validateFacilitatorConfig,
 } from '../src/lib/constants'
 
 // ─── Config ───────────────────────────────────────────────────────────────
@@ -31,6 +32,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET')    return res.status(405).json({ error: 'Method not allowed' })
+
+  // ─── Facilitator Compatibility Guard ──────────────────────────────────────
+  const facilitatorUrl = process.env.FACILITATOR_URL || 'https://www.x402.org/facilitator'
+  const validation = validateFacilitatorConfig({
+    facilitatorUrl,
+    network: NETWORK,
+    scheme: 'exact',
+    asset: USDC_CONTRACT,
+  })
+
+  if (!validation.valid) {
+    return res.status(503).json({
+      error: 'Payment facilitator configuration is incompatible with the selected Stellar network',
+      code: 'FACILITATOR_NETWORK_INCOMPATIBLE',
+      details: validation.errors,
+      action: 'Ensure FACILITATOR_URL matches STELLAR_NETWORK (e.g. use testnet facilitator for stellar:testnet and mainnet facilitator for stellar:mainnet).',
+      network: validation.network,
+      facilitator: validation.facilitatorUrl,
+    })
+  }
 
   const { q, count = '5', freshness } = req.query as Record<string, string>
 

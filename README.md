@@ -87,7 +87,7 @@ All environment variables are read from `.env` (see `.env.example` for a templat
 | `STELLAR_RECEIVING_ADDRESS` | **Yes** | — | Stellar public key that receives 0.001 USDC per query. Without this, the x402 payment middleware has no `payTo` address and payments fail. Server prints `Receiving: ✗ MISSING` on startup. | `GDXA3V2LI3VN3GBH5BMOF25QSFJV7S7ZOWMHHQMJRPP4BVORDDRTIIMU` |
 | `STELLAR_NETWORK` | No | `stellar:testnet` | Stellar network for the server-side x402 middleware. Accepts `stellar:testnet` or `stellar:mainnet`. Falls back to testnet if missing. | `stellar:testnet` |
 | `VITE_STELLAR_NETWORK` | No | `stellar:testnet` | Frontend copy of `STELLAR_NETWORK` (must be prefixed `VITE_` for browser access). Falls back to testnet if missing. | `stellar:testnet` |
-| `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Falls back to the public OpenZeppelin facilitator if missing. | `https://www.x402.org/facilitator` |
+| `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Validated against `STELLAR_NETWORK` at startup and request time; incompatible configuration (e.g. testnet facilitator on mainnet) blocks paid routes with an actionable `503` readiness error. | `https://www.x402.org/facilitator` |
 | `PORT` | No | `3001` | Express server listen port. Falls back to `3001` if missing. | `3001` |
 | `VITE_SERVER_URL` | No | `http://localhost:3001` | Frontend URL for AI chat backend calls. On Vercel deployments auto-detects `${origin}/api`; locally falls back to `http://localhost:3001`. | `http://localhost:3001` |
 
@@ -161,7 +161,10 @@ stellar-search/
 │   │   ├── SearchPage.tsx
 │   │   ├── DocsPage.tsx
 │   │   └── DashboardPage.tsx       # Live Horizon tx history
-│   └── lib/stellar.ts              # Horizon helpers
+│   └── lib/
+│       ├── constants.ts            # Centralized network, contracts, and URLs
+│       ├── facilitatorValidation.ts # Facilitator discovery & compatibility
+│       └── stellar.ts              # Horizon helpers
 ├── server/
 │   └── index.ts                # Express + @x402/express + Serper.dev + Groq
 ├── mcp-server/
@@ -214,14 +217,15 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 
 | Scope | Statements | Branches | Functions | Lines |
 |---|---:|---:|---:|---:|
-| **Global** | 25% | 23% | 20% | 26% |
+| **Global** | 30% | 28% | 24% | 30% |
 | `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
+| `src/lib/facilitatorValidation.ts` | 85% | 70% | 75% | 85% |
 | `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
 | `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
-| `server/index.ts` | 35% | 30% | 35% | 35% |
+| `server/index.ts` | 40% | 40% | 38% | 40% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
-| `api/health.ts` | 80% | 50% | 100% | 80% |
+| `api/health.ts` | 95% | 90% | 100% | 95% |
 | `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
 | `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
 

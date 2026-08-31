@@ -71,4 +71,17 @@ describe('api/health — Vercel health aligned with server /health', () => {
     const payload = res.json.mock.calls[0][0]
     expect(payload.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
+
+  it('returns degraded status when facilitator is incompatible with network', async () => {
+    process.env.STELLAR_NETWORK = 'stellar:mainnet'
+    process.env.FACILITATOR_URL = 'https://channels.openzeppelin.com/x402/testnet'
+
+    const req: any = { method: 'GET', headers: {} }
+    const res = mockRes()
+    await handler(req, res)
+
+    const payload = res.json.mock.calls[0][0]
+    expect(payload.status).toBe('degraded')
+    expect(payload.facilitatorCompatibility.compatible).toBe(false)
+  })
 })

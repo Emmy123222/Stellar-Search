@@ -43,3 +43,10 @@ export const USDC_CONTRACT = IS_MAINNET ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_
 // Payments
 export const AMOUNT_STROOPS = '10000' // 0.001 USDC
 export const AMOUNT_USDC = '0.001'
+
+// Facilitator
+export const FACILITATOR_URL_DEFAULT = 'https://www.x402.org/facilitator'
+export const FACILITATOR_URL = getEnv('FACILITATOR_URL', FACILITATOR_URL_DEFAULT)
+
+export * from './facilitatorValidation'
+

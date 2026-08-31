@@ -173,4 +173,20 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
     await handler(req, res)
     expect(capturedBody.tbs).toBe('qdr:w')
   })
+
+  it('returns 503 readiness error when facilitator is incompatible with network', async () => {
+    const original = process.env.FACILITATOR_URL
+    try {
+      process.env.FACILITATOR_URL = 'https://channels.openzeppelin.com/x402/mainnet'
+      const { req, res } = mockReqRes({ method: 'GET', query: { q: 'stellar' } })
+      await handler(req, res)
+      expect(res._status).toBe(503)
+      expect(res._json.code).toBe('FACILITATOR_NETWORK_INCOMPATIBLE')
+      expect(res._json.error).toContain('incompatible with the selected Stellar network')
+    } finally {
+      if (original !== undefined) process.env.FACILITATOR_URL = original
+      else delete process.env.FACILITATOR_URL
+    }
+  })
 })
+
