@@ -5,6 +5,7 @@ import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadshee
 import type { SearchResult } from '../../hooks/useSearch'
 import { useSavedResearch } from '../../hooks/useSavedResearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
+import { AiMarkdown } from '../ai/AiMarkdown'
 
 interface Props {
   results: SearchResult[]
@@ -315,10 +316,10 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
             {summaryError ? (
               <p className="text-red-300 text-xs">⚠ {summaryError}</p>
             ) : (
-              <p className="text-white/70 text-xs leading-relaxed whitespace-pre-wrap">
-                {summary}
+              <div className="text-white/70 text-xs leading-relaxed">
+                <AiMarkdown content={summary} citationMax={Math.min(5, results.length)} />
                 {summarizing && <span className="text-neon-cyan/60">▌</span>}
-              </p>
+              </div>
             )}
           </motion.div>
         )}
@@ -327,6 +328,8 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
       {results.map((r, i) => (
         <motion.a
           key={r.id}
+          id={i < 5 ? `result-card-${i + 1}` : undefined}
+          tabIndex={-1}
           href={r.url}
           target="_blank"
           rel="noopener noreferrer"
@@ -335,7 +338,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: i * 0.06 }}
-          className="block group rounded-xl p-4 hover:border-neon-cyan/25 transition-all relative"
+          className="block group rounded-xl p-4 hover:border-neon-cyan/25 transition-all relative focus:outline-none focus:ring-2 focus:ring-neon-cyan/60"
           style={{
             background: 'rgba(6,13,20,0.6)',
             border: '1px solid rgba(255,255,255,0.06)',

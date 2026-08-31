@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bot, Send, X, ChevronDown } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
+import { AiMarkdown } from './AiMarkdown'
 
 interface Message {
   role: 'system' | 'user' | 'assistant'
@@ -335,7 +336,14 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                       color: msg.role === 'user' ? '#00f5ff' : 'rgba(255,255,255,0.7)',
                     }}
                   >
-                    {msg.content}
+                    {msg.role === 'assistant' ? (
+                      <AiMarkdown
+                        content={msg.content}
+                        citationMax={lastSearch ? Math.min(3, lastSearch.results.length) : undefined}
+                      />
+                    ) : (
+                      msg.content
+                    )}
                   </div>
                   {/* Show model metadata for assistant messages */}
                   {msg.role === 'assistant' && msg.model && (
