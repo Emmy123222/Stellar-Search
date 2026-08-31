@@ -34,6 +34,30 @@ import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSe
 
 export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
 
+const EXPORT_VERSION = 1
+
+function escapeCsv(value: unknown): string {
+  const str = value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) ?? '' : String(value)
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str
+}
+
+function toCsv(results: SearchResult[], metadata: Record<string, unknown>): string {
+  const headers = Array.from(new Set(results.flatMap((result) => Object.keys(result))))
+  const lines = [
+    `# version: ${EXPORT_VERSION}`,
+    `# exportedAt: ${String(metadata.exportedAt)}`,
+    `# query: ${escapeCsv(metadata.query)}`,
+    `# filters: ${escapeCsv(JSON.stringify(metadata.filters))}`,
+    `# network: ${escapeCsv(metadata.network)}`,
+    `# receipt: ${escapeCsv(JSON.stringify(metadata.receipt))}`,
+    headers.join(','),
+    ...results.map((result) =>
+      headers.map((header) => escapeCsv(result[header as keyof SearchResult])).join(',')
+    ),
+  ]
+  return lines.join('\n')
+}
+
 /**
  * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
  *
@@ -44,6 +68,9 @@ export function useSearch(walletAddress: string | null = null) {
   const [session, setSession] = useState<SearchSession>({
     query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
   })
+  const [selectedResults, setSelectedResults] = useState<SearchResult[]>([])
+  const [network, setNetwork] = useState<string | null>(null)
+  const [filters, setFilters] = useState<Record<string, string>>({})
 
   const search = useCallback(
     async (
@@ -71,6 +98,9 @@ export function useSearch(walletAddress: string | null = null) {
         step: 1,
         suggestions: [],
       })
+      setSelectedResults([])
+      setNetwork(null)
+      setFilters(freshness ? { freshness } : {})
 
       const t0 = Date.now()
       const params = new URLSearchParams({
@@ -145,6 +175,7 @@ export function useSearch(walletAddress: string | null = null) {
       if (firstRes.status !== 402) {
         if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`)
         const data = (await firstRes.json()) as SearchResponse
+        setNetwork(data.network ?? null)
         return setSession({
           query, results: data.results ?? [], txHash: null,
           paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
@@ -186,6 +217,7 @@ export function useSearch(walletAddress: string | null = null) {
       }
 
       const data = (await paidRes.json()) as SearchResponse
+      setNetwork(data.network ?? null)
       console.log('✅ Search complete!')
 
       // Flow step 6 — result received and rendered
@@ -245,10 +277,59 @@ export function useSearch(walletAddress: string | null = null) {
       }))
     }
   }, [walletAddress])
+  const toggleResult = useCallback((result: SearchResult) => {
+    setSelectedResults(prev =>
+      prev.some(r => r === result)
+        ? prev.filter(r => r !== result)
+        : [...prev, result]
+    )
+  }, [])
+
+  const toggleAllResults = useCallback((results: SearchResult[]) => {
+    setSelectedResults(prev => {
+      const resultSet = new Set(results)
+      const allSelected = results.length > 0 && results.every(r => prev.some(p => p === r))
+      const next = allSelected
+        ? prev.filter(r => !resultSet.has(r))
+        : [...prev.filter(r => !resultSet.has(r)), ...results]
+      return next
+    })
+  }, [])
+
+  const clearSelection = useCallback(() => setSelectedResults([]), [])
+
+  const exportSelectedResults = useCallback((format: 'json' | 'csv' = 'json') => {
+    if (selectedResults.length === 0) return
+
+    const metadata = {
+      version: EXPORT_VERSION,
+      exportedAt: new Date().toISOString(),
+      query: session.query,
+      filters,
+      network: network ?? 'stellar:testnet',
+      receipt: session.txHash ? { txHash: session.txHash, paidAmount: session.paidAmount } : null,
+      resultCount: selectedResults.length,
+    }
+
+    const payload = { metadata, results: selectedResults }
+    const body = format === 'csv' ? toCsv(selectedResults, metadata) : JSON.stringify(payload, null, 2)
+    const blob = new Blob([body], { type: format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `stellar-search-selected-${new Date().toISOString().replace(/[:.]/g, '-')}.${format}`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }, [selectedResults, session, network, filters])
 
   const reset = useCallback(() => {
     setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [] })
+    setSelectedResults([])
+    setNetwork(null)
+    setFilters({})
   }, [])
 
-  return { session, search, reset }
+  return { session, search, reset, selectedResults, toggleResult, toggleAllResults, clearSelection, exportSelectedResults }
 }
