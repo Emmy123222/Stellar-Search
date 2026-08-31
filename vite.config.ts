@@ -24,19 +24,18 @@ export default defineConfig({
         'vitest.setup.ts',
       ],
       thresholds: {
-        statements: 28,
-        branches: 25,
-        functions: 23,
-        lines: 28,
+        statements: 35,
+        branches: 30,
+        functions: 28,
+        lines: 35,
         // Critical modules ratchet upward — keep Express, Vercel, browser, and MCP aligned
         // Bump these as coverage improves; CI fails if a PR drops below the ratchet.
-        // Global thresholds ratchet from 15 → 25 → 35 as payment/wallet/API/MCP/UI tests land.
-        // Current global ~31% (134 tests); next ratchet targets 35/30/28/35.
         'src/lib/constants.ts': { statements: 95, branches: 75, functions: 100, lines: 95 },
         'src/lib/stellar.ts': { statements: 95, branches: 90, functions: 95, lines: 95 },
+        'src/lib/paymentIntegrity.ts': { statements: 90, branches: 85, functions: 95, lines: 90 },
         'server/corsConfig.ts': { statements: 90, branches: 85, functions: 95, lines: 90 },
         'src/components/search/SearchBar.tsx': { statements: 80, branches: 80, functions: 90, lines: 80 },
-        'server/index.ts': { statements: 40, branches: 32, functions: 40, lines: 40 },
+        'server/index.ts': { statements: 65, branches: 60, functions: 65, lines: 65 },
         'api/search.ts': { statements: 90, branches: 75, functions: 80, lines: 90 },
         'api/health.ts': { statements: 95, branches: 90, functions: 100, lines: 95 },
         'api/index.ts': { statements: 95, branches: 90, functions: 100, lines: 95 },

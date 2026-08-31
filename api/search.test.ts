@@ -17,6 +17,7 @@ vi.mock('../src/lib/constants', async () => {
 })
 
 import handler from './search'
+import { resetConsumedPayments } from '../src/lib/paymentIntegrity'
 
 function mockReqRes(overrides: any = {}) {
   const req: any = {
@@ -45,6 +46,7 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    resetConsumedPayments()
     global.fetch = originalFetch
   })
 
@@ -172,5 +174,63 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
     })
     await handler(req, res)
     expect(capturedBody.tbs).toBe('qdr:w')
+  })
+
+  it('rejects replayed payment headers for their validity window', async () => {
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_replay_test_123' })).toString('base64')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ organic: [] }),
+    } as any)
+
+    // Request 1: first time — should succeed
+    const first = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(first.req, first.res)
+    expect(first.res._json.query).toBe('stellar')
+
+    // Request 2: second time — must be rejected as already consumed
+    const second = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(second.req, second.res)
+    expect(second.res._status).toBe(402)
+    expect(second.res._json.error).toBe('Payment payload already consumed')
+  })
+
+  it('concurrency test: proves only one search proceeds for the exact same payload', async () => {
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_concurrency_test_456' })).toString('base64')
+    global.fetch = vi.fn().mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      return {
+        ok: true,
+        json: async () => ({ organic: [{ title: 'Stellar Concurrent', link: 'https://stellar.org' }] }),
+      } as any
+    })
+
+    const numConcurrent = 5
+    const pairs = Array.from({ length: numConcurrent }, () =>
+      mockReqRes({
+        method: 'GET',
+        query: { q: 'stellar' },
+        headers: { 'x-payment': fakeTx },
+      })
+    )
+
+    await Promise.all(pairs.map((p) => handler(p.req, p.res)))
+
+    // Upstream Serper fetch must be called EXACTLY ONCE
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+
+    const successes = pairs.filter((p) => p.res._json?.results)
+    const rejections = pairs.filter((p) => p.res._status === 402 && p.res._json?.error === 'Payment payload already consumed')
+
+    expect(successes).toHaveLength(1)
+    expect(rejections).toHaveLength(numConcurrent - 1)
   })
 })

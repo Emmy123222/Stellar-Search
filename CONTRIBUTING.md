@@ -303,6 +303,7 @@ docs: add CONTRIBUTING.md
 
 4. Make sure:
    - [ ] `npx tsc --noEmit` passes with no errors.
+   - [ ] `npm run lint` passes with zero errors and zero warnings (`eslint . --max-warnings=0`).
    - [ ] The app starts and the affected feature works manually.
    - [ ] No new `console.log` / debug statements left in.
    - [ ] No secrets or `.env` values committed.
@@ -412,12 +413,13 @@ Global thresholds start modest and ratchet upward as payment/wallet/API/MCP/UI b
 
 | Scope | Statements | Branches | Functions | Lines |
 |---|---:|---:|---:|---:|
-| Global | 28% | 25% | 23% | 28% |
+| Global | 35% | 30% | 28% | 35% |
 | `src/lib/constants.ts` | 95% | 75% | 100% | 95% |
 | `src/lib/stellar.ts` | 95% | 90% | 95% | 95% |
+| `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
 | `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
-| `server/index.ts` | 40% | 32% | 40% | 40% |
+| `server/index.ts` | 65% | 60% | 65% | 65% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
 | `api/health.ts` | 95% | 90% | 100% | 95% |
 | `api/index.ts` | 95% | 90% | 100% | 95% |

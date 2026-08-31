@@ -53,12 +53,13 @@ export function getServerUrl(): string {
   if (envUrl) {
     return envUrl
   }
-  if (typeof window !== 'undefined') {
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  const win = typeof globalThis !== 'undefined' ? (globalThis as any).window : undefined
+  if (typeof win !== 'undefined' && win?.location) {
+    const isLocalhost = win.location.hostname === 'localhost' || win.location.hostname === '127.0.0.1'
     // @ts-ignore
     const isProd = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.PROD
     if (!isLocalhost || isProd) {
-      return `${window.location.origin}/api`
+      return `${win.location.origin}/api`
     }
   }
   return 'http://localhost:3001'
