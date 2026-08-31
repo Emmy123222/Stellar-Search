@@ -9,6 +9,8 @@ interface Props {
   query: string
   isLoading?: boolean
   txHash?: string | null
+  filters?: Record<string, unknown>
+  network?: string
 }
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
@@ -17,7 +19,7 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
     : 'http://localhost:3001'
 )
 
-export function SearchResults({ results, query, isLoading, txHash }: Props) {
+export function SearchResults({ results, query, isLoading, txHash, filters = {}, network = 'public' }: Props) {
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
@@ -54,8 +56,8 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
     version: 1,
     exportedAt: new Date().toISOString(),
     query,
-    filters: {},
-    network: 'public',
+    filters,
+    network,
     receiptReference: txHash ?? null,
   })
 
