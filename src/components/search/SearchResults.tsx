@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy, Save, ArrowLeftRight } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
 
@@ -10,6 +10,29 @@ interface Props {
   isLoading?: boolean
   txHash?: string | null
 }
+
+interface StoredResultSet {
+  id: string
+  label: string
+  savedAt: number
+  results: SearchResult[]
+}
+
+type CompareStatus = 'added' | 'removed' | 'moved' | 'unchanged'
+
+interface CompareRow {
+  url: string
+  status: CompareStatus
+  resultA?: SearchResult
+  resultB?: SearchResult
+  indexA?: number
+  indexB?: number
+}
+
+const STORAGE_KEY = 'serperdev-search-result-sets'
+
+const canonicalUrl = (url: string) =>
+  url.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '')
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
   typeof window !== 'undefined' && window.location.origin.includes('vercel.app')
@@ -23,6 +46,149 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summarizing, setSummarizing]       = useState(false)
   const [copiedUrl, setCopiedUrl]           = useState<string | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
+
+  const [savedSets, setSavedSets] = useState<StoredResultSet[]>(() => {
+    try {
+      if (typeof window === 'undefined') return []
+      const raw = window.localStorage.getItem(STORAGE_KEY)
+      const parsed = raw ? JSON.parse(raw) : []
+      return Array.isArray(parsed) ? (parsed as StoredResultSet[]) : []
+    } catch {
+      return []
+    }
+  })
+  const [compareAId, setCompareAId] = useState('')
+  const [compareBId, setCompareBId] = useState('')
+  const [showCompare, setShowCompare] = useState(false)
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(savedSets))
+      }
+    } catch {
+      // ignore storage write failures
+    }
+  }, [savedSets])
+
+  const saveCurrentSet = () => {
+    if (!results.length) return
+    const id = `set-${Date.now()}`
+    setSavedSets(prev => [
+      { id, label: `"${query}" · ${new Date().toLocaleString()}`, savedAt: Date.now(), results },
+      ...prev,
+    ].slice(0, 20))
+    setCompareAId(prev => prev || (savedSets[0]?.id ?? ''))
+    setCompareBId(id)
+    setShowCompare(true)
+  }
+
+  const comparisonRows = useMemo<CompareRow[]>(() => {
+    const setA = savedSets.find(s => s.id === compareAId)
+    const setB = savedSets.find(s => s.id === compareBId)
+    if (!showCompare || !setA || !setB) return []
+
+    const mapA = new Map<string, { result: SearchResult; index: number }>()
+    const mapB = new Map<string, { result: SearchResult; index: number }>()
+
+    setA.results.forEach((result, index) => {
+      const key = canonicalUrl(result.url)
+      if (!mapA.has(key)) mapA.set(key, { result, index })
+    })
+    setB.results.forEach((result, index) => {
+      const key = canonicalUrl(result.url)
+      if (!mapB.has(key)) mapB.set(key, { result, index })
+    })
+
+    return Array.from(new Set([...mapA.keys(), ...mapB.keys()]))
+      .map(url => {
+        const a = mapA.get(url)
+        const b = mapB.get(url)
+        if (a && b) {
+          return {
+            url,
+            status: a.index === b.index ? ('unchanged' as const) : ('moved' as const),
+            resultA: a.result,
+            resultB: b.result,
+            indexA: a.index,
+            indexB: b.index,
+          }
+        }
+        if (a) {
+          return { url, status: 'removed' as const, resultA: a.result, indexA: a.index }
+        }
+        return { url, status: 'added' as const, resultB: b!.result, indexB: b!.index }
+      })
+      .sort((x, y) => (x.indexA ?? x.indexB ?? 0) - (y.indexA ?? y.indexB ?? 0))
+  }, [savedSets, compareAId, compareBId, showCompare])
+
+  const renderCompareRows = (side: 'A' | 'B') => {
+    const isLeft = side === 'A'
+    const setId = isLeft ? compareAId : compareBId
+    const set = savedSets.find(s => s.id === setId)
+    return (
+      <div className="space-y-2">
+        <div className="font-display text-xs text-white/40 tracking-wider">
+          {isLeft ? 'BEFORE' : 'AFTER'} · {set?.label ?? (isLeft ? 'Set A' : 'Set B')}
+        </div>
+        {comparisonRows.map(row => {
+          const result = isLeft ? row.resultA : row.resultB
+          const index = isLeft ? row.indexA : row.indexB
+          if (!result) {
+            return (
+              <div
+                key={`${side}-${row.url}`}
+                className="rounded-lg p-3"
+                style={{ background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)' }}
+              >
+                <p className="text-white/20 text-xs italic py-2">
+                  No result in {isLeft ? 'set A' : 'set B'}
+                </p>
+              </div>
+            )
+          }
+          const badgeColor =
+            row.status === (isLeft ? 'removed' : 'added')
+              ? isLeft ? '#ff5555' : '#00ff00'
+              : row.status === 'moved'
+                ? '#ffb400'
+                : 'rgba(255,255,255,0.4)'
+          return (
+            <div
+              key={`${side}-${row.url}`}
+              className="rounded-lg p-3"
+              style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}
+            >
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-display text-[10px] tracking-wider" style={{ color: badgeColor }}>
+                    {row.status.toUpperCase()}
+                  </span>
+                  <span className="text-white/30 text-[10px]">#{index! + 1}</span>
+                  {row.status === 'moved' && row.indexA !== undefined && row.indexB !== undefined && (
+                    <span className="text-white/30 text-[10px]">#{row.indexA + 1}→#{row.indexB + 1}</span>
+                  )}
+                </div>
+                <a
+                  href={result.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-white text-xs font-medium leading-snug hover:text-neon-cyan"
+                >
+                  {result.title}
+                </a>
+                <p className="text-white/40 text-[10px] truncate">{row.url}</p>
+                <p className="text-white/30 text-[10px]">
+                  {result.source} · {(result.relevanceScore * 100).toFixed(0)}%
+                </p>
+                <p className="text-white/30 text-[10px] leading-snug line-clamp-2">{result.description}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
 
   const exportAsJSON = () => {
     if (!results.length) return
@@ -218,6 +384,24 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
           )}
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={saveCurrentSet}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-white/70 hover:text-neon-green hover:bg-neon-green/10 transition-colors"
+            style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)' }}
+            aria-label="Save current result set"
+          >
+            <Save className="w-3 h-3" />
+            SAVE
+          </button>
+          <button
+            onClick={() => setShowCompare(!showCompare)}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider transition-colors ${showCompare ? 'text-neon-cyan bg-neon-cyan/10' : 'text-white/70 hover:text-neon-cyan hover:bg-neon-cyan/10'}`}
+            style={{ border: '1px solid rgba(0,245,255,0.3)' }}
+            aria-label="Compare saved result sets"
+          >
+            <ArrowLeftRight className="w-3 h-3" />
+            COMPARE
+          </button>
           {/* Export Button with Format Selector */}
           <div className="relative">
             <button
@@ -325,7 +509,39 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
         )}
       </AnimatePresence>
 
-      {results.map((r, i) => (
+      {showCompare && (
+        <div
+          className="rounded-xl p-4 space-y-3"
+          style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(0,245,255,0.15)' }}
+        >
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-display text-xs text-neon-cyan tracking-wider">COMPARE SETS</span>
+            <select value={compareAId} onChange={e => setCompareAId(e.target.value)} className="bg-transparent text-xs text-white/70 rounded-md px-2 py-1" style={{ border: '1px solid rgba(255,255,255,0.2)' }} aria-label="First result set">
+              <option value="">Select set A</option>
+              {savedSets.map(s => (
+                <option key={s.id} value={s.id} className="bg-[#060d14]">{s.label}</option>
+              ))}
+            </select>
+            <span className="text-white/30 text-xs">vs</span>
+            <select value={compareBId} onChange={e => setCompareBId(e.target.value)} className="bg-transparent text-xs text-white/70 rounded-md px-2 py-1" style={{ border: '1px solid rgba(255,255,255,0.2)' }} aria-label="Second result set">
+              <option value="">Select set B</option>
+              {savedSets.map(s => (
+                <option key={s.id} value={s.id} className="bg-[#060d14]">{s.label}</option>
+              ))}
+            </select>
+          </div>
+          {comparisonRows.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {renderCompareRows('A')}
+              {renderCompareRows('B')}
+            </div>
+          ) : (
+            <p className="text-white/40 text-xs">Select two saved result sets to compare by canonical URL.</p>
+          )}
+        </div>
+      )}
+
+      {!showCompare && results.map((r, i) => (
         <motion.a
           key={r.id}
           href={r.url}
