@@ -26,6 +26,7 @@
     "test:search": "npm run search:cli -- \"Stellar blockchain\" --mode search",
     "test:quote": "npm run search:cli -- \"Stellar blockchain\" --mode quote --json",
     "test:suggestions": "npm run search:cli -- \"Stellar blockchain\" --mode search --count 3",
+    "reconcile:report": "tsx scripts/reconcile-report.ts",
     "deploy": "npm run build && vercel --prod"
   },
   "dependencies": {
