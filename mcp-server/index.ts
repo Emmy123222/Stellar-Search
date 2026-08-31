@@ -22,6 +22,15 @@ import {
   STELLAR_EXPERT_URL,
   AMOUNT_USDC
 } from '../src/lib/constants'
+import type {
+  SearchResponse,
+  ImageSearchResponse,
+  NewsSearchResponse,
+  ApiErrorResponse,
+  SearchResult,
+  ImageResult,
+  NewsResult,
+} from '../src/types/index.js'
 
 dotenv.config()
 
@@ -133,13 +142,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const res = await fetch(`${SERVER_URL}/search?${params}`)
 
       if (!res.ok) {
-        const e = await res.json().catch(() => ({}) as any) as any
+        const e = (await res.json().catch(() => ({ error: '' }))) as ApiErrorResponse
         throw new Error(e.error || `HTTP ${res.status}`)
       }
 
-      const data = await res.json() as any
+      const data = (await res.json()) as SearchResponse
       const formatted = data.results
-        .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
+        .map((r: SearchResult, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
         .join('\n\n')
 
       return {
@@ -170,13 +179,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const res = await fetch(`${SERVER_URL}/images?${params}`)
 
       if (!res.ok) {
-        const e: any = await res.json().catch(() => ({}))
+        const e = (await res.json().catch(() => ({ error: '' }))) as ApiErrorResponse
         throw new Error(e.error || `HTTP ${res.status}`)
       }
 
-      const data: any = await res.json()
+      const data = (await res.json()) as ImageSearchResponse
       const formatted = data.results
-        .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   Image: ${r.imageUrl}\n   Source: ${r.sourceUrl} (${r.source})`)
+        .map((r: ImageResult, i: number) => `${i + 1}. **${r.title}**\n   Image: ${r.imageUrl}\n   Source: ${r.sourceUrl} (${r.source})`)
         .join('\n\n')
 
       return {
@@ -210,13 +219,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const res = await fetch(`${SERVER_URL}/news?${params}`)
 
       if (!res.ok) {
-        const e: any = await res.json().catch(() => ({}))
+        const e = (await res.json().catch(() => ({ error: '' }))) as ApiErrorResponse
         throw new Error(e.error || `HTTP ${res.status}`)
       }
 
-      const data: any = await res.json()
+      const data = (await res.json()) as NewsSearchResponse
       const formatted = data.results
-        .map((r: any, i: number) => {
+        .map((r: NewsResult, i: number) => {
           const date = r.publishedAt ? ` · ${r.publishedAt}` : ''
           return `${i + 1}. **${r.title}** (${r.source}${date})\n   ${r.url}\n   ${r.snippet}`
         })
