@@ -43,7 +43,7 @@ export function getConsumedPaymentsCount(): number {
  * Extracts a unique, deterministic payment identifier from a payment header string or object.
  *
  * Checks if the header contains structured JSON with a transaction hash/id/signature.
- * If no explicit ID field is found, computes a SHA-256 hash of the normalized header string.
+ * If no explicit ID field is found, computes a deterministic hash of the normalized header string.
  */
 export function extractPaymentIdentifier(header: unknown): string | null {
   if (!header || (typeof header !== 'string' && typeof header !== 'object')) {
@@ -61,12 +61,7 @@ export function extractPaymentIdentifier(header: unknown): string | null {
     try {
       obj = JSON.parse(rawString)
     } catch {
-      try {
-        const decoded = Buffer.from(rawString, 'base64').toString('utf8')
-        obj = JSON.parse(decoded)
-      } catch {
-        // Raw non-JSON string
-      }
+      obj = tryDecodeBase64Json(rawString)
     }
   }
 
@@ -84,8 +79,8 @@ export function extractPaymentIdentifier(header: unknown): string | null {
     }
   }
 
-  // 2. Fallback: SHA-256 hash of the raw header string
-  const hash = crypto.createHash('sha256').update(rawString).digest('hex')
+  // 2. Fallback: deterministic hash of the raw header string
+  const hash = stableHash(rawString)
   return `hash:${hash}`
 }
 
@@ -114,10 +109,10 @@ export function consumePaymentPayload(
   // Atomically mark as consumed
   consumedPayments.set(paymentId, {
     consumedAt: now,
-    expiresAt: now + validityWindowMS,
+    expiresAt: now + validityWindowMs,
   })
 
-  return { ok: true, paymentId }
+  return { paymentId } as { ok: true; paymentId }
 }
 
 /**
@@ -170,7 +165,7 @@ export type PaymentPreflightResult =
  * and it returns a single targeted recovery action for the first unmet condition.
  *
  * @param input Preflight data assembled from the active wallet and network state.
- * @returns `{ ok: true }`if all checks pass. Otherwise `{ ok: false, reason, recoveryAction }`.
+ * @returns `{ ok: true }if all checks pass. Otherwise `{ ok: false, reason, recoveryAction }`.
  */
 export function performPaymentPreflight(input: PaymentPreflightInput): PaymentPreflightResult {
   if (!input.signerAvailable) {
@@ -205,7 +200,7 @@ export function performPaymentPreflight(input: PaymentPreflightInput): PaymentPr
     }
   }
 
-  if (typeof input.spendableBalance !== 'number' || typeof input.requiredAmount !== 'number' || input.spendableBalance < input.requiredAmount) {
+  if (typeof input.spendableBalance !== 'number' || typeof input.requiredAmount !== 'number' || !Number.isFinite(input.spendableBalance) || !Number.isFinite(input.requiredAmount) || input.requiredAmount < 0 || input.spendableBalance < input.requiredAmount) {
     return {
       ok: false,
       reason: 'INSUFFICIENT_BALANCE',
@@ -214,4 +209,36 @@ export function performPaymentPreflight(input: PaymentPreflightInput): PaymentPr
   }
 
   return { ok: true }
+}
+
+/**
+ * Helper to decode a base64-encoded UTF-8 string and parse it as JSON.
+ * Returns the parsed JSON object, or null if decoding/parsing fails.
+ */
+function tryDecodeBase64Json(raw: string): any {
+  try {
+    const binary = atob(raw)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    const decoded = new TextDecoder().decode(bytes)
+    return JSON.parse(decoded)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Computes a stable, non-cryptographic hash of a string.
+ * Used as a fallback when no explicit Payment ID is available.
+ * This is browser-safe and does not rely on Node-specific apis.
+ */
+function stableHash(input: string): string {
+  let hash = 5381
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) + hash) + input.charCodeAt(i)
+    hash |= 0 // Convert to 32bit integer
+  }
+  return hash.toString(36)
 }
