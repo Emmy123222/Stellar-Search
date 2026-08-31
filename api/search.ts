@@ -7,6 +7,7 @@ import {
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
+import { validateQuery } from '../src/lib/validateQuery'
 import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────
@@ -40,10 +41,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { q, count = '5', freshness } = req.query as Record<string, string>
 
-  if (!q?.trim()) {
-    const errorBody: ApiErrorResponse = { error: 'Missing required parameter: q' }
+  const v = validateQuery(q)
+  if (!v.ok) {
+    const errorBody: ApiErrorResponse = { error: v.error }
     return res.status(400).json(errorBody)
   }
+  const cleanQ = v.cleanQ
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -107,7 +110,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // ─── Serper.dev ──────────────────────────────────────────────────────────
     const requestBody: Record<string, unknown> = {
-      q:   q.trim(),
+      q:   cleanQ,
       num: Math.min(parseInt(count) || 5, 20),
     }
 
@@ -142,7 +145,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const results = normalizeOrganicResults(data)
 
     const responseBody: SearchResponse = {
-      query:      q.trim(),
+      query:      cleanQ,
       results,
       count:      results.length,
       network:    NETWORK,

@@ -20,11 +20,15 @@ process.env.STELLAR_RECEIVING_ADDRESS = 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG
 process.env.SERPER_API_KEY = 'test-serper-key'
 process.env.GROQ_API_KEY = 'gsk_test'
 
-import { validateQuery, MAX_QUERY_LENGTH } from './index'
+import { validateQuery, MAX_QUERY_LENGTH } from './validateQuery'
 
 describe('validateQuery — x402 paid route input validation', () => {
   it('accepts valid query and trims', () => {
     expect(validateQuery('  hello world  ')).toEqual({ ok: true, cleanQ: 'hello world' })
+  })
+
+  it('rejects multiple query parameters (array)', () => {
+    expect(validateQuery(['hello', 'world'])).toEqual({ ok: false, error: 'Multiple query parameters not allowed' })
   })
 
   it('rejects missing q (undefined)', () => {

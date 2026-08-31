@@ -35,6 +35,7 @@ import {
   normalizeImageResults,
   normalizeNewsResults,
 } from '../src/lib/serperNormalizer.js'
+import { validateQuery, MAX_QUERY_LENGTH } from '../src/lib/validateQuery.js'
 import type {
   SearchResponse,
   ImageSearchResponse,
@@ -143,15 +144,20 @@ const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }]
 // Apply middleware to all routes, not just /search
 
 // ─── Payment Logging Middleware ──────────────────────────────────────────
+const paidRoutes = ['/search', '/images', '/news'];
 app.use((req, res, next) => {
-  if (req.path === '/search') {
-    const { q } = req.query as Record<string, string>;
-    const truncatedQ = q ? String(q).substring(0, 50) : '';
+  if (paidRoutes.includes(req.path)) {
+    const { q } = req.query;
+    
+    // Only use validated fields in logs to prevent injection
+    const v = validateQuery(q);
+    const truncatedQ = v.ok ? v.cleanQ.substring(0, 50) : '';
 
     res.on('finish', () => {
       let paymentStatus = 'error';
       if (res.statusCode === 200) paymentStatus = 'paid';
       else if (res.statusCode === 402) paymentStatus = '402';
+      else if (res.statusCode === 400) paymentStatus = '400';
 
       logger.info('Payment attempt', {
         timestamp: new Date().toISOString(),
@@ -187,28 +193,7 @@ app.use((req, res, next) => {
   next()
 })
 
-export const MAX_QUERY_LENGTH = 256
 
-// Validate and sanitize the user-supplied `q` parameter. Returns either the
-// cleaned string or a 400 response body to send back. Centralised so /search
-// and /images share the same rules.
-export function validateQuery(
-  q: unknown,
-): { ok: true; cleanQ: string } | { ok: false; error: string } {
-  if (typeof q !== 'string' || !q.trim()) {
-    return { ok: false, error: 'Missing required parameter: q' }
-  }
-  if (q.length > MAX_QUERY_LENGTH) {
-    return { ok: false, error: `Query too long. Maximum ${MAX_QUERY_LENGTH} characters.` }
-  }
-  // Strip null bytes and ASCII control characters (C0 + DEL) to prevent
-  // log injection and odd Serper behavior.
-  const cleanQ = q.replace(/[\x00-\x1F\x7F]/g, '').trim()
-  if (!cleanQ) {
-    return { ok: false, error: 'Query contains no valid characters.' }
-  }
-  return { ok: true, cleanQ }
-}
 
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {

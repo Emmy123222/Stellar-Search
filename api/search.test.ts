@@ -77,6 +77,13 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
     expect(res._status).toBe(400)
   })
 
+  it('rejects multi-value query parameter array', async () => {
+    const { req, res } = mockReqRes({ method: 'GET', query: { q: ['a', 'b'] } })
+    await handler(req, res)
+    expect(res._status).toBe(400)
+    expect(res._json.error).toMatch(/Multiple query parameters not allowed/)
+  })
+
   it('returns 402 Payment Required with x402 v2 payload when no payment header', async () => {
     const { req, res } = mockReqRes({
       method: 'GET',
