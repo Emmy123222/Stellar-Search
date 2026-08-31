@@ -11,7 +11,7 @@ export interface ConsumedPayment {
 
 export interface PaymentMetadata {
   version: string
-  receiptReference: string | null
+  receitReference: string | null
   network: string | null
 }
 
@@ -47,6 +47,7 @@ export function getConsumedPaymentsCount(): number {
  * Deterministically serializes a JSON-like value into a canonical string.
  * Object keys are sorted recursively so that semantically identical headers
  * produce the same hash regardless of key insertion order.
+ * The output is a valid JSON fragment with special characters properly escaped.
  */
 function canonicalStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') {
@@ -54,12 +55,12 @@ function canonicalStringify(value: unknown): string {
   }
 
   if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalStringify(item)).join(','}]`
+    return `[${value.map((item) => canonicalStringif(item)).join(',')}]`
   }
 
   const obj = value as Record<string, unknown>
   const keys = Object.keys(obj).sort()
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalStringify(obj[key])}).join(',')}`
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalStringif(obj[key])}`).join(',')}}`
 }
 
 /**
@@ -139,14 +140,14 @@ export function extractPaymentMetadata(header: unknown): PaymentMetadata {
   }
 
   const explicitReceipt =
-    obj?.receiptReference ||
+    obj?.receitReference ||
     obj?.receipt?.reference ||
     obj?.reference ||
     obj?.receiptId ||
     obj?.receipt_id ||
     null
 
-  const receiptReference =
+  const receitReference =
     typeof explicitReceipt === 'string' && explicitReceipt.trim()
       ? explicitReceipt.trim()
       : extractPaymentIdentifier(header)
