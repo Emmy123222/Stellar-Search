@@ -123,3 +123,165 @@ export type WebSearchResponse = SearchResponse
 export type ImageResponse = ImageSearchResponse
 export type NewsResponse = NewsSearchResponse
 export type ErrorResponse = ApiErrorResponse
+
+// ─── JSON Lines batch streaming (issue #325) ─────────────────────────────────
+
+export const BATCH_JSONL_VERSION = 1 as const
+export const MAX_BATCH_SIZE = 10
+export const MAX_BATCH_TOTAL_USDC = '0.01'
+
+export type BatchItemStatus = 'pending' | 'settled' | 'success' | 'error' | 'skipped'
+
+export interface BatchSearchRequest {
+  queries: string[]
+  count?: number
+  freshness?: 'pd' | 'pw' | 'pm'
+  idempotencyKey?: string
+}
+
+export type BatchJsonlEventType = 'quote' | 'settlement' | 'result' | 'error' | 'done'
+
+export interface BatchJsonlQuoteEvent {
+  v: typeof BATCH_JSONL_VERSION
+  type: 'quote'
+  requestId: string
+  totalQueries: number
+  pricePerQuery: string
+  totalAmount: string
+  currency: string
+  network: string
+  payTo: string
+  idempotencyKey?: string
+}
+
+export interface BatchJsonlSettlementEvent {
+  v: typeof BATCH_JSONL_VERSION
+  type: 'settlement'
+  requestId: string
+  paymentId: string | null
+  txHash: string | null
+  verified: boolean
+  settledAt: string
+}
+
+export interface BatchJsonlResultEvent {
+  v: typeof BATCH_JSONL_VERSION
+  type: 'result'
+  requestId: string
+  index: number
+  query: string
+  results: SearchResult[]
+  count: number
+  latencyMs: number
+  paidAmount: string
+  currency: string
+  network: string
+  txHash: string | null
+}
+
+export interface BatchJsonlErrorEvent {
+  v: typeof BATCH_JSONL_VERSION
+  type: 'error'
+  requestId: string
+  index: number
+  query: string
+  error: string
+  code: string
+}
+
+export interface BatchJsonlDoneEvent {
+  v: typeof BATCH_JSONL_VERSION
+  type: 'done'
+  requestId: string
+  succeeded: number
+  failed: number
+  totalUsdcSpent: string
+  aggregateLatencyMs: number
+  completedAt: string
+}
+
+export type BatchJsonlEvent =
+  | BatchJsonlQuoteEvent
+  | BatchJsonlSettlementEvent
+  | BatchJsonlResultEvent
+  | BatchJsonlErrorEvent
+  | BatchJsonlDoneEvent
+
+// ─── Asynchronous paid search jobs with webhooks (issue #324) ─────────────────
+
+export type JobStatus = 'pending' | 'settling' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface SearchJobRequest {
+  query: string
+  count?: number
+  freshness?: 'pd' | 'pw' | 'pm'
+  webhookUrl?: string
+  webhookSecret?: string
+  idempotencyKey?: string
+}
+
+export interface SearchJob {
+  id: string
+  query: string
+  count: number
+  freshness?: string
+  status: JobStatus
+  createdAt: string
+  updatedAt: string
+  paymentId: string | null
+  txHash: string | null
+  verified: boolean
+  paidAmount: string
+  currency: string
+  network: string
+  result?: SearchResponse
+  error?: string
+  webhookUrl?: string
+  webhookSecret?: string
+  idempotencyKey?: string
+  attempts: number
+  statusUrl: string
+}
+
+export interface SearchJobStatusResponse {
+  job: SearchJob
+  paymentVerified: boolean
+  statusUrl: string
+}
+
+export interface WebhookDeliveryState {
+  jobId: string
+  url: string
+  attempt: number
+  nextRetryAt?: string
+  lastError?: string
+  deliveredAt?: string
+  signature?: string
+}
+
+// ─── MCP resources & receipts (issue #326) ───────────────────────────────────
+
+export interface StoredReceipt {
+  id: string
+  query: string
+  txHash: string | null
+  amount: string
+  currency: string
+  network: string
+  timestamp: string
+  latencyMs: number
+  count: number
+}
+
+export interface CapabilityDoc {
+  name: string
+  version: string
+  network: string
+  pricePerQuery: string
+  currency: string
+  contract: string
+  endpoints: Record<string, string>
+  mcpTools: string[]
+  mcpResources: string[]
+  mcpPrompts: string[]
+}
