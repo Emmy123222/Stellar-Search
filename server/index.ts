@@ -588,6 +588,13 @@ app.get('/', (_req: Request, res: Response) => {
     name:        'StellarSearch',
     version:     '1.0.0',
     description: 'Pay-per-query web search for AI agents via x402 on Stellar',
+    capabilities: {
+      streaming: true,
+      images: true,
+      news: true,
+      paymentHeaders: ['payment-signature', 'x-payment', 'X-PAYMENT', 'x-payment-response', 'authorization'],
+      runtime: 'express'
+    },
     endpoints: {
       'GET /search?q=<query>': '0.001 USDC via x402',
       'GET /images?q=<query>': '0.001 USDC via x402 — image results',
