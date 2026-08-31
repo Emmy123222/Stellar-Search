@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Sparkles } from 'lucide-react'
 
@@ -18,7 +19,13 @@ interface Props {
 
 export function SearchSuggestions({ onSelect, aiSuggestions }: Props) {
   const isAi = aiSuggestions && aiSuggestions.length > 0
-  const items = isAi ? aiSuggestions : STATIC_SUGGESTIONS
+  const nextItems = isAi ? aiSuggestions : STATIC_SUGGESTIONS
+  const [items, setItems] = useState<string[]>(STATIC_SUGGESTIONS)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setItems([...nextItems]), 300)
+    return () => window.clearTimeout(timer)
+  }, [aiSuggestions])
 
   return (
     <motion.div

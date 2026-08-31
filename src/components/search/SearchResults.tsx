@@ -25,33 +25,35 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [showExportMenu, setShowExportMenu] = useState(false)
 
   const exportAsJSON = () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(results, null, 2))
-    const downloadAnchor = document.createElement('a')
-    downloadAnchor.setAttribute('href', dataStr)
-    downloadAnchor.setAttribute('download', `search-results-${query.replace(/\s+/g, '-')}.json`)
-    document.body.appendChild(downloadAnchor)
-    downloadAnchor.click()
-    downloadAnchor.remove()
+    if (!results.length) return
+    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `search-results-${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
     setShowExportMenu(false)
   }
 
   const exportAsCSV = () => {
-    const headers = ['id', 'title', 'url', 'source', 'relevanceScore', 'description']
+    if (!results.length) return
+    const headers = ['Title', 'URL', 'Description', 'Source', 'Relevance Score']
     const rows = results.map(r => [
-      r.id,
       `"${r.title.replace(/"/g, '""')}"`,
-      `"${r.url}"`,
-      `"${r.source}"`,
-      r.relevanceScore,
-      `"${r.description.replace(/"/g, '""')}"`
+      `"${r.url.replace(/"/g, '""')}"`,
+      `"${r.description.replace(/"/g, '""')}"`,
+      `"${r.source.replace(/"/g, '""')}"`,
+      r.relevanceScore
     ])
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n')
-    const downloadAnchor = document.createElement('a')
-    downloadAnchor.setAttribute('href', encodeURI(csvContent))
-    downloadAnchor.setAttribute('download', `search-results-${query.replace(/\s+/g, '-')}.csv`)
-    document.body.appendChild(downloadAnchor)
-    downloadAnchor.click()
-    downloadAnchor.remove()
+    const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `search-results-${Date.now()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
     setShowExportMenu(false)
   }
 
