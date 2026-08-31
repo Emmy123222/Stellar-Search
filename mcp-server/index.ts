@@ -158,7 +158,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
       const formatted = data.results
-        .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
+        .map((r: SearchResult, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
         .join('\n\n')
 
       const timingsStr = data.timings ? ` (server: validation ${data.timings.validationMs ?? '?'}ms, serper ${data.timings.serperMs ?? '?'}ms)` : ''
@@ -201,7 +201,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const data: any = await res.json()
       recordMcpTiming(TIMING_PHASES.BROWSER_FETCH, Date.now() - t0)
       const formatted = data.results
-        .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   Image: ${r.imageUrl}\n   Source: ${r.sourceUrl} (${r.source})`)
+        .map((r: ImageResult, i: number) => `${i + 1}. **${r.title}**\n   Image: ${r.imageUrl}\n   Source: ${r.sourceUrl} (${r.source})`)
         .join('\n\n')
 
       return {
@@ -245,7 +245,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const data: any = await res.json()
       recordMcpTiming(TIMING_PHASES.BROWSER_FETCH, Date.now() - t0)
       const formatted = data.results
-        .map((r: any, i: number) => {
+        .map((r: NewsResult, i: number) => {
           const date = r.publishedAt ? ` · ${r.publishedAt}` : ''
           return `${i + 1}. **${r.title}** (${r.source}${date})\n   ${r.url}\n   ${r.snippet}`
         })

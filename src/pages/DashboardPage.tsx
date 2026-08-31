@@ -4,7 +4,7 @@ import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search } from 'l
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, truncateHash, formatTimeAgo, explorerTxUrl, explorerAccountUrl } from '../lib/stellar'
 import type { StellarTransaction } from '../hooks/useFreighterWallet'
-import type { SearchReceipt } from '../hooks/useSearch'
+import type { SearchReceipt } from '../types'
 
 interface Props {
   transactions: StellarTransaction[]

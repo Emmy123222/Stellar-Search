@@ -220,7 +220,7 @@ app.get('/search', async (req: Request, res: Response) => {
   const { count = '5', freshness } = req.query as Record<string, string>
 
   try {
-    const requestBody: any = {
+    const requestBody: Record<string, unknown> = {
       q: cleanQ,
       num: Math.min(parseInt(count) || 5, 20),
     }
@@ -283,7 +283,7 @@ app.get('/search', async (req: Request, res: Response) => {
     if (req.query.suggestions === '1' && results.length > 0) {
       const tSugg0 = Date.now()
       try {
-        const topSnippets = results.slice(0, 3).map((r: any) => r.description).join(' | ')
+        const topSnippets = results.slice(0, 3).map((r) => r.description).join(' | ')
         const suggCompletion = await groq.chat.completions.create({
           model: 'llama-3.3-70b-versatile',
           messages: [
@@ -331,7 +331,9 @@ app.get('/search', async (req: Request, res: Response) => {
         totalMs,
       },
       suggestions,
-    })
+    }
+
+    return res.json(responseBody)
   } catch (err: any) {
     recordTiming(TIMING_PHASES.TOTAL, Date.now() - tTotal0, 'error')
     logger.error('search error', { error: err.message })
@@ -383,22 +385,13 @@ app.get('/images', async (req: Request, res: Response) => {
     stats.totalQueries++
     stats.totalUsdcSettled += parseFloat(AMOUNT_USDC)
 
-    const results = (data.images || []).map((r: any, i: number) => ({
-      id: String(i + 1),
-      title: r.title || 'No title',
-      imageUrl: r.imageUrl,
-      thumbnailUrl: r.thumbnailUrl || r.imageUrl,
-      sourceUrl: r.link,
-      source: (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
-      width: r.imageWidth,
-      height: r.imageHeight,
-    }))
+    const results = normalizeImageResults(data)
 
     const txHash = (req.headers['x-payment-response'] as string) || null
     const totalMs = Date.now() - tTotal0
     recordTiming(TIMING_PHASES.TOTAL, totalMs, 'success')
 
-    return res.json({
+    const responseBody: ImageSearchResponse = {
       query: cleanQ,
       results,
       count: results.length,
@@ -431,7 +424,7 @@ app.get('/news', async (req: Request, res: Response) => {
   const { count = '10', freshness } = req.query as Record<string, string>
 
   try {
-    const requestBody: any = {
+    const requestBody: Record<string, unknown> = {
       q: cleanQ,
       num: Math.min(parseInt(count) || 10, 20),
     }
@@ -473,21 +466,13 @@ app.get('/news', async (req: Request, res: Response) => {
     stats.totalQueries++
     stats.totalUsdcSettled += parseFloat(AMOUNT_USDC)
 
-    const results = (data.news || []).map((r: any, i: number) => ({
-      id: String(i + 1),
-      title: r.title || 'No title',
-      url: r.link,
-      snippet: r.snippet || '',
-      source: r.source || (() => { try { return new URL(r.link).hostname.replace('www.', '') } catch { return r.link } })(),
-      publishedAt: r.date || undefined,
-      imageUrl: r.imageUrl || undefined,
-    }))
+    const results = normalizeNewsResults(data)
 
     const txHash = (req.headers['x-payment-response'] as string) || null
     const totalMs = Date.now() - tTotal0
     recordTiming(TIMING_PHASES.TOTAL, totalMs, 'success')
 
-    return res.json({
+    const responseBody: NewsSearchResponse = {
       query: cleanQ,
       results,
       count: results.length,

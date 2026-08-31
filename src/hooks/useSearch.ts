@@ -260,11 +260,12 @@ export function useSearch(walletAddress: string | null = null) {
       })
 
       if (data.txHash) {
+        const settledTxHash = data.txHash
         toast.success(`Payment settled: ${data.paidAmount || '0.001'} USDC`, {
           description: 'View transaction on Stellar network',
           action: {
             label: 'Explorer',
-            onClick: () => window.open(explorerTxUrl(data.txHash), '_blank')
+            onClick: () => window.open(explorerTxUrl(settledTxHash), '_blank')
           }
         })
       }
