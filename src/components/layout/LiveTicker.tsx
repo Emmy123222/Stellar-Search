@@ -14,14 +14,31 @@ const getTickerItems = () => [
   ['WALLET',     'FREIGHTER'],
 ]
 
+function TickerItem({ item: [k, v] }: { item: string[] }) {
+  return (
+    <div className="inline-flex items-center gap-2 px-6">
+      <span
+        className="font-display text-neon-cyan/30 tracking-widest"
+        style={{ fontSize: '10px' }}
+      >
+        {k}
+      </span>
+      <span
+        className="font-display text-neon-cyan font-bold tracking-wider"
+        style={{ fontSize: '10px' }}
+      >
+        {v}
+      </span>
+      <span className="text-neon-cyan/15">◆</span>
+    </div>
+  )
+}
+
 export function LiveTicker({ walletConnected }: Props) {
   const items = [
     ...getTickerItems(),
     ['STATUS', walletConnected ? 'WALLET CONNECTED' : 'NOT CONNECTED'],
   ]
-
-  // Duplicate for seamless loop
-  const doubled = [...items, ...items]
 
   return (
     <div
@@ -31,24 +48,19 @@ export function LiveTicker({ walletConnected }: Props) {
       <div
         className="flex items-center gap-8 animate-ticker whitespace-nowrap"
         style={{ width: 'max-content' }}
+        tabIndex={0}
+        role="marquee"
+        aria-label="Live network status"
       >
-        {doubled.map(([k, v], i) => (
-          <div key={i} className="inline-flex items-center gap-2 px-6">
-            <span
-              className="font-display text-neon-cyan/30 tracking-widest"
-              style={{ fontSize: '10px' }}
-            >
-              {k}
-            </span>
-            <span
-              className="font-display text-neon-cyan font-bold tracking-wider"
-              style={{ fontSize: '10px' }}
-            >
-              {v}
-            </span>
-            <span className="text-neon-cyan/15">◆</span>
-          </div>
+        {items.map((item, i) => (
+          <TickerItem key={i} item={item} />
         ))}
+        {/* Duplicated for the seamless scroll loop only; hidden so screen readers see one copy. */}
+        <div aria-hidden="true" className="flex items-center gap-8">
+          {items.map((item, i) => (
+            <TickerItem key={i} item={item} />
+          ))}
+        </div>
       </div>
     </div>
   )
