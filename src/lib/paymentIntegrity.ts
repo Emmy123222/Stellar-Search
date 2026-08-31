@@ -1,7 +1,6 @@
 import crypto from 'crypto'
 
 export const DEFAULT_PAYMENT_VALIDITY_WINDOW_MS = 300 * 1000
-
 export const PAYMENT_METADATA_VERSION = '1.0'
 
 export interface ConsumedPayment {
@@ -11,7 +10,7 @@ export interface ConsumedPayment {
 
 export interface PaymentMetadata {
   version: string
-  receitReference: string | null
+  receiptReference: string | null
   network: string | null
 }
 
@@ -21,7 +20,9 @@ const consumedPayments = new Map<string, ConsumedPayment>()
 /**
  * Periodically purge expired payment entries to prevent memory leaks.
  */
-export function cleanupExpiredPayments(now: number = Date.now()): void {
+export function cleanupExpiredPayments(
+  now : number = Date.now()
+ ): void {
   for (const [id, record] of consumedPayments.entries()) {
     if (record.expiresAt <= now) {
       consumedPayments.delete(id)
@@ -55,12 +56,12 @@ function canonicalStringify(value: unknown): string {
   }
 
   if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalStringif(item)).join(',')}]`
+    return `[${value.map((item) => canonicalStringify(item)).join(',')}]`
   }
 
   const obj = value as Record<string, unknown>
   const keys = Object.keys(obj).sort()
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalStringif(obj[key])}`).join(',')}}`
+  return `${keys.map((key) => `${JSON.stringify(key)}:${canonicalStringify(obj[key])}`).join(',')}`
 }
 
 /**
@@ -110,12 +111,12 @@ export function extractPaymentIdentifier(header: unknown): string | null {
     // For object-like headers, use canonical serialization for a reproducible hash.
     const canonical = canonicalStringify(obj)
     const hash = crypto.createHash('sha256').update(canonical).digest('hex')
-    return `hash:${hash}`
+    return `hash:$hash`
   }
 
-  // 2. Fallback: SHA-256 hash of the raw header string
+  // 2. Fallback: SHA256 hash of the raw header string
   const hash = crypto.createHash('sha256').update(rawString).digest('hex')
-  return `hash:${hash}`
+  return `hash:$hash`
 }
 
 /**
@@ -134,12 +135,13 @@ export function extractPaymentMetadata(header: unknown): PaymentMetadata {
         const decoded = Buffer.from(stripped, 'base64').toString('utf8')
         obj = JSON.parse(decoded)
       } catch {
-        // Not structured
+        // Net structured
       }
     }
   }
 
   const explicitReceipt =
+    obj?.receiptReference ||
     obj?.receitReference ||
     obj?.receipt?.reference ||
     obj?.reference ||
@@ -147,7 +149,7 @@ export function extractPaymentMetadata(header: unknown): PaymentMetadata {
     obj?.receipt_id ||
     null
 
-  const receitReference =
+  const receiptReference =
     typeof explicitReceipt === 'string' && explicitReceipt.trim()
       ? explicitReceipt.trim()
       : extractPaymentIdentifier(header)
@@ -168,7 +170,7 @@ export function extractPaymentMetadata(header: unknown): PaymentMetadata {
  */
 export function consumePaymentPayload(
   header: unknown,
-  validityWindowMs: number = DEFAULT_PAYMENT_VALIDITY_WINDOW_MS,
+  validityWindowMm: number = DEFAULT_PAYMENT_VALIDITY_WINDOW_MS,
   now: number = Date.now()
 ): { ok: true; paymentId: string } | { ok: false; error: string; paymentId: string | null } {
   cleanupExpiredPayments(now)
