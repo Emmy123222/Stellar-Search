@@ -1,28 +1,42 @@
-import { useRef, useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
-import { Search, Zap, AlertTriangle, Calendar } from 'lucide-react'
-import { toast } from 'sonner'
-import { IS_MAINNET, EXPECTED_WALLET_NETWORK, AMOUNT_USDC } from '../../lib/stellar'
+import { useRef, useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { Search, Zap, AlertTriangle, Calendar } from "lucide-react";
+import { toast } from "sonner";
+import {
+  IS_MAINNET,
+  EXPECTED_WALLET_NETWORK,
+  AMOUNT_USDC,
+} from "../../lib/stellar";
 
 export interface FreshnessOption {
-  label: string
-  value: string
+  label: string;
+  value: string;
+}
+
+export interface SearchOptions {
+  locale: string;
+  country: string;
+  language: string;
 }
 
 export const FRESHNESS_OPTIONS: FreshnessOption[] = [
-  { label: 'Any Time', value: '' },
-  { label: 'Past Day', value: 'pd' },
-  { label: 'Past Week', value: 'pw' },
-  { label: 'Past Month', value: 'pm' },
-]
+  { label: "Any Time", value: "" },
+  { label: "Past Day", value: "pd" },
+  { label: "Past Week", value: "pw" },
+  { label: "Past Month", value: "pm" },
+];
 
 interface Props {
-  onSearch: (query: string, freshness?: string) => void
-  isSearching: boolean
-  walletConnected: boolean
-  usdcBalance: string
-  walletNetwork: string
-  defaultQuery?: string
+  onSearch: (
+    query: string,
+    freshness?: string,
+    options?: SearchOptions,
+  ) => void;
+  isSearching: boolean;
+  walletConnected: boolean;
+  usdcBalance: string;
+  walletNetwork: string;
+  defaultQuery?: string;
 }
 
 export function SearchBar({
@@ -31,32 +45,45 @@ export function SearchBar({
   walletConnected,
   usdcBalance,
   walletNetwork,
-  defaultQuery = '',
+  defaultQuery = "",
 }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [freshness, setFreshness] = useState<string>('')
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [freshness, setFreshness] = useState<string>("");
+  const [locale, setLocale] = useState<string>("en-US");
+  const [country, setCountry] = useState<string>("us");
+  const [language, setLanguage] = useState<string>("en");
 
-  const isWrongNetwork = walletConnected && walletNetwork !== EXPECTED_WALLET_NETWORK
+  const isWrongNetwork =
+    walletConnected && walletNetwork !== EXPECTED_WALLET_NETWORK;
 
   useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+    inputRef.current?.focus();
+  }, []);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (isWrongNetwork) return
+    e.preventDefault();
+    if (isWrongNetwork) return;
 
     if (walletConnected && parseFloat(usdcBalance) < parseFloat(AMOUNT_USDC)) {
-      toast.info('Low Balance', { description: `You need at least ${AMOUNT_USDC} USDC to search.` })
-      return
+      toast.info("Low Balance", {
+        description: `You need at least ${AMOUNT_USDC} USDC to search.`,
+      });
+      return;
     }
 
-    const q = (e.currentTarget.elements.namedItem('q') as HTMLInputElement).value.trim()
-    if (q) onSearch(q, freshness)
-  }
+    const q = (
+      e.currentTarget.elements.namedItem("q") as HTMLInputElement
+    ).value.trim();
+    if (q) onSearch(q, freshness, { locale, country, language });
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="relative" role="search" aria-label="Search">
+    <form
+      onSubmit={handleSubmit}
+      className="relative"
+      role="search"
+      aria-label="Search"
+    >
       {isWrongNetwork && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -65,7 +92,8 @@ export function SearchBar({
         >
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           <p className="text-xs font-display tracking-wide">
-            NETWORK MISMATCH: Switch Freighter to {EXPECTED_WALLET_NETWORK} to search
+            NETWORK MISMATCH: Switch Freighter to {EXPECTED_WALLET_NETWORK} to
+            search
           </p>
         </motion.div>
       )}
@@ -74,13 +102,13 @@ export function SearchBar({
         {/* Glow ring on focus */}
         <div
           className={`absolute -inset-px rounded-2xl opacity-0 group-focus-within:opacity-100 transition-opacity blur-sm ${
-            isWrongNetwork ? 'bg-red-500/20' : ''
+            isWrongNetwork ? "bg-red-500/20" : ""
           }`}
           style={
             !isWrongNetwork
               ? {
                   background:
-                    'linear-gradient(135deg, rgba(0,245,255,0.2), rgba(14,165,233,0.2), rgba(0,245,255,0.2))',
+                    "linear-gradient(135deg, rgba(0,245,255,0.2), rgba(14,165,233,0.2), rgba(0,245,255,0.2))",
                 }
               : {}
           }
@@ -89,17 +117,19 @@ export function SearchBar({
         <div
           className="relative flex flex-col sm:flex-row items-stretch sm:items-center gap-3 px-3 sm:px-5 py-3 sm:py-4 rounded-2xl"
           style={{
-            background: 'rgba(6,13,20,0.85)',
+            background: "rgba(6,13,20,0.85)",
             border: isWrongNetwork
-              ? '1px solid rgba(239,68,68,0.3)'
-              : '1px solid rgba(0,245,255,0.15)',
-            backdropFilter: 'blur(16px)',
+              ? "1px solid rgba(239,68,68,0.3)"
+              : "1px solid rgba(0,245,255,0.15)",
+            backdropFilter: "blur(16px)",
           }}
         >
           <Search
             className="w-5 h-5 flex-shrink-0"
             style={{
-              color: isWrongNetwork ? 'rgba(239,68,68,0.5)' : 'rgba(0,245,255,0.5)',
+              color: isWrongNetwork
+                ? "rgba(239,68,68,0.5)"
+                : "rgba(0,245,255,0.5)",
             }}
           />
 
@@ -111,12 +141,12 @@ export function SearchBar({
             defaultValue={defaultQuery}
             placeholder={
               isWrongNetwork
-                ? 'Switch network to search...'
-                : 'Search anything — pay per query, not per month...'
+                ? "Switch network to search..."
+                : "Search anything — pay per query, not per month..."
             }
             disabled={isSearching || isWrongNetwork}
             className="flex-1 min-w-0 bg-transparent text-white placeholder:text-white/20 text-sm outline-none disabled:opacity-50"
-            style={{ caretColor: isWrongNetwork ? '#ef4444' : '#00f5ff' }}
+            style={{ caretColor: isWrongNetwork ? "#ef4444" : "#00f5ff" }}
           />
 
           <motion.button
@@ -125,16 +155,18 @@ export function SearchBar({
             className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl font-display text-xs tracking-wider transition-all disabled:opacity-40"
             style={{
               background:
-                isSearching || isWrongNetwork ? 'transparent' : 'rgba(0,245,255,0.12)',
-              border: '1px solid',
+                isSearching || isWrongNetwork
+                  ? "transparent"
+                  : "rgba(0,245,255,0.12)",
+              border: "1px solid",
               borderColor:
                 isSearching || isWrongNetwork
-                  ? 'rgba(255,255,255,0.1)'
-                  : 'rgba(0,245,255,0.4)',
+                  ? "rgba(255,255,255,0.1)"
+                  : "rgba(0,245,255,0.4)",
               color:
                 isSearching || isWrongNetwork
-                  ? 'rgba(255,255,255,0.3)'
-                  : '#00f5ff',
+                  ? "rgba(255,255,255,0.3)"
+                  : "#00f5ff",
             }}
             whileTap={{ scale: 0.96 }}
           >
@@ -142,7 +174,7 @@ export function SearchBar({
               <motion.div
                 className="w-3.5 h-3.5 rounded-full border border-neon-cyan/40 border-t-neon-cyan"
                 animate={{ rotate: 360 }}
-                transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
               />
             ) : (
               <>
@@ -151,6 +183,61 @@ export function SearchBar({
             )}
           </motion.button>
         </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3 px-1">
+        <label className="text-left">
+          <span className="block font-display text-[10px] uppercase tracking-[0.2em] text-white/30 mb-1">
+            Locale
+          </span>
+          <select
+            aria-label="Search locale"
+            value={locale}
+            onChange={(e) => setLocale(e.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-sm text-white outline-none"
+          >
+            <option value="en-US">English (US)</option>
+            <option value="en-GB">English (UK)</option>
+            <option value="fr-FR">Français</option>
+            <option value="es-ES">Español</option>
+            <option value="de-DE">Deutsch</option>
+          </select>
+        </label>
+
+        <label className="text-left">
+          <span className="block font-display text-[10px] uppercase tracking-[0.2em] text-white/30 mb-1">
+            Country
+          </span>
+          <select
+            aria-label="Search country"
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-sm text-white outline-none"
+          >
+            <option value="us">US</option>
+            <option value="gb">UK</option>
+            <option value="fr">FR</option>
+            <option value="es">ES</option>
+            <option value="de">DE</option>
+          </select>
+        </label>
+
+        <label className="text-left">
+          <span className="block font-display text-[10px] uppercase tracking-[0.2em] text-white/30 mb-1">
+            Language
+          </span>
+          <select
+            aria-label="Search language"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-sm text-white outline-none"
+          >
+            <option value="en">English</option>
+            <option value="fr">French</option>
+            <option value="es">Spanish</option>
+            <option value="de">German</option>
+          </select>
+        </label>
       </div>
 
       {/* Date Range Freshness Filter Chips (#17) */}
@@ -163,7 +250,7 @@ export function SearchBar({
           <Calendar className="w-3 h-3 text-neon-cyan/60" /> Freshness:
         </span>
         {FRESHNESS_OPTIONS.map((opt) => {
-          const isSelected = freshness === opt.value
+          const isSelected = freshness === opt.value;
           return (
             <button
               key={opt.value}
@@ -172,18 +259,18 @@ export function SearchBar({
               className="px-2.5 py-1 rounded-lg font-display text-xs transition-all border cursor-pointer"
               style={{
                 background: isSelected
-                  ? 'rgba(0,245,255,0.15)'
-                  : 'rgba(255,255,255,0.03)',
+                  ? "rgba(0,245,255,0.15)"
+                  : "rgba(255,255,255,0.03)",
                 borderColor: isSelected
-                  ? 'rgba(0,245,255,0.5)'
-                  : 'rgba(255,255,255,0.08)',
-                color: isSelected ? '#00f5ff' : 'rgba(255,255,255,0.4)',
+                  ? "rgba(0,245,255,0.5)"
+                  : "rgba(255,255,255,0.08)",
+                color: isSelected ? "#00f5ff" : "rgba(255,255,255,0.4)",
               }}
               aria-pressed={isSelected}
             >
               {opt.label}
             </button>
-          )
+          );
         })}
       </div>
 
@@ -192,14 +279,14 @@ export function SearchBar({
         <p className="font-display text-xs text-white/20">
           {walletConnected
             ? `Balance: ${usdcBalance} USDC · ~${Math.floor(
-                parseFloat(usdcBalance) / parseFloat(AMOUNT_USDC)
+                parseFloat(usdcBalance) / parseFloat(AMOUNT_USDC),
               ).toLocaleString()} queries left`
-            : 'Connect Freighter wallet to search'}
+            : "Connect Freighter wallet to search"}
         </p>
         <p className="font-display text-xs text-white/20 uppercase tracking-widest">
-          Serper.dev · x402 · Stellar {IS_MAINNET ? 'Mainnet' : 'Testnet'}
+          Serper.dev · x402 · Stellar {IS_MAINNET ? "Mainnet" : "Testnet"}
         </p>
       </div>
     </form>
-  )
+  );
 }
