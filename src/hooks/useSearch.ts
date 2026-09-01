@@ -13,7 +13,8 @@
 import { useState, useCallback }              from 'react'
 import { toast }                               from 'sonner'
 import { Buffer }                              from 'buffer'
-import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
+import { IS_MAINNET, EXPECTED_WALLET_NETWORK, AMOUNT_USDC, explorerTxUrl } from '../lib/stellar'
+import { useSpendingLimits }                   from './useSpendingLimits'
 
 // The x402/Freighter/Stellar payment stack is loaded on demand, on the first
 // call to `search()`, rather than imported statically — every page load
@@ -73,6 +74,11 @@ export function useSearch(walletAddress: string | null = null) {
     query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
   })
 
+  // Client-side per-session / daily spending guard (#313). Blocks a paid
+  // search *before* the Freighter prompt when a cap would be exceeded;
+  // settles the ledger only for verified payments (txHash present).
+  const { recordSearchStart, recordSearchSettled } = useSpendingLimits()
+
   const search = useCallback(
     async (
       query: string,
@@ -119,6 +125,19 @@ export function useSearch(walletAddress: string | null = null) {
 
     try {
       if (!walletAddress) throw new Error('Connect your Freighter wallet first.')
+
+      // Guard — run before any payment SDK loads or Freighter prompt opens.
+      // A blocked search reserves nothing, so no release is needed.
+      const spendCheck = recordSearchStart(AMOUNT_USDC)
+      if (!spendCheck.allowed) {
+        const isSession = spendCheck.kind === 'session'
+        const cap = isSession ? spendCheck.sessionCap : spendCheck.dailyCap
+        const msg = `Spending limit reached: ${isSession ? 'session' : 'daily'} cap (${cap} USDC). Raise it on the Dashboard.`
+        console.warn('🛑 Search blocked by spending limit:', spendCheck)
+        toast.error('Search Blocked by Spending Limit', { description: msg })
+        setSession((prev: SearchSession) => ({ ...prev, status: 'error', error: msg }))
+        return
+      }
 
       console.log('🔍 Starting search with wallet:', walletAddress)
 
@@ -181,6 +200,8 @@ export function useSearch(walletAddress: string | null = null) {
 
       if (firstRes.status !== 402) {
         if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`)
+        // Free response (no payment required) — nothing was settled.
+        recordSearchSettled(AMOUNT_USDC, null)
         const data = (await firstRes.json()) as SearchResponse
         return setSession({
           query: data.executedQuery ?? data.query ?? query,
@@ -262,6 +283,11 @@ export function useSearch(walletAddress: string | null = null) {
         })
       }
 
+      // Settle the spending ledger only for a verified payment (txHash).
+      // Without a txHash the search was free or unverified — release the
+      // reservation instead of counting it against the caps (#313).
+      recordSearchSettled(data.paidAmount || AMOUNT_USDC, data.txHash)
+
       // Persist receipt
       if (data.txHash) {
         try {
@@ -287,6 +313,8 @@ export function useSearch(walletAddress: string | null = null) {
 
     } catch (err: any) {
       console.error('❌ Search failed:', err)
+      // Release the in-flight reservation — nothing was settled.
+      recordSearchSettled(AMOUNT_USDC, null)
       const msg = err.message || 'Search failed.'
       toast.error('Search Payment Failed', { description: msg })
       setSession((prev: SearchSession) => ({
@@ -295,7 +323,7 @@ export function useSearch(walletAddress: string | null = null) {
         error:  msg,
       }))
     }
-  }, [walletAddress])
+  }, [walletAddress, recordSearchStart, recordSearchSettled])
 
   const reset = useCallback(() => {
     setSession({

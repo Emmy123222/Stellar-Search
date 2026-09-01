@@ -127,6 +127,19 @@ To guarantee that each payment identifier authorizes **exactly one provider call
 - **Payload Invalidation:** Extracts transaction hashes (or SHA-256 fallback hashes of payment headers) and invalidates consumed payloads for a 300-second window.
 - **Concurrency Throttling:** Rapid parallel requests using identical payment payloads are throttled so only one search query proceeds; concurrent duplicates immediately receive HTTP 402 (`Payment payload already consumed`).
 
+### Client-side spending limits (#313)
+
+The browser UI ships a local guardrail against accidental repeated searches: per-**session** and per-**calendar-day** USDC caps, configured under **Dashboard → Spending limits**.
+
+- **Safe defaults:** session `0.01` USDC (10 searches) and daily `0.05` USDC (50 searches) at `0.001 USDC`/query, enabled by default. Setting a cap to `0` removes the limit for that bucket; caps are validated per-field and corrupt storage falls back to the safe defaults (a bad write can never widen the guard).
+- **Verified-receipt accounting:** a search counts toward the caps only after the server returns a verified `txHash` — failed or free searches release their in-flight reservation and count nothing.
+- **Multi-tab safe:** the ledger lives in `localStorage`, shared by every tab. In-flight searches **reserve** their cost (5-minute TTL), so two tabs cannot both exceed a cap; reservations from crashed tabs expire on their own, and tabs re-sync via the `storage` event.
+- **Session window:** a session is a sliding 30-minute window — it resets after 30 minutes without a settled spend; the daily bucket resets at local midnight.
+- **Raising a cap requires explicit confirmation** in the dashboard; the guard never silently widens itself.
+- **Explicit approval preserved:** the guard blocks *before* the Freighter prompt — it never signs, skips, or bypasses x402 settlement. Every paid action still requires the user's explicit wallet approval and server-side verified settlement (`src/lib/constants` remains the single source of truth; Express/Vercel/MCP paid routes are unchanged).
+
+Implementation: `src/lib/spendingLimits.ts` (ledger + guard) and `src/hooks/useSpendingLimits.ts` (reactive wrapper), wired into `useSearch.ts` and the Dashboard.
+
 ### Sequence diagram
 
 ```mermaid
@@ -165,7 +178,8 @@ stellar-search/
 ├── src/                        # React frontend
 │   ├── hooks/
 │   │   ├── useFreighterWallet.ts   # Real Freighter + Horizon integration
-│   │   └── useSearch.ts            # Calls real server endpoint
+│   │   ├── useSearch.ts            # Calls real server endpoint
+│   │   └── useSpendingLimits.ts    # Client-side session/daily spend caps (#313)
 │   ├── components/
 │   │   ├── AnimatedBackground.tsx  # Canvas animation
 │   │   ├── WalletPanel.tsx         # Real Freighter connect + live balances
@@ -177,7 +191,9 @@ stellar-search/
 │   │   ├── SearchPage.tsx
 │   │   ├── DocsPage.tsx
 │   │   └── DashboardPage.tsx       # Live Horizon tx history
-│   └── lib/stellar.ts              # Horizon helpers
+│   └── lib/
+│       ├── stellar.ts              # Horizon helpers
+│       └── spendingLimits.ts       # Spending-limit ledger + guard (#313)
 ├── server/
 │   └── index.ts                # Express + @x402/express + Serper.dev + Groq + batch/jsonl + jobs/webhooks
 ├── api/
@@ -350,6 +366,9 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
 | `src/components/search/SpellingCorrectionBanner.tsx` | 85% | 90% | 70% | 85% |
 | `src/pages/SearchPage.tsx` | 65% | 65% | 70% | 75% |
+| `src/pages/DashboardPage.tsx` | 70% | 55% | 55% | 75% |
+| `src/lib/spendingLimits.ts` | 90% | 75% | 95% | 90% |
+| `src/hooks/useSpendingLimits.ts` | 90% | 80% | 95% | 90% |
 | `server/index.ts` | 30% | 24% | 25% | 35% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
 | `api/search/batch.ts` | 60% | 50% | 45% | 65% |

@@ -1,10 +1,12 @@
 import { motion } from 'framer-motion'
-import { useState, useEffect, useMemo } from 'react'
-import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search } from 'lucide-react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search, Shield, AlertTriangle } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, truncateHash, formatTimeAgo, explorerTxUrl, explorerAccountUrl } from '../lib/stellar'
+import { useSpendingLimits } from '../hooks/useSpendingLimits'
 import type { StellarTransaction } from '../hooks/useFreighterWallet'
 import type { SearchReceipt } from '../types'
+import { parseUsdc } from '../lib/spendingLimits'
 
 interface Props {
   transactions: StellarTransaction[]
@@ -18,6 +20,39 @@ interface Props {
 export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance, xlmBalance, onRefresh }: Props) {
   const [receipts, setReceipts] = useState<SearchReceipt[]>([])
 
+  // Client-side spending guard state (#313) — reactive config/usage, synced
+  // across tabs via storage events; re-read on an interval so searches that
+  // settle in this tab (no storage event fires locally) show up too.
+  const { config, usage, updateConfig, refresh } = useSpendingLimits()
+  const [sessionCapInput, setSessionCapInput] = useState(config.sessionCap)
+  const [dailyCapInput, setDailyCapInput] = useState(config.dailyCap)
+  const [enabledInput, setEnabledInput] = useState(config.enabled)
+  const [pendingRaise, setPendingRaise] = useState<{ session: boolean; daily: boolean } | null>(null)
+  const [inputError, setInputError] = useState<string | null>(null)
+  const [savedAt, setSavedAt] = useState(false)
+  const prevConfigRef = useRef(config)
+
+  useEffect(() => {
+    const id = setInterval(() => refresh(), 5000)
+    return () => clearInterval(id)
+  }, [refresh])
+
+  // Adopt externally-changed caps (other tabs) without clobbering typing:
+  // only overwrite an input while it still matches the previously saved value.
+  useEffect(() => {
+    const prev = prevConfigRef.current
+    if (prev.sessionCap !== config.sessionCap && sessionCapInput === prev.sessionCap) {
+      setSessionCapInput(config.sessionCap)
+    }
+    if (prev.dailyCap !== config.dailyCap && dailyCapInput === prev.dailyCap) {
+      setDailyCapInput(config.dailyCap)
+    }
+    if (prev.enabled !== config.enabled) {
+      setEnabledInput(config.enabled)
+    }
+    prevConfigRef.current = config
+  }, [config, sessionCapInput, dailyCapInput])
+
   useEffect(() => {
     const raw = localStorage.getItem('stellarsearch_receipts')
     if (raw) {
@@ -28,6 +63,44 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
       }
     }
   }, [])
+
+  const fmtInput = (v: string) => String(Math.round(parseUsdc(v) * 1000) / 1000)
+
+  const applyConfig = (sessionCap: string, dailyCap: string) => {
+    updateConfig({ enabled: enabledInput, sessionCap, dailyCap })
+    setSessionCapInput(sessionCap)
+    setDailyCapInput(dailyCap)
+    setPendingRaise(null)
+    setInputError(null)
+    setSavedAt(true)
+    setTimeout(() => setSavedAt(false), 2000)
+  }
+
+  const handleSave = () => {
+    const nextSession = parseUsdc(sessionCapInput)
+    const nextDaily = parseUsdc(dailyCapInput)
+    if (!Number.isFinite(nextSession) || !Number.isFinite(nextDaily) || nextSession < 0 || nextDaily < 0) {
+      setInputError('Enter valid USDC amounts (0 = no limit for that bucket).')
+      return
+    }
+    setInputError(null)
+
+    // Raising a cap weakens the guardrail — require explicit confirmation.
+    const raisingSession = nextSession > parseUsdc(config.sessionCap)
+    const raisingDaily = nextDaily > parseUsdc(config.dailyCap)
+    if (raisingSession || raisingDaily) {
+      setPendingRaise({ session: raisingSession, daily: raisingDaily })
+      return
+    }
+    applyConfig(fmtInput(sessionCapInput), fmtInput(dailyCapInput))
+  }
+
+  const sessionSpent = parseUsdc(usage.sessionSpent)
+  const dailySpent = parseUsdc(usage.dailySpent)
+  const sessionCap = parseUsdc(config.sessionCap)
+  const dailyCap = parseUsdc(config.dailyCap)
+  const sessionPct = sessionCap > 0 ? Math.min(100, (sessionSpent / sessionCap) * 100) : 0
+  const dailyPct = dailyCap > 0 ? Math.min(100, (dailySpent / dailyCap) * 100) : 0
 
   const networkLabel = IS_MAINNET ? 'STELLAR MAINNET' : 'STELLAR TESTNET'
 
@@ -124,6 +197,161 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
           <p className="font-display text-white/30 text-sm">Connect your Freighter wallet to see live account data</p>
         </motion.div>
       )}
+
+      {/* Spending limits — local guardrail (#313) */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.12 }}
+        className="rounded-2xl p-5"
+        style={{ background: 'rgba(6,13,20,0.7)', border: '1px solid rgba(255,255,255,0.07)' }}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-neon-cyan/40" />
+            <span className="font-display text-xs text-white/30 tracking-widest">SPENDING LIMITS</span>
+            <span className="font-display text-white/15" style={{ fontSize: '10px' }}>· LOCAL GUARDRAIL</span>
+          </div>
+          <button
+            onClick={() => setEnabledInput(!enabledInput)}
+            className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border font-display text-[10px] tracking-wider transition-colors ${
+              enabledInput
+                ? 'text-neon-green/70 border-neon-green/25 bg-neon-green/5'
+                : 'text-white/30 border-white/10 hover:text-white/50'
+            }`}
+            aria-pressed={enabledInput}
+            title={enabledInput ? 'Spending limits active — click to disable' : 'Spending limits disabled — click to enable'}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${enabledInput ? 'bg-neon-green' : 'bg-white/20'}`} />
+            {enabledInput ? 'ENFORCED' : 'OFF'}
+          </button>
+        </div>
+        <p className="text-white/30 text-xs mb-4">
+          Local caps on paid searches ({AMOUNT_USDC} USDC each). Raising a cap requires confirmation.
+        </p>
+
+        <div className="space-y-4 mb-5">
+          {/* Session usage */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-display text-[10px] text-white/40 tracking-wider">SESSION</span>
+              <span className="font-mono text-[11px] text-white/50">
+                {usage.sessionSpent} / {sessionCap > 0 ? config.sessionCap : '∞'} USDC
+                {usage.reservations.length > 0 && (
+                  <span className="text-neon-cyan/60 ml-2">· {usage.reservations.length} in flight</span>
+                )}
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+              {sessionCap > 0 ? (
+                <motion.div
+                  className={`h-full rounded-full ${sessionPct >= 90 ? 'bg-neon-amber' : 'bg-neon-cyan'}`}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${sessionPct}%` }}
+                  transition={{ duration: 0.6, ease: 'easeOut' }}
+                />
+              ) : (
+                <div className="h-full w-full rounded-full bg-white/5" />
+              )}
+            </div>
+          </div>
+
+          {/* Daily usage */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="font-display text-[10px] text-white/40 tracking-wider">DAILY</span>
+              <span className="font-mono text-[11px] text-white/50">
+                {usage.dailySpent} / {dailyCap > 0 ? config.dailyCap : '∞'} USDC
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+              {dailyCap > 0 ? (
+                <motion.div
+                  className={`h-full rounded-full ${dailyPct >= 90 ? 'bg-neon-amber' : 'bg-neon-green'}`}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${dailyPct}%` }}
+                  transition={{ duration: 0.6, ease: 'easeOut' }}
+                />
+              ) : (
+                <div className="h-full w-full rounded-full bg-white/5" />
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Cap configuration */}
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex-1 min-w-[110px]">
+            <span className="font-display text-[10px] text-white/35 tracking-wider block mb-1">SESSION CAP (USDC)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.001"
+              value={sessionCapInput}
+              onChange={(e) => setSessionCapInput(e.target.value)}
+              disabled={!enabledInput}
+              className="w-full px-3 py-2 rounded-lg bg-black/30 border border-white/10 font-mono text-sm text-white/80 focus:outline-none focus:border-neon-cyan/50 disabled:opacity-40"
+              aria-label="Session spending cap in USDC"
+            />
+          </label>
+          <label className="flex-1 min-w-[110px]">
+            <span className="font-display text-[10px] text-white/35 tracking-wider block mb-1">DAILY CAP (USDC)</span>
+            <input
+              type="number"
+              min="0"
+              step="0.001"
+              value={dailyCapInput}
+              onChange={(e) => setDailyCapInput(e.target.value)}
+              disabled={!enabledInput}
+              className="w-full px-3 py-2 rounded-lg bg-black/30 border border-white/10 font-mono text-sm text-white/80 focus:outline-none focus:border-neon-cyan/50 disabled:opacity-40"
+              aria-label="Daily spending cap in USDC"
+            />
+          </label>
+          <button
+            onClick={handleSave}
+            disabled={!enabledInput}
+            className="px-4 py-2 rounded-lg font-display text-xs tracking-wider text-neon-cyan border border-neon-cyan/30 hover:bg-neon-cyan/10 transition-colors disabled:opacity-40"
+          >
+            {savedAt ? 'SAVED ✓' : 'SAVE CAPS'}
+          </button>
+        </div>
+        {inputError && <p className="text-neon-amber/80 text-xs mt-2">{inputError}</p>}
+        <p className="text-white/20 text-[10px] mt-2">0 = no limit · limits apply per browser (all tabs share them)</p>
+
+        {/* Confirmation required to raise a cap */}
+        {pendingRaise && (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 rounded-xl p-4 flex flex-wrap items-center gap-3"
+            style={{ background: 'rgba(255,184,0,0.06)', border: '1px solid rgba(255,184,0,0.25)' }}
+          >
+            <AlertTriangle className="w-4 h-4 text-neon-amber/80 flex-shrink-0" />
+            <p className="text-xs text-white/60 flex-1 min-w-[200px]">
+              {pendingRaise.session && pendingRaise.daily
+                ? `This raises both caps (session ${config.sessionCap} → ${sessionCapInput}, daily ${config.dailyCap} → ${dailyCapInput} USDC).`
+                : pendingRaise.session
+                  ? `This raises your session cap from ${config.sessionCap} to ${sessionCapInput} USDC.`
+                  : `This raises your daily cap from ${config.dailyCap} to ${dailyCapInput} USDC.`}
+              {' '}Raising a cap weakens the local guardrail. Continue?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => applyConfig(fmtInput(sessionCapInput), fmtInput(dailyCapInput))}
+                className="px-3 py-1.5 rounded-lg font-display text-[10px] tracking-wider text-neon-amber border border-neon-amber/40 hover:bg-neon-amber/10 transition-colors"
+              >
+                CONFIRM RAISE
+              </button>
+              <button
+                onClick={() => setPendingRaise(null)}
+                className="px-3 py-1.5 rounded-lg font-display text-[10px] tracking-wider text-white/40 border border-white/10 hover:text-white/70 transition-colors"
+              >
+                CANCEL
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </motion.div>
 
       {/* USDC Spent Chart */}
       {publicKey && chartData.length > 0 && (
