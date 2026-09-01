@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy, ShieldAlert } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
+import { useSavedResearch } from '../../hooks/useSavedResearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
 import { validateAndNormalizeUrl } from '../../lib/urlSanitizer'
 
@@ -24,6 +25,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summarizing, setSummarizing]       = useState(false)
   const [copiedUrl, setCopiedUrl]           = useState<string | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const { isSaved, toggle: toggleSaved }    = useSavedResearch()
 
   const exportAsJSON = () => {
     if (!results.length) return

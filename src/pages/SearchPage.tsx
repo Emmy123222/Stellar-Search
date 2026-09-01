@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { Search, Zap, AlertCircle } from 'lucide-react'
 import {
   SearchBar,
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export function SearchPage({ wallet, onConnectWallet, session, search, reset }: Props) {
+  const { t } = useTranslation('search')
   const [dismissedSuggestion, setDismissedSuggestion] = useState(false)
 
   const handleSearch = (query: string, freshness?: string) => {
@@ -92,7 +94,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
                 style={{ border: '1px solid rgba(0,245,255,0.4)', background: 'rgba(0,245,255,0.08)', boxShadow: '0 0 20px rgba(0,245,255,0.15)' }}
               >
                 <Zap className="w-4 h-4" />
-                CONNECT FREIGHTER TO SEARCH
+                {t('connectCta')}
               </motion.button>
             )}
           </motion.div>
@@ -163,6 +165,8 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
             {(session.status === 'complete' || session.status === 'error') && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
+                <button onClick={reset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
+                  {t('newSearch')}
                 <button onClick={handleReset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
                   ← NEW SEARCH
                 </button>
