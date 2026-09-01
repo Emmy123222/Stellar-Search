@@ -71,8 +71,17 @@ npm run dev
 ### 6. Test the x402 flow
 
 ```bash
-npm run test:search "Stellar blockchain"
+# Discovery mode: health + runtime checks
+npm run search:cli -- "Stellar x402" --mode discovery --json
+
+# Quote mode: fetch the x402 quote without settling payment
+npm run search:cli -- "Stellar x402" --mode quote --json --receipt ./tmp/quote.json
+
+# Search mode: run the paid flow with a timeout and optional freshness filter
+npm run search:cli -- "Stellar x402" --mode search --count 5 --timeout 30000 --freshness pw
 ```
+
+The CLI supports `discovery`, `quote`, and `search` modes, emits machine-readable JSON when `--json` is used, and can write a receipt file with `--receipt path/to/file.json`. For paid actions, prefer secure environment variables or a protected prompt for signing material; never pass private keys on the command line or print them in logs.
 
 ---
 
@@ -293,6 +302,21 @@ function verify(payload, signature, secret, tsHeader) {
 
 Express/Vercel/browser/MCP contracts stay aligned: `STELLAR_NETWORK`, `USDC_CONTRACT`, `AMOUNT_STROOPS=10000` (0.001 USDC), and verified settlement remain the single source of truth (`src/lib/constants`).
 
+### Spelling-Correction Metadata & User Confirmation (#302)
+
+When upstream search providers auto-correct or suggest queries ("Did you mean?"), callers and users can distinguish the query variations:
+
+- `originalQuery` — user/caller input query
+- `executedQuery` — actual query executed against the upstream search engine
+- `suggestedQuery` — spelling suggestion / "Did you mean" query text
+- `isCorrected` — boolean (`true` if `executedQuery` differs from `originalQuery`)
+- `query` — preserved for backwards compatibility (maps to executed query)
+
+**User Confirmation Mechanics:**
+- **Auto-Correction**: Displays an informative banner explaining that results were auto-corrected, with a one-click option to search the original query with explicit wallet confirmation.
+- **Did You Mean Suggestions**: Displays the suggested correction alongside "Search Suggestion" (which invokes the explicit Freighter confirmation flow) and a "Dismiss" action that closes the suggestion with **0 additional cost and no second payment**.
+- No automatic or silent payments are ever executed.
+
 ---
 
 ## Testing & Coverage
@@ -316,10 +340,16 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 | `src/lib/constants.ts` | 95% | 75% | 100% | 95% |
 | `src/lib/stellar.ts` | 95% | 90% | 95% | 95% |
 | `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
+| `src/lib/serperNormalizer.ts` | 95% | 90% | 100% | 95% |
 | `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
-| `server/index.ts` | 65% | 60% | 65% | 65% |
+| `src/components/search/SpellingCorrectionBanner.tsx` | 85% | 90% | 70% | 85% |
+| `src/pages/SearchPage.tsx` | 65% | 65% | 70% | 75% |
+| `server/index.ts` | 30% | 24% | 25% | 35% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
+| `api/search/batch.ts` | 60% | 50% | 45% | 65% |
+| `api/jobs.ts` | 45% | 30% | 30% | 55% |
+| `api/jobs/[id].ts` | 95% | 90% | 100% | 95% |
 | `api/health.ts` | 95% | 90% | 100% | 95% |
 | `api/index.ts` | 95% | 90% | 100% | 95% |
 | `api/ai/chat.ts` | 95% | 80% | 100% | 95% |

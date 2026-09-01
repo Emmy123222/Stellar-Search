@@ -96,6 +96,13 @@ describe('api/jobs & api/jobs/[id] — Serverless Async Jobs', () => {
     expect(res2._json.error).toContain('Query too long')
   })
 
+  it('rejects missing or empty query', async () => {
+    const { req, res } = mockReqRes({ method: 'POST', body: { query: '' } })
+    await jobsHandler(req, res)
+    expect(res._status).toBe(400)
+    expect(res._json.error).toMatch(/Missing required parameter/)
+  })
+
   it('validates webhookUrl and webhookSecret (SSRF protection & secret length)', () => {
     expect(validateWebhookUrl('http://example.com/webhook').ok).toBe(false)
     expect(validateWebhookUrl('https://localhost/webhook').ok).toBe(false)
@@ -193,6 +200,54 @@ describe('api/jobs & api/jobs/[id] — Serverless Async Jobs', () => {
       }),
       paymentVerified: true,
     }))
+  })
+
+  it('creates job and populates query correction metadata on execution', async () => {
+    const paymentPayload = {
+      transactionHash: 'c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef02',
+      from: 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3',
+      amount: '0.001',
+      network: 'stellar:testnet',
+    }
+    const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString('base64')
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        searchParameters: { q: 'stellar blockchain' },
+        searchInformation: { originalQuery: 'stelarr blockchan' },
+        organic: [{ title: 'Stellar Docs', link: 'https://developers.stellar.org', snippet: 'Official docs' }],
+      }),
+    }) as any
+
+    const { req, res } = mockReqRes({
+      method: 'POST',
+      body: { query: 'stelarr blockchan' },
+      headers: {
+        'x-payment': paymentHeader,
+        host: 'localhost:3000',
+        'x-forwarded-proto': 'https',
+      },
+    })
+
+    await jobsHandler(req, res)
+    expect(res._status).toBe(202)
+    expect(res._json.jobId).toBeDefined()
+    expect(res._json.statusUrl).toContain('/api/jobs/')
+    expect(res._json.paymentVerified).toBe(true)
+
+    // Wait for async execution
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const job = jobStore.get(res._json.jobId)
+    expect(job).toBeDefined()
+    expect(job.status).toBe('completed')
+    expect(job.result).toBeDefined()
+    expect(job.result.originalQuery).toBe('stelarr blockchan')
+    expect(job.result.executedQuery).toBe('stellar blockchain')
+    expect(job.result.suggestedQuery).toBe('stellar blockchain')
+    expect(job.result.isCorrected).toBe(true)
   })
 
   it('handles idempotency replay on POST /api/jobs', async () => {

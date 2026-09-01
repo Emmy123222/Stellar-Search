@@ -36,6 +36,7 @@ import {
   normalizeOrganicResults,
   normalizeImageResults,
   normalizeNewsResults,
+  normalizeQueryMetadata,
 } from '../src/lib/serperNormalizer.js'
 import type {
   SearchResponse,
@@ -43,7 +44,6 @@ import type {
   NewsSearchResponse,
   ApiErrorResponse,
   BatchJsonlEvent,
-  BatchJsonlQuoteEvent,
   BatchJsonlSettlementEvent,
   BatchJsonlResultEvent,
   BatchJsonlErrorEvent,
@@ -442,6 +442,7 @@ app.get(['/search', '/api/search'], async (req: Request, res: Response) => {
     if (stats.latencies.length > 200) stats.latencies.shift()
 
     const results = normalizeOrganicResults(data)
+    const queryMeta = normalizeQueryMetadata(data, cleanQ)
 
     // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
     const txHash = (req.headers['x-payment-response'] as string) || null
@@ -460,7 +461,7 @@ app.get(['/search', '/api/search'], async (req: Request, res: Response) => {
             },
             {
               role: 'user',
-              content: `Query: "${cleanQ}"\nTop results: ${topSnippets}`,
+              content: `Query: "${queryMeta.executedQuery}"\nTop results: ${topSnippets}`,
             },
           ],
           max_tokens: 120,
@@ -483,7 +484,11 @@ app.get(['/search', '/api/search'], async (req: Request, res: Response) => {
     }
 
     const responseBody: SearchResponse = {
-      query: cleanQ,
+      query: queryMeta.executedQuery,
+      originalQuery: queryMeta.originalQuery,
+      executedQuery: queryMeta.executedQuery,
+      suggestedQuery: queryMeta.suggestedQuery,
+      isCorrected: queryMeta.isCorrected,
       results,
       count: results.length,
       network: NETWORK,
@@ -687,8 +692,6 @@ app.post('/search/batch', async (req: Request, res: Response) => {
   }
   const parsedCount = Math.min(Math.max(parseInt(String(rawCount ?? '5')) || 5, 1), 20)
 
-  // Payment verification: require X-Payment covering aggregate amount, verified via integrity + x402 facilitator header.
-  // For batch we enforce that payment header is present; x402 middleware already guards but we also check replay.
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
   let paymentId: string | null
   let txHash: string | null = (req.headers['x-payment-response'] as string) || null
@@ -722,7 +725,6 @@ app.post('/search/batch', async (req: Request, res: Response) => {
     return res.status(402).json({ error: 'Payment required', quote: quoteEvent })
   }
 
-  // Idempotency reservation
   if (idempotencyKey) {
     batchIdempotencyStore.set(idempotencyKey, { requestId, expiresAt: Date.now() + 24 * 3600 * 1000 })
   }
@@ -801,8 +803,26 @@ app.post('/search/batch', async (req: Request, res: Response) => {
       stats.latencies.push(latencyMs)
       if (stats.latencies.length > 200) stats.latencies.shift()
       const results = normalizeOrganicResults(data)
-      addRecentReceipt({ id: txHash || `${requestId}-${i}`, query: q, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
-      const evt: BatchJsonlResultEvent = { v: 1, type: 'result', requestId, index: i, query: q, results, count: results.length, latencyMs, paidAmount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, txHash }
+      const queryMeta = normalizeQueryMetadata(data, q)
+      addRecentReceipt({ id: txHash || `${requestId}-${i}`, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+      const evt: BatchJsonlResultEvent = {
+        v: 1,
+        type: 'result',
+        requestId,
+        index: i,
+        query: queryMeta.executedQuery,
+        originalQuery: queryMeta.originalQuery,
+        executedQuery: queryMeta.executedQuery,
+        suggestedQuery: queryMeta.suggestedQuery,
+        isCorrected: queryMeta.isCorrected,
+        results,
+        count: results.length,
+        latencyMs,
+        paidAmount: AMOUNT_USDC,
+        currency: 'USDC',
+        network: NETWORK,
+        txHash,
+      }
       writeEvent(evt)
       succeeded++
     } catch (err: any) {
@@ -881,6 +901,7 @@ app.post('/jobs', async (req: Request, res: Response) => {
   if (!consumption.ok) return res.status(402).json({ error: consumption.error })
   paymentId = consumption.paymentId
   verified = true
+  txHash = (req.headers['x-payment-response'] as string) || null
   try {
     const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
     const parsed = JSON.parse(decoded)
@@ -944,8 +965,22 @@ app.post('/jobs', async (req: Request, res: Response) => {
       stats.latencies.push(latencyMs)
       if (stats.latencies.length > 200) stats.latencies.shift()
       const results = normalizeOrganicResults(data)
-      addRecentReceipt({ id: txHash || jobId, query: cleanQ, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
-      const responseBody: SearchResponse = { query: cleanQ, results, count: results.length, network: NETWORK, paidAmount: AMOUNT_USDC, currency: 'USDC', txHash, latencyMs }
+      const queryMeta = normalizeQueryMetadata(data, cleanQ)
+      addRecentReceipt({ id: txHash || jobId, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+      const responseBody: SearchResponse = {
+        query: queryMeta.executedQuery,
+        originalQuery: queryMeta.originalQuery,
+        executedQuery: queryMeta.executedQuery,
+        suggestedQuery: queryMeta.suggestedQuery,
+        isCorrected: queryMeta.isCorrected,
+        results,
+        count: results.length,
+        network: NETWORK,
+        paidAmount: AMOUNT_USDC,
+        currency: 'USDC',
+        txHash,
+        latencyMs,
+      }
       job.result = responseBody
       job.status = 'completed'
       job.updatedAt = new Date().toISOString()

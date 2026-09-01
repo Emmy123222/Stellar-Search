@@ -198,4 +198,30 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
     const unknownRes: any = await callToolHandler({ params: { name: 'unknown_tool', arguments: {} } })
     expect(unknownRes.isError).toBe(true)
   })
+
+  it('MCP check_balance handler uses Horizon and USDC issuer', async () => {
+    const callToolCall = mockSetRequestHandler.mock.calls.find(c => c[0] === CallToolRequestSchema)
+    const callToolHandler = callToolCall?.[1] as Function
+    if (callToolHandler) {
+      // Mock fetch for Horizon
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          balances: [
+            { asset_type: 'native', balance: '100.0000000' },
+            { asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: USDC_ISSUER, balance: '2.5000000' },
+          ],
+        }),
+      })
+      const originalFetch = global.fetch
+      global.fetch = mockFetch as any
+      const result: any = await callToolHandler({ params: { name: 'check_balance', arguments: { address: 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3' } } })
+      expect(result.content[0].text).toContain('USDC: 2.500000')
+      global.fetch = originalFetch
+    } else {
+      // Fallback: ensure USDC issuer aligns
+      expect(USDC_ISSUER).toBeDefined()
+    }
+  })
 })

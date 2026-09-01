@@ -1,296 +1,136 @@
 # Contributing to StellarSearch
 
-Thank you for taking the time to contribute! StellarSearch is an open-source, pay-per-query web search API built on the Stellar blockchain using the x402 payment protocol. Every improvement — from a one-line typo fix to a full feature implementation — is welcome.
-
-This document covers everything you need to go from zero to a merged pull request.
-
----
-
-## Table of Contents
-
-1. [Code of Conduct](#code-of-conduct)
-2. [Project Overview](#project-overview)
-3. [Prerequisites](#prerequisites)
-4. [Local Development Setup](#local-development-setup)
-5. [Project Structure](#project-structure)
-6. [Development Workflow](#development-workflow)
-7. [Submitting a Pull Request](#submitting-a-pull-request)
-8. [Issue Guidelines](#issue-guidelines)
-9. [Coding Standards](#coding-standards)
-10. [Testing](#testing)
-11. [Common Pitfalls](#common-pitfalls)
-12. [Getting Help](#getting-help)
-
----
-
-## Code of Conduct
-
-By participating in this project you agree to treat all contributors with respect. Harassment, discrimination, or hostile behaviour of any kind will not be tolerated. Be constructive, be kind, assume good intent.
-
----
-
-## Project Overview
-
-```
-Browser (Freighter wallet)
-    │
-    │  1. GET /search?q=...
-    ▼
-Express Server  ──── @x402/express middleware ────►  HTTP 402 + payment requirements
-    │                                                        │
-    │  3. Retry with X-Payment header                        │ 2. User signs via Freighter
-    ▼                                                        ▼
-x402 Facilitator (x402.org)  ──── verify + settle ────►  Stellar Testnet (0.001 USDC)
-    │
-    ▼
-Serper.dev  ──── real Google results ────►  Browser
-```
-
-**Core packages:**
-
-| Package | Role |
-|---|---|
-| `@x402/express` | HTTP 402 payment middleware |
-| `@x402/stellar` | Stellar-specific x402 scheme |
-| `@x402/fetch` | Client-side x402 fetch wrapper |
-| `@stellar/freighter-api` | Browser wallet signing |
-| `@stellar/stellar-sdk` | Horizon API client |
-| `groq-sdk` | Groq AI (Llama 3.3 70B) |
-| `serper.dev` | Real-time Google search results |
-
----
+Thanks for contributing to StellarSearch. This guide covers the local setup, the wallet and Stellar testnet requirements, and the conventions used for pull requests.
 
 ## Prerequisites
 
-Before you begin, make sure you have:
+Install or prepare the following before you begin:
 
-| Requirement | Version | Notes |
-|---|---|---|
-| **Node.js** | ≥ 18.0.0 | ESM support required |
-| **npm** | ≥ 9.0.0 | Comes with Node 18 |
-| **Git** | any recent | — |
-| **Freighter** | latest | [freighter.app](https://freighter.app) browser extension |
-| **Stellar testnet account** | — | Free — see setup below |
+- **Node.js** (an active LTS release is recommended) and npm.
+- **Freighter**, the browser wallet extension, installed from [freighter.app](https://www.freighter.app/).
+- A Freighter account configured for the **Stellar Testnet**. Do not use a mainnet account for local development.
+- Testnet XLM to pay transaction fees. Create and fund a testnet account through [Stellar Laboratory](https://laboratory.stellar.org/#account-creator?network=test).
+- A testnet USDC balance for exercising the paid search flow. See [Getting free testnet USDC](#getting-free-testnet-usdc).
+- API keys for Serper.dev and Groq if you want to run the backend search and AI features. Their free tiers are sufficient for development.
 
-### Free API keys you will need
+## Local development setup
 
-| Key | Where to get it | Cost |
-|---|---|---|
-| `SERPER_API_KEY` | [serper.dev](https://serper.dev) | Free — 2,500 queries/month |
-| `GROQ_API_KEY` | [console.groq.com/keys](https://console.groq.com/keys) | Free |
-| `STELLAR_RECEIVING_ADDRESS` | [Stellar Lab](https://laboratory.stellar.org/#account-creator?network=test) | Free testnet keypair |
+1. Clone the repository and enter the project directory:
 
-> **Note:** You only need `SERPER_API_KEY` and `GROQ_API_KEY` for most frontend work. The `STELLAR_RECEIVING_ADDRESS` is only required if you are working on the payment flow.
+   ```bash
+   git clone <repository-url>
+   cd stellar-search
+   ```
 
----
+2. Install the locked dependency set:
 
-## Local Development Setup
+   ```bash
+   npm ci
+   ```
 
-### 1. Fork and clone
+3. Create your local environment file:
 
-```bash
-# Fork the repo on GitHub first, then:
-git clone https://github.com/<your-username>/Stellar-Search.git
-cd Stellar-Search
-```
+   ```bash
+   cp .env.example .env
+   ```
 
-### 2. Install dependencies
+   Fill in the values in `.env`. At minimum, configure `STELLAR_RECEIVING_ADDRESS`, `SERPER_API_KEY`, and `GROQ_API_KEY` for the complete application. Keep `.env` local and never commit secrets.
 
-```bash
-npm install
-```
+4. In Freighter, switch the network to **Testnet**, unlock the wallet, and allow the local application to connect when prompted.
 
-### 3. Configure environment
+5. Start the backend and frontend in separate terminals:
 
-```bash
-cp .env.example .env
-```
+   ```bash
+   # Terminal 1
+   npm run server
 
-Open `.env` and fill in your values:
+   # Terminal 2
+   npm run dev
+   ```
 
-```env
-# Required for search to work
-SERPER_API_KEY=your_serper_api_key_here
-GROQ_API_KEY=gsk_your_groq_key_here
+6. Open [http://localhost:5173](http://localhost:5173) in your browser. The backend runs at [http://localhost:3001](http://localhost:3001). Check its health endpoint at [http://localhost:3001/health](http://localhost:3001/health).
 
-# Required for x402 payment flow
-STELLAR_RECEIVING_ADDRESS=GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-STELLAR_NETWORK=stellar:testnet
-VITE_STELLAR_NETWORK=stellar:testnet
-FACILITATOR_URL=https://www.x402.org/facilitator
-
-# Server
-PORT=3001
-
-# Frontend — points the React app at your local backend
-VITE_SERVER_URL=http://localhost:3001
-```
-
-### 4. Set up Freighter (for payment flow work)
-
-1. Install [Freighter](https://freighter.app) browser extension.
-2. Create a new wallet (or import one).
-3. Switch to **Testnet**: Settings → Network → Testnet.
-4. Get a funded testnet account at [Stellar Lab](https://laboratory.stellar.org/#account-creator?network=test).
-5. Add the USDC trustline and claim testnet USDC from the faucet.
-
-> If you are **not** working on the wallet or payment flow, you can skip step 4 entirely — the frontend works without a wallet for most UI changes.
-
-### 5. Start the development servers
-
-```bash
-# Terminal 1 — Express backend (port 3001)
-npm run server
-
-# Terminal 2 — Vite frontend (port 5173)
-npm run dev
-```
-
-Both can also be started together with:
+You can also start both processes together with:
 
 ```bash
 npm run dev:all
 ```
 
-Open `http://localhost:5173` in your browser.
-
-### 6. Verify everything works
+To exercise the search flow from the command line, run:
 
 ```bash
-# Health check — should return { "status": "ok", ... }
-curl http://localhost:3001/health | jq .
-
-# Optional: end-to-end payment test (requires .env with all keys set)
 npm run test:search "Stellar blockchain"
 ```
 
----
+## Running the frontend without a real wallet
 
-## Project Structure
-
-```
-stellar-search/
-│
-├── src/                        # React 18 frontend (TypeScript)
-│   ├── components/
-│   │   ├── ai/                 # GroqAssistant floating panel
-│   │   ├── layout/             # Navbar, Footer, LiveTicker, AnimatedBackground
-│   │   ├── search/             # SearchBar, SearchResults, PaymentFlowVisualizer
-│   │   ├── ui/                 # StatsGrid and shared UI pieces
-│   │   └── wallet/             # WalletPanel
-│   ├── hooks/
-│   │   ├── useFreighterWallet.ts   # Freighter connect + live Horizon balances
-│   │   └── useSearch.ts            # x402 payment flow + search logic
-│   ├── lib/
-│   │   └── stellar.ts          # Horizon helpers / constants
-│   ├── pages/
-│   │   ├── SearchPage.tsx
-│   │   ├── DashboardPage.tsx   # Live tx history from Horizon
-│   │   └── DocsPage.tsx
-│   └── types/
-│       └── index.ts            # Shared TypeScript types
-│
-├── server/
-│   └── index.ts                # Express server — x402 middleware, Serper, Groq AI
-│
-├── api/                        # Vercel serverless function equivalents
-│   ├── search.ts
-│   ├── health.ts
-│   └── ai/chat.ts
-│
-├── mcp-server/
-│   └── index.ts                # MCP tools: web_search, ai_summarize, check_balance
-│
-├── scripts/
-│   └── test-search.ts          # End-to-end CLI test
-│
-├── .env.example                # Template — copy to .env
-├── claude_mcp.json             # MCP config for Claude Code
-├── vite.config.ts
-├── tsconfig.json
-└── README.md
-```
-
-### Key boundaries to understand
-
-- **`src/`** — runs in the browser. Never put secrets here. Env vars must be prefixed `VITE_`.
-- **`server/`** — runs in Node.js. Holds all API keys. Never import server-only code from `src/`.
-- **`api/`** — Vercel serverless functions. These mirror `server/index.ts` routes for production deployment.
-- **`mcp-server/`** — MCP server for Claude Code integration. Runs as a separate process.
-
----
-
-## Development Workflow
-
-### Pick an issue
-
-Browse [open issues](https://github.com/Emmy123222/Stellar-Search/issues). Issues labelled **good first issue** are specifically chosen for first-time contributors — they are scoped, self-contained, and have clear acceptance criteria.
-
-Comment on the issue before you start: _"I'd like to work on this"_ — this avoids duplicate effort.
-
-### Create a branch
-
-Branch off `main` using this naming convention:
-
-| Type | Pattern | Example |
-|---|---|---|
-| Bug fix | `fix/<short-description>` | `fix/freighter-rejection-loop` |
-| New feature | `feat/<short-description>` | `feat/search-history` |
-| Documentation | `docs/<short-description>` | `docs/contributing-guide` |
-| Refactor | `refactor/<short-description>` | `refactor/memoize-stats-grid` |
-| Test | `test/<short-description>` | `test/use-search-unit` |
-| Chore/DX | `chore/<short-description>` | `chore/add-eslint` |
+You can work on the visual interface without Freighter, a funded account, or real payments:
 
 ```bash
-git checkout -b fix/freighter-rejection-loop
+npm run dev
 ```
 
-### Make your changes
+Visit [http://localhost:5173](http://localhost:5173) and work on components that do not require a completed wallet transaction. Wallet-dependent actions may show a connection or payment error until Freighter is installed and configured. Do not add mock payment or search data to make those flows appear successful; use the real testnet setup when testing them end to end.
 
-- Keep changes focused — one concern per PR.
-- Follow the [coding standards](#coding-standards) below.
-- Run the typecheck frequently: `npx tsc --noEmit`.
+## Getting free testnet USDC
 
-### Commit messages
+1. Create or fund a Stellar Testnet account in [Stellar Laboratory](https://laboratory.stellar.org/#account-creator?network=test). Save the public address in Freighter.
+2. Make sure Freighter is set to **Testnet** and the account is unlocked.
+3. Add the **USDC trustline** to the account if the faucet requires it. Use the testnet USDC asset issued by the faucet/provider, not a mainnet asset.
+4. Request testnet USDC from the [Circle testnet USDC faucet](https://faucet.circle.com/), selecting Stellar Testnet and entering your public address. Follow the faucet's current instructions and limits.
+5. Verify the USDC balance in Freighter or on [Stellar Expert Testnet](https://stellar.expert/explorer/testnet/).
 
-Use the [Conventional Commits](https://www.conventionalcommits.org/) format:
+Testnet assets have no real-world value. Never share your secret key or seed phrase, and never use production funds while developing.
 
-```
-<type>(<scope>): <short summary>
+## Code style
 
-[optional body]
+- Keep TypeScript strict and preserve the compiler settings in the repository.
+- Use the existing React and TypeScript patterns before introducing a new abstraction.
+- Use Tailwind CSS utility classes for styling. **Do not add inline styles.**
+- Keep changes focused and avoid unrelated formatting, refactors, or dependency updates.
+- Use clear names and handle errors explicitly, especially around wallet, network, and payment operations.
+- Run the relevant checks before opening a pull request. At minimum, run `npm run build`; also run the applicable search scripts when changing the backend or search flow.
 
-[optional footer — e.g. Closes #12]
-```
+## Pull requests
 
-**Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+### Branches and commits
 
-**Examples:**
+Create a focused branch from the default branch. Prefer names such as:
 
-```
-fix(wallet): catch Freighter rejection and set session to error state
-
-Closes #1
-```
-
-```
-feat(search): add localStorage search history with 20-entry limit
-
-Stores { query, timestamp, txHash } entries.
-Closes #9
+```text
+fix/issue-123
+feat/wallet-history
+chore/update-docs
 ```
 
+Use concise conventional-style commit subjects, for example:
+
+```text
+fix: handle rejected Freighter signatures
 ```
-docs: add CONTRIBUTING.md
+
+### PR naming convention
+
+Use the same conventional prefix in the pull request title:
+
+```text
+<type>: <short imperative description>
 ```
 
-### Dependency updates (Dependabot)
+Common types are `feat`, `fix`, `docs`, `refactor`, `test`, and `chore`. Keep the title specific, concise, and focused on one change.
 
-Dependabot is configured in `.github/dependabot.yml` to automatically propose weekly updates with sensible open PR limits:
-- **Grouped updates:** Minor/patch dependencies for tooling, linting, testing, and UI are grouped into single PRs to reduce notification noise.
-- **Deliberate review for payment & runtime:** Major upgrades for `@x402/*`, `@stellar/*`, `@modelcontextprotocol/*`, AI SDKs (`groq-sdk`), and server runtime packages are kept as isolated PRs to ensure deliberate review, preventing regressions across runtime boundaries (Express, Vercel, browser, and MCP) and safeguarding x402 settlement semantics.
+### PR checklist
 
----
+Before requesting review:
+
+- Explain what changed and why.
+- Link the relevant issue, using `Closes #<number>` when the PR completes it.
+- Describe any setup or environment changes required to test the PR.
+- Include the exact verification commands you ran and their results.
+- Keep secrets, `.env` files, generated output, and unrelated changes out of the PR.
+- Confirm that the change works on Stellar Testnet when it touches wallet or payment behavior.
+
+Please keep reviews constructive and update the PR when feedback is addressed.
 
 ## Submitting a Pull Request
 

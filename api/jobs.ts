@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
-import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
+import { normalizeOrganicResults, normalizeQueryMetadata } from '../src/lib/serperNormalizer'
 import crypto from 'crypto'
 
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -211,7 +211,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const data: unknown = await serperRes.json()
       const latencyMs = Date.now() - t0
       const results = normalizeOrganicResults(data)
-      const responseBody = { query: cleanQ, results, count: results.length, network: NETWORK, paidAmount: AMOUNT_USDC, currency: 'USDC', txHash, latencyMs }
+      const queryMeta = normalizeQueryMetadata(data, cleanQ)
+      const responseBody = {
+        query: queryMeta.executedQuery,
+        originalQuery: queryMeta.originalQuery,
+        executedQuery: queryMeta.executedQuery,
+        suggestedQuery: queryMeta.suggestedQuery,
+        isCorrected: queryMeta.isCorrected,
+        results,
+        count: results.length,
+        network: NETWORK,
+        paidAmount: AMOUNT_USDC,
+        currency: 'USDC',
+        txHash,
+        latencyMs,
+      }
       job.result = responseBody
       job.status = 'completed'
       job.updatedAt = new Date().toISOString()

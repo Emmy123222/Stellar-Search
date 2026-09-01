@@ -40,6 +40,7 @@ import {
   USDC_CONTRACT,
   AMOUNT_STROOPS,
 } from '../src/lib/constants'
+import { MAX_BATCH_SIZE } from '../src/types/index.js'
 
 dotenv.config()
 
@@ -119,7 +120,11 @@ export function getSearchSchemaDoc() {
     type: 'object',
     required: ['query', 'results', 'count', 'network', 'paidAmount', 'currency', 'latencyMs'],
     properties: {
-      query: { type: 'string', description: 'Normalized query' },
+      query: { type: 'string', description: 'Executed search query' },
+      originalQuery: { type: 'string', description: 'Original user input query' },
+      executedQuery: { type: 'string', description: 'Actual query executed against search index' },
+      suggestedQuery: { type: 'string', description: 'Spelling correction or Did You Mean suggestion' },
+      isCorrected: { type: 'boolean', description: 'True if executed query differs from original query' },
       results: {
         type: 'array',
         items: {
@@ -484,16 +489,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
         .join('\n\n')
 
+      const headerLines: string[] = []
+      if (data.isCorrected) {
+        headerLines.push(`🔍 Results for: "${data.executedQuery}" (auto-corrected from "${data.originalQuery || query}")`)
+      } else {
+        headerLines.push(`🔍 Results for: "${data.executedQuery || query}"`)
+      }
+      if (data.suggestedQuery && !data.isCorrected) {
+        headerLines.push(`💡 Did you mean: "${data.suggestedQuery}"?`)
+      }
+      headerLines.push(`💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`)
+      headerLines.push(`⚡ Latency: ${data.latencyMs}ms`)
+      headerLines.push(`📊 ${data.count} results\n`)
+
       cleanup()
       return {
         content: [
           {
             type: 'text',
             text: [
-              `🔍 Results for: "${query}"`,
-              `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
-              `⚡ Latency: ${data.latencyMs}ms`,
-              `📊 ${data.count} results\n`,
+              ...headerLines,
               formatted,
             ].join('\n'),
           },
