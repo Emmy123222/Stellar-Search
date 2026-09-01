@@ -1,5 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
+import { initI18n, loadNamespace } from '../i18n'
+
+// The hook's error messages route through i18next (#345) — in the real app
+// main.tsx initializes it and loads `errors` before anything renders;
+// mirror that here so those messages resolve instead of coming back
+// undefined.
+beforeAll(async () => {
+  await initI18n()
+  await loadNamespace('errors')
+})
 
 const { mockIsConnected, mockRequestAccess, mockGetAddress, mockGetNetwork } = vi.hoisted(() => ({
   mockIsConnected: vi.fn(),

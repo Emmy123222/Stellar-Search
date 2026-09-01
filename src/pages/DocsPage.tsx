@@ -1,6 +1,9 @@
+import { useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { ExternalLink, GitBranch, Globe, Shield, Zap, Server } from 'lucide-react'
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, HORIZON_URL } from '../lib/stellar'
+import { loadNamespace } from '../i18n'
 
 const getSteps = () => [
   {
@@ -41,17 +44,27 @@ const getStack = () => [
 ]
 
 export function DocsPage() {
+  const { t } = useTranslation('docs')
   const STEPS = getSteps()
   const STACK = getStack()
   const networkLabel = IS_MAINNET ? 'Mainnet' : 'Testnet'
+
+  // `docs` is the one namespace loaded lazily rather than at app boot
+  // (#345) — DocsPage is the only place it's needed, so it's only fetched
+  // once this page actually mounts. `t()`'s default-value argument covers
+  // the render before the namespace resolves, so there's no flash of a
+  // raw translation key.
+  useEffect(() => {
+    loadNamespace('docs')
+  }, [])
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 space-y-16">
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-        <span className="font-display text-xs text-neon-cyan/50 tracking-widest">DOCUMENTATION</span>
-        <h1 className="font-display text-3xl sm:text-4xl text-white">HOW IT WORKS</h1>
+        <span className="font-display text-xs text-neon-cyan/50 tracking-widest">{t('kicker', 'DOCUMENTATION')}</span>
+        <h1 className="font-display text-3xl sm:text-4xl text-white">{t('title', 'HOW IT WORKS')}</h1>
         <p className="text-white/45 text-lg max-w-2xl leading-relaxed">
           StellarSearch is a pay-per-query search API for autonomous AI agents. It uses the real x402 protocol
           on Stellar — no mock data, no fake payments. Every search costs {AMOUNT_USDC} USDC settled on-chain.
