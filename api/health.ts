@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { readServerConfig } from '../src/lib/config'
 
 // Inline readiness logic for Vercel (mirrors server/readiness.ts) to keep Express/Vercel aligned.
 // We keep it lightweight to avoid cold-start bundling issues while preserving strict timeouts and caching.

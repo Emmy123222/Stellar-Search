@@ -1,3 +1,4 @@
+import { readBrowserConfig } from '../../lib/config'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink, Star, Clock, Sparkles, Copy, Check, Download, FileJson, FileSpreadsheet } from 'lucide-react'
@@ -12,11 +13,7 @@ interface Props {
   txHash?: string | null
 }
 
-const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
-  typeof window !== 'undefined' && window.location.origin.includes('vercel.app')
-    ? `${window.location.origin}/api`
-    : 'http://localhost:3001'
-)
+const SERVER_URL = readBrowserConfig().apiBaseUrl
 
 export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summary, setSummary]               = useState<string>('')

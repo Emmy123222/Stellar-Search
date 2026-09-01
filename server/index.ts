@@ -36,9 +36,17 @@ import {
 
 dotenv.config()
 
+let config
+try {
+  config = readServerConfig()
+} catch (error) {
+  console.error(formatConfigurationError(error))
+  throw error
+}
+
 const app  = express()
-const PORT = process.env.PORT || 3001
-const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE || '30', 10)
+const PORT = config.port
+const RATE_LIMIT_PER_MINUTE = config.rateLimitPerMinute
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
@@ -231,18 +239,16 @@ async function deliverWebhookWithRetry(job: SearchJob, maxAttempts = MAX_JOB_WEB
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────
-const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
-const FACILITATOR_URL   = process.env.FACILITATOR_URL   || 'https://www.x402.org/facilitator'
-const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
-const SERPER_API_KEY    = process.env.SERPER_API_KEY!
-const GROQ_API_KEY      = process.env.GROQ_API_KEY!
-
-if (!RECEIVING_ADDRESS) console.warn('⚠  STELLAR_RECEIVING_ADDRESS not set')
-if (!SERPER_API_KEY)    console.warn('⚠  SERPER_API_KEY not set')
-if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
+const RECEIVING_ADDRESS = config.receivingAddress
+const FACILITATOR_URL   = config.facilitatorUrl
+const NETWORK           = config.stellarNetwork
+const SERPER_API_KEY    = config.serperApiKey
+const GROQ_API_KEY      = config.groqApiKey
+const AMOUNT_USDC       = config.amountUsdc
+const AMOUNT_STROOPS    = config.amountStroops
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
-const groq = new Groq({ apiKey: GROQ_API_KEY })
+const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
 
 // ─── x402 payment guard on /search ───────────────────────────────────────
 // paymentMiddlewareFromConfig is the recommended API per official Stellar docs.

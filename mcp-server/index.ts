@@ -32,8 +32,8 @@ import {
 import Groq from 'groq-sdk'
 import dotenv from 'dotenv'
 import {
-  HORIZON_URL,
-  USDC_ISSUER,
+  HORIZON_URL, 
+  USDC_ISSUER, 
   STELLAR_NETWORK,
   STELLAR_EXPERT_URL,
   AMOUNT_USDC
@@ -43,8 +43,15 @@ import { TIMING_PHASES } from '../src/lib/timing.js'
 
 dotenv.config()
 
-const SERVER_URL = process.env.SEARCH_API_URL || 'http://localhost:3001'
-const GROQ_API_KEY = process.env.GROQ_API_KEY!
+let config
+try {
+  config = readMcpConfig()
+} catch (error) {
+  console.error(formatConfigurationError(error))
+  throw error
+}
+const SERVER_URL = config.searchApiUrl
+const GROQ_API_KEY = config.groqApiKey
 
 // Lightweight MCP-side metrics (bounded): mirrors server/metrics.ts vocabulary without unbounded arrays
 const mcpMetrics = new Map<string, number[]>()
