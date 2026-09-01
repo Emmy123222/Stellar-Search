@@ -1,15 +1,16 @@
 import { motion } from 'framer-motion'
-import { Search, BookOpen, BarChart2, ExternalLink, Zap, Github, Globe } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Search, BookOpen, BarChart2, ExternalLink, Zap, Github, Globe, HelpCircle } from 'lucide-react'
 import { WalletPanel } from '../wallet/WalletPanel'
 import type { WalletState, StellarTransaction } from '../../hooks/useFreighterWallet'
 import { IS_MAINNET } from '../../lib/stellar'
 
 type Page = 'search' | 'docs' | 'dashboard'
 
-const NAV_ITEMS: { id: Page; label: string; Icon: React.FC<{ className?: string }> }[] = [
-  { id: 'search',    label: 'SEARCH',       Icon: Search    },
-  { id: 'docs',      label: 'HOW IT WORKS', Icon: BookOpen  },
-  { id: 'dashboard', label: 'DASHBOARD',    Icon: BarChart2 },
+const NAV_ITEMS: { id: Page; labelKey: string; Icon: React.FC<{ className?: string }> }[] = [
+  { id: 'search',    labelKey: 'nav.search',    Icon: Search    },
+  { id: 'docs',      labelKey: 'nav.docs',      Icon: BookOpen  },
+  { id: 'dashboard', labelKey: 'nav.dashboard', Icon: BarChart2 },
 ]
 
 interface Props {
@@ -21,13 +22,17 @@ interface Props {
   onConnect: () => void
   onDisconnect: () => void
   onRefresh: () => void
+  onOpenOnboarding: () => void
 }
 
 export function Navbar({
   page, onNavigate,
   wallet, transactions, txLoading,
   onConnect, onDisconnect, onRefresh,
+  onOpenOnboarding,
 }: Props) {
+  const { t } = useTranslation('common')
+
   return (
     <header
       className="sticky top-0 z-40 border-b border-white/5"
@@ -65,7 +70,7 @@ export function Navbar({
 
         {/* Nav links */}
         <nav className="flex items-center gap-1 flex-1" role="navigation" aria-label="Main navigation">
-          {NAV_ITEMS.map(({ id, label, Icon }) => (
+          {NAV_ITEMS.map(({ id, labelKey, Icon }) => (
             <button
               key={id}
               onClick={() => onNavigate(id)}
@@ -74,7 +79,7 @@ export function Navbar({
               style={{ color: page === id ? '#00f5ff' : 'rgba(255,255,255,0.3)' }}
             >
               <Icon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{label}</span>
+              <span className="hidden sm:inline">{t(labelKey)}</span>
               {page === id && (
                 <motion.div
                   layoutId="nav-active"
@@ -92,6 +97,14 @@ export function Navbar({
 
         {/* Right actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={onOpenOnboarding}
+            aria-label={t('nav.setupGuide')}
+            title={t('nav.setupGuide')}
+            className="p-2 rounded-lg text-white/25 hover:text-white/55 hover:bg-white/5 transition-all"
+          >
+            <HelpCircle className="w-4 h-4" />
+          </button>
           <a
             href="https://github.com/stellar/x402-stellar"
             target="_blank"
