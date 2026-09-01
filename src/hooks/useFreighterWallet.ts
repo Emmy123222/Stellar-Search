@@ -5,20 +5,42 @@
  */
 
 import { useState, useCallback, useEffect } from 'react'
-import {
-  isConnected,
-  requestAccess,
-  getAddress,
-  getNetwork,
-} from '@stellar/freighter-api'
-import { Horizon } from '@stellar/stellar-sdk'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
 import { withHorizonRetry, classifyHorizonError } from '../lib/horizonClient'
+import i18n from '../i18n'
 import type { WalletState, StellarTransaction } from '../types'
 
 export type { WalletState, StellarTransaction }
 
-const horizon = new Horizon.Server(HORIZON_URL)
+// `@stellar/freighter-api` and `@stellar/stellar-sdk` are loaded on demand
+// rather than imported statically — every page (docs, a still-disconnected
+// search) previously pulled both into the main bundle just by mounting this
+// hook, even though neither is needed until the wallet is actually connected
+// (or, for Horizon, until a connected wallet's balances/history are fetched)
+// (#336). Each loader is memoized so repeated calls (e.g. connect() followed
+// by refresh()) reuse the same module/instance instead of re-importing.
+
+type FreighterApi = typeof import('@stellar/freighter-api')
+let freighterApiPromise: Promise<FreighterApi> | null = null
+function loadFreighterApi(): Promise<FreighterApi> {
+  if (!freighterApiPromise) {
+    freighterApiPromise = import('@stellar/freighter-api')
+  }
+  return freighterApiPromise
+}
+
+type HorizonServer = InstanceType<
+  typeof import('@stellar/stellar-sdk').Horizon.Server
+>
+let horizonPromise: Promise<HorizonServer> | null = null
+function loadHorizon(): Promise<HorizonServer> {
+  if (!horizonPromise) {
+    horizonPromise = import('@stellar/stellar-sdk').then(
+      ({ Horizon }) => new Horizon.Server(HORIZON_URL)
+    )
+  }
+  return horizonPromise
+}
 
 /**
  * Safely extracts and normalizes transaction memo data from Horizon transaction records or embedded operation objects.
@@ -74,6 +96,7 @@ export function useFreighterWallet() {
     network: 'TESTNET',
     xlmBalance: '0',
     usdcBalance: '0',
+    hasUsdcTrustline: false,
     loading: false,
     error: null,
   })
@@ -83,10 +106,12 @@ export function useFreighterWallet() {
   // Fetch real balances from Horizon
   const fetchBalances = useCallback(async (publicKey: string) => {
     try {
+      const horizon = await loadHorizon()
       const account = await withHorizonRetry(() => horizon.loadAccount(publicKey))
 
       let xlm = '0'
       let usdc = '0'
+      let hasUsdcTrustline = false
 
       for (const balance of account.balances) {
         if (balance.asset_type === 'native') {
@@ -96,6 +121,11 @@ export function useFreighterWallet() {
           (balance as any).asset_code === 'USDC' &&
           (balance as any).asset_issuer === USDC_ISSUER
         ) {
+          // A balance line existing at all means the trustline is
+          // established, regardless of the amount (#342) — checked before
+          // reading .balance so a freshly-opened, still-zero trustline is
+          // still correctly detected as "established".
+          hasUsdcTrustline = true
           usdc = parseFloat(balance.balance).toFixed(6)
         }
       }
@@ -104,13 +134,14 @@ export function useFreighterWallet() {
         ...prev,
         xlmBalance: xlm,
         usdcBalance: usdc,
+        hasUsdcTrustline,
         error: null,
       }))
     } catch (err: unknown) {
       const classified = classifyHorizonError(err)
       setWallet((prev: WalletState) => ({
         ...prev,
-        error: classified.message || 'Failed to load account',
+        error: classified.message || (err as any)?.message || i18n.t('errors:accountLoadFailed'),
       }))
     }
   }, [])
@@ -119,6 +150,7 @@ export function useFreighterWallet() {
   const fetchTransactions = useCallback(async (publicKey: string) => {
     setTxLoading(true)
     try {
+      const horizon = await loadHorizon()
       const ops = await withHorizonRetry(() =>
         horizon
           .operations()
@@ -213,11 +245,10 @@ export function useFreighterWallet() {
     setWallet((prev: WalletState) => ({ ...prev, loading: true, error: null }))
 
     try {
+      const { isConnected, requestAccess, getAddress, getNetwork } = await loadFreighterApi()
       const connected = await isConnected()
       if (!connected.isConnected) {
-        throw new Error(
-          'Freighter extension not found. Install it from freighter.app'
-        )
+        throw new Error(i18n.t('errors:freighterNotFound'))
       }
 
       const accessResult = await requestAccess()
@@ -250,7 +281,7 @@ export function useFreighterWallet() {
         ...prev,
         loading: false,
         connected: false,
-        error: err.message || 'Connection failed',
+        error: err.message || i18n.t('errors:connectionFailed'),
       }))
     }
   }, [fetchBalances, fetchTransactions])
@@ -262,6 +293,7 @@ export function useFreighterWallet() {
       network: 'TESTNET',
       xlmBalance: '0',
       usdcBalance: '0',
+      hasUsdcTrustline: false,
       loading: false,
       error: null,
     })
@@ -279,6 +311,7 @@ export function useFreighterWallet() {
   useEffect(() => {
     const check = async () => {
       try {
+        const { isConnected, getAddress, getNetwork } = await loadFreighterApi()
         const connected = await isConnected()
         if (connected.isConnected) {
           const addr = await getAddress()

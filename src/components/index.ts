@@ -5,7 +5,7 @@ export { AnimatedBackground, Navbar, LiveTicker, Footer } from './layout'
 export { WalletPanel } from './wallet'
 
 // Search
-export { SearchBar, SearchResults, SearchSuggestions, PaymentFlowVisualizer } from './search'
+export { SearchBar, SearchResults, SearchSuggestions, PaymentFlowVisualizer, SpellingCorrectionBanner } from './search'
 
 // UI
 export { StatsGrid, ZeroBalanceBanner } from './ui'
