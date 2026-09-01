@@ -267,6 +267,28 @@ stellar-search/
 
 ---
 
+## Internationalization (#345)
+
+English is the complete, always-available fallback locale, via [i18next](https://www.i18next.com) + `react-i18next`. Setup lives in `src/i18n/`:
+
+- **Namespaces**, one JSON file per feature area under `src/i18n/locales/en/`: `common` (nav/footer), `wallet`, `search`, `onboarding`, `errors`, `docs`.
+- **Eager vs. lazy**: `common` is bundled at build time; `wallet`/`search`/`onboarding`/`errors` are loaded once at boot (`main.tsx`) since they're needed for the always-visible chrome. `docs` is genuinely lazy — `loadNamespace('docs')` is only called when `DocsPage` mounts, so its translations ship in their own chunk rather than the main bundle.
+- **Pluralization**: standard i18next `_one`/`_other` key suffixes, e.g. `wallet:queriesRemaining`.
+- **Interpolation**: e.g. `common:footer.links.explorer` (`"{{network}} Explorer"`), and payment-unit amounts like `onboarding:steps.payment.description` (`"...settles {{amount}} USDC..."`).
+- **Adding a namespace**: add it to `SUPPORTED_NAMESPACES` in `src/i18n/index.ts`, add `src/i18n/locales/en/<name>.json`, then either add it to `main.tsx`'s eager-load list or call `loadNamespace('<name>')` from whichever component needs it.
+
+**Scope note**: this introduces the framework and converts a representative slice of the app's copy (nav, footer, wallet panel, onboarding, part of search, error messages from the wallet hook) — not literally every string in every component. `DocsPage`'s body copy and the rest of `SearchPage` remain hardcoded English for now; the pattern above is what to follow to convert them. Tests: `src/i18n/index.test.ts`.
+
+## First-run onboarding (#342)
+
+`src/components/onboarding/OnboardingFlow.tsx` walks a new user through the three things a paid search needs — connect Freighter, establish a USDC trustline, fund it — auto-opening once per browser (`localStorage`, key `stellar-search:onboarding-dismissed`) unless already dismissed or already fully set up, and reopenable anytime via the "?" button in the navbar.
+
+- **Detection** (`src/lib/onboarding.ts`) is derived entirely from wallet state `useFreighterWallet` already exposes (`connected`, the new `hasUsdcTrustline` flag, `usdcBalance`) — nothing here reads or stores a secret key.
+- **Testnet vs. mainnet** are visually distinguished in the modal (a banner plus separate funding links — Stellar Laboratory's testnet account creator vs. Circle for real USDC), reusing the same `IS_MAINNET` split `WalletPanel` already used for its own funding link.
+- No new transaction-signing code was added — trustline setup and funding are point-and-click via Freighter/external tools, so the existing x402 payment/signing path (`useSearch`) is untouched. Tests: `src/lib/onboarding.test.ts`.
+
+---
+
 ## Claude Code / MCP integration
 
 ```json

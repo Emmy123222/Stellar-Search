@@ -45,9 +45,11 @@
     "framer-motion": "^11.0.0",
     "groq-sdk": "^0.9.0",
     "helmet": "^8.3.0",
+    "i18next": "^26.4.0",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-i18next": "^17.0.12",
     "recharts": "^3.10.1",
     "sonner": "^2.0.8",
     "winston": "^3.19.0"
