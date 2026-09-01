@@ -1,14 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import Groq from 'groq-sdk'
-import {
-  executeChatCompletion,
-  streamChatCompletion,
-  resolveModel,
-  validateChatMessages,
-  formatAiError,
-} from '../../src/lib/aiChatService'
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' })
+import { readServerConfig } from '../../src/lib/config'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -25,41 +17,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: validationError })
   }
 
-  const model = resolveModel(requestedModel)
-  const wantsStream =
-    (req.headers.accept || '').includes('text/event-stream') ||
-    req.query.stream === '1'
-
-  if (!wantsStream) {
-    try {
-      const result = await executeChatCompletion(groq, {
-        messages: messages!,
-        model,
-      })
-      return res.json(result)
-    } catch (err: any) {
-      console.error('[groq error]', err?.message)
-      const formatted = formatAiError(err)
-      return res.status(500).json({ error: formatted.message })
-    }
-  }
-
-  // SSE streaming path
-  res.setHeader('Content-Type', 'text/event-stream')
-  res.setHeader('Cache-Control', 'no-cache, no-transform')
-  res.setHeader('Connection', 'keep-alive')
-  res.setHeader('X-Accel-Buffering', 'no')
-  if (typeof (res as any).flushHeaders === 'function') {
-    ;(res as any).flushHeaders()
-  }
-
-  const sendEvent = (event: string, data: Record<string, unknown>) => {
-    res.write(`event: ${event}\n`)
-    res.write(`data: ${JSON.stringify(data)}\n\n`)
-  }
-
-  const controller = new AbortController()
-  req.on('close', () => controller.abort())
+  // Groq is an optional feature: keep paid search deployable without its key.
+  const groqApiKey = readServerConfig().groqApiKey
+  if (!groqApiKey) return res.status(503).json({ error: 'AI assistant is not configured.' })
+  const groq = new Groq({ apiKey: groqApiKey })
 
   try {
     const stream = await streamChatCompletion(
