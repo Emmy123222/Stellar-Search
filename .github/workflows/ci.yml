@@ -12,27 +12,65 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Run TypeScript typecheck
-        run: echo "TypeScript typecheck passed (frontend, server, serverless, MCP, scripts)"
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript typecheck (frontend, server, serverless, MCP, scripts)
+        run: npm run typecheck:all
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Run ESLint
-        run: echo "ESLint passed (0 warnings, 0 errors)"
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint (enforces zero warnings baseline --max-warnings=0)
+        run: npm run lint
 
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Run Vitest with coverage
-        run: echo "Vitest unit and integration tests passed"
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Vitest with coverage (enforces thresholds)
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-report
+          path: coverage/
+          if-no-files-found: warn
 
   coverage:
     name: Coverage gate
@@ -40,6 +78,19 @@ jobs:
     needs: test
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Verify coverage thresholds
-        run: echo "Coverage thresholds 100% satisfied"
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify coverage thresholds (statements, branches, functions, lines)
+        run: npm run test:coverage -- --run
+        # thresholds defined in vite.config.ts: global 25/23/20/26 + per-file ratchets for
+        # src/lib/constants, src/lib/stellar, server/corsConfig, api/search, etc.
+        # CI fails if any threshold drops — ratchet upward as payment/wallet/API/MCP/UI tests land.
