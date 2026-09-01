@@ -447,7 +447,7 @@ app.get('/search', async (req: Request, res: Response) => {
             },
             {
               role: 'user',
-              content: `Query: "${cleanQ}"\nTop results: ${topSnippets}`,
+              content: `Query: "${queryMeta.executedQuery}"\nTop results: ${topSnippets}`,
             },
           ],
           max_tokens: 120,
@@ -489,8 +489,10 @@ app.get('/search', async (req: Request, res: Response) => {
 
     // Record opted-in receipt (cap 50, in-memory)
     try {
-      addRecentReceipt({ id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, query: cleanQ, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
-    } catch {}
+      addRecentReceipt({ id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+    } catch {
+      // ignore receipt recording failure
+    }
 
     return res.json(responseBody)
   } catch (err: any) {

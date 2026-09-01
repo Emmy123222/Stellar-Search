@@ -127,7 +127,11 @@ export function getSearchSchemaDoc() {
     type: 'object',
     required: ['query', 'results', 'count', 'network', 'paidAmount', 'currency', 'latencyMs'],
     properties: {
-      query: { type: 'string', description: 'Normalized query' },
+      query: { type: 'string', description: 'Executed search query' },
+      originalQuery: { type: 'string', description: 'Original user input query' },
+      executedQuery: { type: 'string', description: 'Actual query executed against search index' },
+      suggestedQuery: { type: 'string', description: 'Spelling correction or Did You Mean suggestion' },
+      isCorrected: { type: 'boolean', description: 'True if executed query differs from original query' },
       results: {
         type: 'array',
         items: {
@@ -747,7 +751,9 @@ try {
       })
     }
   }
-} catch {}
+} catch {
+  // ignore cancellation handler registration error
+}
 
 const transport = new StdioServerTransport()
 await server.connect(transport)
