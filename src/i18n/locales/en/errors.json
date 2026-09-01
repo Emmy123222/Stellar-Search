@@ -1,0 +1,5 @@
+{
+  "freighterNotFound": "Freighter extension not found. Install it from freighter.app",
+  "accountLoadFailed": "Failed to load account",
+  "connectionFailed": "Connection failed"
+}

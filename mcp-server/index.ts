@@ -32,21 +32,29 @@ import {
 import Groq from 'groq-sdk'
 import dotenv from 'dotenv'
 import {
-  HORIZON_URL,
-  USDC_ISSUER,
+  HORIZON_URL, 
+  USDC_ISSUER, 
   STELLAR_NETWORK,
   STELLAR_EXPERT_URL,
   AMOUNT_USDC,
   USDC_CONTRACT,
   AMOUNT_STROOPS,
 } from '../src/lib/constants'
+import { formatConfigurationError, readMcpConfig } from '../src/lib/config'
 
 dotenv.config()
 
-const SERVER_URL = process.env.SEARCH_API_URL || 'http://localhost:3001'
-const GROQ_API_KEY = process.env.GROQ_API_KEY!
+let config
+try {
+  config = readMcpConfig()
+} catch (error) {
+  console.error(formatConfigurationError(error))
+  throw error
+}
+const SERVER_URL = config.searchApiUrl
+const GROQ_API_KEY = config.groqApiKey
 
-const groq = new Groq({ apiKey: GROQ_API_KEY })
+const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
 
 // ─── Receipt store (opted-in, in-memory, capped) ──────────────────────────
 export interface McpReceipt {
@@ -118,7 +126,11 @@ export function getSearchSchemaDoc() {
     type: 'object',
     required: ['query', 'results', 'count', 'network', 'paidAmount', 'currency', 'latencyMs'],
     properties: {
-      query: { type: 'string', description: 'Normalized query' },
+      query: { type: 'string', description: 'Executed search query' },
+      originalQuery: { type: 'string', description: 'Original user input query' },
+      executedQuery: { type: 'string', description: 'Actual query executed against search index' },
+      suggestedQuery: { type: 'string', description: 'Spelling correction or Did You Mean suggestion' },
+      isCorrected: { type: 'boolean', description: 'True if executed query differs from original query' },
       results: {
         type: 'array',
         items: {
@@ -476,10 +488,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           latencyMs: data.latencyMs ?? 0,
           count: data.count ?? 0,
         })
-      } catch {}
+      } catch {
+        // ignore receipt recording failure
+      }
       const formatted = (data.results as any[])
         .map((r: any, i: number) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.description}`)
         .join('\n\n')
+
+      const headerLines: string[] = []
+      if (data.isCorrected) {
+        headerLines.push(`🔍 Results for: "${data.executedQuery}" (auto-corrected from "${data.originalQuery || query}")`)
+      } else {
+        headerLines.push(`🔍 Results for: "${data.executedQuery || query}"`)
+      }
+      if (data.suggestedQuery && !data.isCorrected) {
+        headerLines.push(`💡 Did you mean: "${data.suggestedQuery}"?`)
+      }
+      headerLines.push(`💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`)
+      headerLines.push(`⚡ Latency: ${data.latencyMs}ms`)
+      headerLines.push(`📊 ${data.count} results\n`)
 
       cleanup()
       return {
@@ -487,10 +514,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: 'text',
             text: [
-              `🔍 Results for: "${query}"`,
-              `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
-              `⚡ Latency: ${data.latencyMs}ms`,
-              `📊 ${data.count} results\n`,
+              ...headerLines,
               formatted,
             ].join('\n'),
           },
@@ -643,6 +667,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── ai_summarize ──────────────────────────────────────────────────────
   if (name === 'ai_summarize') {
     const { text, instruction = 'summarise' } = args as { text: string; instruction?: string }
+    if (!groq) {
+      return { content: [{ type: 'text', text: 'AI summarization is not configured.' }], isError: true }
+    }
 
     try {
       const completion = await groq.chat.completions.create({
@@ -764,7 +791,9 @@ try {
       })
     }
   }
-} catch {}
+} catch {
+  // ignore cancellation handler registration error
+}
 
 const transport = new StdioServerTransport()
 await server.connect(transport)

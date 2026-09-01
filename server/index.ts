@@ -55,9 +55,17 @@ import type {
 
 dotenv.config()
 
+let config
+try {
+  config = readServerConfig()
+} catch (error) {
+  console.error(formatConfigurationError(error))
+  throw error
+}
+
 const app  = express()
-const PORT = process.env.PORT || 3001
-const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE || '30', 10)
+const PORT = config.port
+const RATE_LIMIT_PER_MINUTE = config.rateLimitPerMinute
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
@@ -264,7 +272,7 @@ if (!SERPER_API_KEY)    console.warn('⚠  SERPER_API_KEY not set')
 if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
-const groq = new Groq({ apiKey: GROQ_API_KEY })
+const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
 
 // ─── x402 payment guard on /search ───────────────────────────────────────
 // paymentMiddlewareFromConfig is the recommended API per official Stellar docs.
@@ -435,6 +443,7 @@ app.get('/search', async (req: Request, res: Response) => {
     if (stats.latencies.length > 200) stats.latencies.shift()
 
     const results = normalizeOrganicResults(data)
+    const queryMeta = normalizeQueryMetadata(data, cleanQ)
 
     // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
     const txHash = (req.headers['x-payment-response'] as string) || null
@@ -453,7 +462,7 @@ app.get('/search', async (req: Request, res: Response) => {
             },
             {
               role: 'user',
-              content: `Query: "${cleanQ}"\nTop results: ${topSnippets}`,
+              content: `Query: "${queryMeta.executedQuery}"\nTop results: ${topSnippets}`,
             },
           ],
           max_tokens: 120,
@@ -476,7 +485,11 @@ app.get('/search', async (req: Request, res: Response) => {
     }
 
     const responseBody: SearchResponse = {
-      query: cleanQ,
+      query: queryMeta.executedQuery,
+      originalQuery: queryMeta.originalQuery,
+      executedQuery: queryMeta.executedQuery,
+      suggestedQuery: queryMeta.suggestedQuery,
+      isCorrected: queryMeta.isCorrected,
       results,
       count: results.length,
       network: NETWORK,
@@ -489,8 +502,10 @@ app.get('/search', async (req: Request, res: Response) => {
 
     // Record opted-in receipt (cap 50, in-memory)
     try {
-      addRecentReceipt({ id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, query: cleanQ, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
-    } catch {}
+      addRecentReceipt({ id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+    } catch {
+      // ignore receipt recording failure
+    }
 
     return res.json(responseBody)
   } catch (err: any) {
@@ -678,40 +693,32 @@ app.post('/search/batch', async (req: Request, res: Response) => {
   }
   const parsedCount = Math.min(Math.max(parseInt(String(rawCount ?? '5')) || 5, 1), 20)
 
-  // Payment verification: require X-Payment covering aggregate amount, verified via integrity + x402 facilitator header.
-  // For batch we enforce that payment header is present; x402 middleware already guards but we also check replay.
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
-  let paymentId: string | null = null
-  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
-  let verified = false
-  if (paymentHeader) {
-    const consumption = consumePaymentPayload(paymentHeader)
-    if (!consumption.ok) {
-      return res.status(402).json({ error: consumption.error })
-    }
-    paymentId = consumption.paymentId
-    verified = true
-    try {
-      const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
-      const parsed = JSON.parse(decoded)
-      txHash = parsed.transactionHash || parsed.txHash || txHash
-    } catch {}
-  } else {
-    // No payment: return 402 with quote so caller can pay and retry with Idempotency-Key
-    const quoteEvent: BatchJsonlQuoteEvent = {
-      v: 1, type: 'quote', requestId, totalQueries: cleanQueries.length,
-      pricePerQuery: AMOUNT_USDC, totalAmount, currency: 'USDC', network: NETWORK, payTo: RECEIVING_ADDRESS, idempotencyKey,
-    }
+  if (!paymentHeader) {
     res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify({
       x402Version: 2,
       error: 'Payment required for batch',
       resource: { url: `${req.protocol}://${req.get('host')}${req.originalUrl}`, description: `Batch search ${cleanQueries.length} x ${AMOUNT_USDC} USDC`, mimeType: 'application/x-ndjson' },
       accepts: [{ scheme: 'exact', network: NETWORK, amount: String(parseInt(AMOUNT_STROOPS) * cleanQueries.length), asset: USDC_CONTRACT, payTo: RECEIVING_ADDRESS, maxTimeoutSeconds: 300, extra: { areFeesSponsored: true } }],
     })).toString('base64'))
-    return res.status(402).json({ error: 'Payment required', quote: quoteEvent })
+    return res.status(402).json({ error: 'Payment required' })
   }
 
-  // Idempotency reservation
+  const consumption = consumePaymentPayload(paymentHeader)
+  if (!consumption.ok) {
+    return res.status(402).json({ error: consumption.error })
+  }
+  const paymentId = consumption.paymentId
+  const verified = true
+  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
+  try {
+    const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
+    const parsed = JSON.parse(decoded)
+    txHash = parsed.transactionHash || parsed.txHash || txHash
+  } catch {
+    // ignore header parse error
+  }
+
   if (idempotencyKey) {
     batchIdempotencyStore.set(idempotencyKey, { requestId, expiresAt: Date.now() + 24 * 3600 * 1000 })
   }
@@ -744,12 +751,6 @@ app.post('/search/batch', async (req: Request, res: Response) => {
   // Emit settlement event immediately after payment verification
   const settlementEvent: BatchJsonlSettlementEvent = { v: 1, type: 'settlement', requestId, paymentId, txHash, verified, settledAt: new Date().toISOString() }
   writeEvent(settlementEvent)
-
-  // Also emit quote for audit
-  const quoteEvent: BatchJsonlQuoteEvent = { v: 1, type: 'quote', requestId, totalQueries: cleanQueries.length, pricePerQuery: AMOUNT_USDC, totalAmount, currency: 'USDC', network: NETWORK, payTo: RECEIVING_ADDRESS, idempotencyKey }
-  // quote already validated, but emit after settlement for streaming consumers that missed 402
-  // (not duplicative for paying caller)
-  // we skip re-emitting quote here to keep bounded events tight; settlement is the anchor
 
   let succeeded = 0
   let failed = 0
@@ -796,8 +797,26 @@ app.post('/search/batch', async (req: Request, res: Response) => {
       stats.latencies.push(latencyMs)
       if (stats.latencies.length > 200) stats.latencies.shift()
       const results = normalizeOrganicResults(data)
-      addRecentReceipt({ id: txHash || `${requestId}-${i}`, query: q, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
-      const evt: BatchJsonlResultEvent = { v: 1, type: 'result', requestId, index: i, query: q, results, count: results.length, latencyMs, paidAmount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, txHash }
+      const queryMeta = normalizeQueryMetadata(data, q)
+      addRecentReceipt({ id: txHash || `${requestId}-${i}`, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+      const evt: BatchJsonlResultEvent = {
+        v: 1,
+        type: 'result',
+        requestId,
+        index: i,
+        query: queryMeta.executedQuery,
+        originalQuery: queryMeta.originalQuery,
+        executedQuery: queryMeta.executedQuery,
+        suggestedQuery: queryMeta.suggestedQuery,
+        isCorrected: queryMeta.isCorrected,
+        results,
+        count: results.length,
+        latencyMs,
+        paidAmount: AMOUNT_USDC,
+        currency: 'USDC',
+        network: NETWORK,
+        txHash,
+      }
       writeEvent(evt)
       succeeded++
     } catch (err: any) {
@@ -858,9 +877,6 @@ app.post('/jobs', async (req: Request, res: Response) => {
 
   // Payment verification via x402 header
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
-  let paymentId: string | null = null
-  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
-  let verified = false
   if (!paymentHeader) {
     // Return 402 with payment requirements and statusUrl hint
     const paymentRequired = {
@@ -874,13 +890,16 @@ app.post('/jobs', async (req: Request, res: Response) => {
   }
   const consumption = consumePaymentPayload(paymentHeader)
   if (!consumption.ok) return res.status(402).json({ error: consumption.error })
-  paymentId = consumption.paymentId
-  verified = true
+  const paymentId = consumption.paymentId
+  const verified = true
+  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
   try {
     const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
     const parsed = JSON.parse(decoded)
     txHash = parsed.transactionHash || parsed.txHash || txHash
-  } catch {}
+  } catch {
+    // ignore parse error
+  }
 
   const jobId = crypto.randomUUID()
   const now = new Date().toISOString()
@@ -937,8 +956,22 @@ app.post('/jobs', async (req: Request, res: Response) => {
       stats.latencies.push(latencyMs)
       if (stats.latencies.length > 200) stats.latencies.shift()
       const results = normalizeOrganicResults(data)
-      addRecentReceipt({ id: txHash || jobId, query: cleanQ, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
-      const responseBody: SearchResponse = { query: cleanQ, results, count: results.length, network: NETWORK, paidAmount: AMOUNT_USDC, currency: 'USDC', txHash, latencyMs }
+      const queryMeta = normalizeQueryMetadata(data, cleanQ)
+      addRecentReceipt({ id: txHash || jobId, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+      const responseBody: SearchResponse = {
+        query: queryMeta.executedQuery,
+        originalQuery: queryMeta.originalQuery,
+        executedQuery: queryMeta.executedQuery,
+        suggestedQuery: queryMeta.suggestedQuery,
+        isCorrected: queryMeta.isCorrected,
+        results,
+        count: results.length,
+        network: NETWORK,
+        paidAmount: AMOUNT_USDC,
+        currency: 'USDC',
+        txHash,
+        latencyMs,
+      }
       job.result = responseBody
       job.status = 'completed'
       job.updatedAt = new Date().toISOString()
@@ -997,6 +1030,9 @@ app.get('/health', (_req: Request, res: Response) => {
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
 // (back-compat fallback for callers that don't support SSE).
 app.post('/ai/chat', async (req: Request, res: Response) => {
+  if (!groq) {
+    return res.status(503).json({ error: 'AI assistant is not configured.' })
+  }
   const { messages, model: requestedModel } = req.body as {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string
