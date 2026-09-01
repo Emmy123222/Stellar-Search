@@ -263,3 +263,5 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
     expect(res._json.results[1].blockReason).toBe('non_http_protocol')
   })
 })
+
+

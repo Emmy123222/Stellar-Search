@@ -1,4 +1,5 @@
 export { useFreighterWallet } from './useFreighterWallet'
 export { useSearch }          from './useSearch'
+export { usePageVisible }     from './usePageVisible'
 export type { WalletState, StellarTransaction } from './useFreighterWallet'
-export type { SearchResult, SearchSession }     from './useSearch'
+export type { SearchResult, SearchReceipt, SearchResponse, ApiErrorResponse, SearchSession } from '../types'
