@@ -26,6 +26,8 @@ export interface SearchSession {
   durationMs?: number
 }
 
+export type WalletAccountStatus = 'unfunded' | 'no_trustline' | 'zero_balance' | 'funded'
+
 export interface WalletState {
   publicKey: string | null
   connected: boolean
@@ -39,6 +41,8 @@ export interface WalletState {
   hasUsdcTrustline: boolean
   loading: boolean
   error: string | null
+  accountExists: boolean
+  accountStatus: WalletAccountStatus
 }
 
 export interface StellarTransaction {

@@ -105,6 +105,9 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         connected={wallet.connected}
         publicKey={wallet.publicKey}
         usdcBalance={wallet.usdcBalance}
+        accountExists={wallet.accountExists}
+        hasUsdcTrustline={wallet.hasUsdcTrustline}
+        accountStatus={wallet.accountStatus}
       />
 
       <SearchBar
@@ -165,10 +168,8 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
             {(session.status === 'complete' || session.status === 'error') && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
-                <button onClick={reset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
-                  {t('newSearch')}
                 <button onClick={handleReset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
-                  ← NEW SEARCH
+                  {t('newSearch')}
                 </button>
               </motion.div>
             )}

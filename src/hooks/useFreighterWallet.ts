@@ -7,9 +7,9 @@
 import { useState, useCallback, useEffect } from 'react'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
 import i18n from '../i18n'
-import type { WalletState, StellarTransaction } from '../types'
+import type { WalletState, StellarTransaction, WalletAccountStatus } from '../types'
 
-export type { WalletState, StellarTransaction }
+export type { WalletState, StellarTransaction, WalletAccountStatus }
 
 // `@stellar/freighter-api` and `@stellar/stellar-sdk` are loaded on demand
 // rather than imported statically — every page (docs, a still-disconnected
@@ -95,9 +95,11 @@ export function useFreighterWallet() {
     network: 'TESTNET',
     xlmBalance: '0',
     usdcBalance: '0',
-    hasUsdcTrustline: false,
     loading: false,
     error: null,
+    accountExists: false,
+    hasUsdcTrustline: false,
+    accountStatus: 'unfunded',
   })
   const [transactions, setTransactions] = useState<StellarTransaction[]>([])
   const [txLoading, setTxLoading] = useState(false)
@@ -110,7 +112,7 @@ export function useFreighterWallet() {
 
       let xlm = '0'
       let usdc = '0'
-      let hasUsdcTrustline = false
+      let hasTrustline = false
 
       for (const balance of account.balances) {
         if (balance.asset_type === 'native') {
@@ -124,23 +126,52 @@ export function useFreighterWallet() {
           // established, regardless of the amount (#342) — checked before
           // reading .balance so a freshly-opened, still-zero trustline is
           // still correctly detected as "established".
-          hasUsdcTrustline = true
+          hasTrustline = true
           usdc = parseFloat(balance.balance).toFixed(6)
         }
       }
+
+      const isZeroUsdc = parseFloat(usdc) === 0
+      const status: WalletAccountStatus = !hasTrustline
+        ? 'no_trustline'
+        : isZeroUsdc
+          ? 'zero_balance'
+          : 'funded'
 
       setWallet((prev: WalletState) => ({
         ...prev,
         xlmBalance: xlm,
         usdcBalance: usdc,
-        hasUsdcTrustline,
+        accountExists: true,
+        hasUsdcTrustline: hasTrustline,
+        accountStatus: status,
         error: null,
       }))
     } catch (err: any) {
-      setWallet((prev: WalletState) => ({
-        ...prev,
-        error: err.message || i18n.t('errors:accountLoadFailed'),
-      }))
+      const isNotFound =
+        err?.response?.status === 404 ||
+        err?.name === 'NotFoundError' ||
+        (typeof err?.message === 'string' && (
+          err.message.includes('404') ||
+          err.message.toLowerCase().includes('not found')
+        ))
+
+      if (isNotFound) {
+        setWallet((prev: WalletState) => ({
+          ...prev,
+          xlmBalance: '0',
+          usdcBalance: '0',
+          accountExists: false,
+          hasUsdcTrustline: false,
+          accountStatus: 'unfunded',
+          error: null,
+        }))
+      } else {
+        setWallet((prev: WalletState) => ({
+          ...prev,
+          error: err.message || i18n.t('errors:accountLoadFailed'),
+        }))
+      }
     }
   }, [])
 
@@ -289,9 +320,11 @@ export function useFreighterWallet() {
       network: 'TESTNET',
       xlmBalance: '0',
       usdcBalance: '0',
-      hasUsdcTrustline: false,
       loading: false,
       error: null,
+      accountExists: false,
+      hasUsdcTrustline: false,
+      accountStatus: 'unfunded',
     })
     setTransactions([])
   }, [])
