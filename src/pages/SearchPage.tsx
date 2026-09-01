@@ -10,27 +10,32 @@ import {
   StatsGrid,
   ZeroBalanceBanner,
   SpellingCorrectionBanner,
+  ModeSelector,
+  ImageResults,
+  NewsResults,
 } from '../components'
 import type { SearchSession } from '../hooks/useSearch'
 import type { WalletState } from '../hooks/useFreighterWallet'
+import type { SearchMode } from '../types'
 import { AMOUNT_USDC } from '../lib/stellar'
 
 interface Props {
   wallet: WalletState
   onConnectWallet: () => void
   session: SearchSession
-  search: (query: string, freshnessOrCount?: string | number, count?: number) => Promise<void>
+  search: (query: string, freshnessOrCount?: string | number, count?: number, mode?: SearchMode) => Promise<void>
   reset: () => void
 }
 
 export function SearchPage({ wallet, onConnectWallet, session, search, reset }: Props) {
   const { t } = useTranslation('search')
   const [dismissedSuggestion, setDismissedSuggestion] = useState(false)
+  const [searchMode, setSearchMode] = useState<SearchMode>('web')
 
   const handleSearch = (query: string, freshness?: string) => {
     setDismissedSuggestion(false)
     if (!wallet.connected) { onConnectWallet(); return }
-    search(query, freshness)
+    search(query, freshness, searchMode === 'web' ? 5 : 10, searchMode)
   }
 
   const handleReset = () => {
@@ -42,7 +47,6 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
-
       <StatsGrid />
 
       <AnimatePresence>
@@ -107,6 +111,12 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         usdcBalance={wallet.usdcBalance}
       />
 
+      <ModeSelector
+        mode={searchMode}
+        onChange={setSearchMode}
+        disabled={isSearching}
+      />
+
       <SearchBar
         onSearch={handleSearch}
         isSearching={isSearching}
@@ -115,12 +125,6 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         walletNetwork={wallet.network}
         defaultQuery={session.query}
       />
-
-      <AnimatePresence>
-        {session.status === 'idle' && (
-          <SearchResults results={[]} query="" />
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {session.status !== 'idle' && (
@@ -139,7 +143,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
               </div>
             )}
 
-            {session.status === 'complete' && (
+            {session.status === 'complete' && searchMode === 'web' && (
               <SpellingCorrectionBanner
                 originalQuery={session.originalQuery}
                 executedQuery={session.executedQuery || session.query}
@@ -151,13 +155,25 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
               />
             )}
 
-            {(session.status === 'complete' || session.status === 'searching') && (
+            {searchMode === 'web' && (session.status === 'complete' || session.status === 'searching') && (
               <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-                <SearchResults results={session.results} query={session.query} isLoading={session.status === 'searching'} txHash={session.txHash} />
+                <SearchResults results={session.results as any} query={session.query} isLoading={session.status === 'searching'} txHash={session.txHash} />
               </motion.div>
             )}
 
-            {session.status === 'complete' && session.suggestions && session.suggestions.length > 0 && (
+            {searchMode === 'images' && (session.status === 'complete' || session.status === 'searching') && (
+              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+                <ImageResults results={session.results as any} isLoading={session.status === 'searching'} />
+              </motion.div>
+            )}
+
+            {searchMode === 'news' && (session.status === 'complete' || session.status === 'searching') && (
+              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+                <NewsResults results={session.results as any} isLoading={session.status === 'searching'} />
+              </motion.div>
+            )}
+
+            {session.status === 'complete' && session.suggestions && session.suggestions.length > 0 && searchMode === 'web' && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                 <SearchSuggestions onSelect={handleSearch} aiSuggestions={session.suggestions} />
               </motion.div>
@@ -165,10 +181,8 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
             {(session.status === 'complete' || session.status === 'error') && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
-                <button onClick={reset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
-                  {t('newSearch')}
                 <button onClick={handleReset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
-                  ← NEW SEARCH
+                  {t('newSearch')}
                 </button>
               </motion.div>
             )}
