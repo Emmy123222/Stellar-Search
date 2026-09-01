@@ -5,7 +5,7 @@ import {
   AMOUNT_STROOPS,
   AMOUNT_USDC
 } from '../src/lib/constants'
-import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { consumePaymentPayload, decodePaymentReceipt } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
 import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
 
@@ -94,12 +94,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   console.log('✅ Payment header received')
 
   let txHash: string | null = null
+  const requestId = String(req.headers['x-request-id'] || req.headers['x-correlation-id'] || 'unknown')
   try {
-    const decoded = Buffer.from(paymentHeader as string, 'base64').toString('utf8')
-    const parsed  = JSON.parse(decoded)
-    txHash = parsed.transactionHash || parsed.txHash || null
+    const decoded = decodePaymentReceipt(paymentHeader, {
+      network: NETWORK,
+      asset: USDC_CONTRACT,
+      amount: AMOUNT_STROOPS,
+    })
+
+    if (!decoded.ok) {
+      console.warn('[api/search] Invalid x402 payment receipt omitted from response', {
+        requestId,
+        reason: decoded.reason,
+        headerPreview: String(paymentHeader).slice(0, 120),
+      })
+    } else {
+      txHash = decoded.txHash
+    }
   } catch {
-    // payment header not base64 JSON — fine, tx hash just won't show
+    console.warn('[api/search] Invalid x402 payment receipt omitted from response', {
+      requestId,
+      reason: 'receipt decode failed',
+      headerPreview: String(paymentHeader).slice(0, 120),
+    })
   }
 
   const t0 = Date.now()

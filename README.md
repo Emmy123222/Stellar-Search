@@ -146,6 +146,10 @@ sequenceDiagram
     Browser-->>User: Display paid search results
 ```
 
+### Receipt integrity
+
+The server validates each facilitator x402 receipt before exposing a transaction hash to the client. It enforces the expected `schema`, `network`, `asset`, `amount`, and a 64-character lowercase/uppercase hex transaction hash. Invalid receipts are logged with the request ID and omitted from the response payload so the UI never creates a misleading explorer link.
+
 ---
 
 ## Project structure

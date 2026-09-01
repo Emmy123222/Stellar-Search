@@ -13,6 +13,7 @@
  *   groq-sdk       — Groq AI (Llama 3)
  */
 
+import crypto from 'crypto'
 import express, { Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
@@ -27,9 +28,10 @@ import logger from './logger'
 import {
   STELLAR_NETWORK,
   AMOUNT_USDC,
-  AMOUNT_STROOPS
+  AMOUNT_STROOPS,
+  USDC_CONTRACT,
 } from '../src/lib/constants'
-import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { consumePaymentPayload, decodePaymentReceipt } from '../src/lib/paymentIntegrity'
 import {
   normalizeOrganicResults,
   normalizeImageResults,
@@ -88,6 +90,12 @@ app.use(
 app.use(cors(buildCorsOptions()))
 app.use(express.json())
 app.use(limiter)
+app.use((req: Request, res: Response, next: express.NextFunction) => {
+  const requestId = (req.get('x-request-id') as string | undefined) || crypto.randomUUID()
+  ;(req as Request & { id?: string }).id = requestId
+  res.setHeader('X-Request-Id', requestId)
+  next()
+})
 
 // ─── In-memory stats ──────────────────────────────────────────────────────
 const stats = {
@@ -267,8 +275,26 @@ app.get('/search', async (req: Request, res: Response) => {
 
     const results = normalizeOrganicResults(data)
 
-    // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    const requestId = (req as Request & { id?: string }).id || 'unknown'
+    const rawReceipt =
+      (req.headers['x-payment-response'] as string | undefined) ||
+      (req.headers['x-payment'] as string | undefined) ||
+      null
+    const decodedReceipt = rawReceipt ? decodePaymentReceipt(rawReceipt, {
+      network: NETWORK,
+      asset: USDC_CONTRACT,
+      amount: AMOUNT_STROOPS,
+    }) : null
+
+    if (rawReceipt && decodedReceipt && !decodedReceipt.ok) {
+      logger.warn('Invalid x402 payment receipt omitted from response', {
+        requestId,
+        reason: decodedReceipt.reason,
+        headerPreview: rawReceipt.slice(0, 120),
+      })
+    }
+
+    const txHash = decodedReceipt && decodedReceipt.ok ? decodedReceipt.txHash : null
 
     // ── Optional AI suggestions via Groq ──────────────────────────────────
     let suggestions: string[] = []
@@ -369,7 +395,26 @@ app.get('/images', async (req: Request, res: Response) => {
 
     const results = normalizeImageResults(data)
 
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    const requestId = (req as Request & { id?: string }).id || 'unknown'
+    const rawReceipt =
+      (req.headers['x-payment-response'] as string | undefined) ||
+      (req.headers['x-payment'] as string | undefined) ||
+      null
+    const decodedReceipt = rawReceipt ? decodePaymentReceipt(rawReceipt, {
+      network: NETWORK,
+      asset: USDC_CONTRACT,
+      amount: AMOUNT_STROOPS,
+    }) : null
+
+    if (rawReceipt && decodedReceipt && !decodedReceipt.ok) {
+      logger.warn('Invalid x402 payment receipt omitted from response', {
+        requestId,
+        reason: decodedReceipt.reason,
+        headerPreview: rawReceipt.slice(0, 120),
+      })
+    }
+
+    const txHash = decodedReceipt && decodedReceipt.ok ? decodedReceipt.txHash : null
 
     const responseBody: ImageSearchResponse = {
       query: cleanQ,
@@ -446,7 +491,26 @@ app.get('/news', async (req: Request, res: Response) => {
 
     const results = normalizeNewsResults(data)
 
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    const requestId = (req as Request & { id?: string }).id || 'unknown'
+    const rawReceipt =
+      (req.headers['x-payment-response'] as string | undefined) ||
+      (req.headers['x-payment'] as string | undefined) ||
+      null
+    const decodedReceipt = rawReceipt ? decodePaymentReceipt(rawReceipt, {
+      network: NETWORK,
+      asset: USDC_CONTRACT,
+      amount: AMOUNT_STROOPS,
+    }) : null
+
+    if (rawReceipt && decodedReceipt && !decodedReceipt.ok) {
+      logger.warn('Invalid x402 payment receipt omitted from response', {
+        requestId,
+        reason: decodedReceipt.reason,
+        headerPreview: rawReceipt.slice(0, 120),
+      })
+    }
+
+    const txHash = decodedReceipt && decodedReceipt.ok ? decodedReceipt.txHash : null
 
     const responseBody: NewsSearchResponse = {
       query: cleanQ,

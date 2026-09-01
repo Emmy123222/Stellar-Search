@@ -6,6 +6,7 @@ import {
   cleanupExpiredPayments,
   resetConsumedPayments,
   getConsumedPaymentsCount,
+  decodePaymentReceipt,
   DEFAULT_PAYMENT_VALIDITY_WINDOW_MS,
 } from './paymentIntegrity'
 
@@ -48,6 +49,46 @@ describe('src/lib/paymentIntegrity — Replay Protection & Payload Tracking', ()
     it('produces identical identifier for same raw header string', () => {
       const rawHeader = 'X-Payment-Signature-Raw-Token-Value'
       expect(extractPaymentIdentifier(rawHeader)).toBe(extractPaymentIdentifier(rawHeader))
+    })
+
+    it('accepts a valid x402 receipt payload with schema, network, asset, amount, and 64-hex hash', () => {
+      const validReceipt = {
+        schema: 'x402.payment.receipt',
+        network: 'stellar:testnet',
+        asset: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+        amount: '10000',
+        transactionHash: 'a'.repeat(64),
+      }
+
+      const decoded = decodePaymentReceipt(validReceipt, {
+        network: 'stellar:testnet',
+        asset: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+        amount: '10000',
+      })
+
+      expect(decoded.ok).toBe(true)
+      if (decoded.ok) {
+        expect(decoded.txHash).toBe('a'.repeat(64))
+      }
+    })
+
+    it('rejects invalid receipt schema, mismatched network, wrong asset, wrong amount, or non-hex hash', () => {
+      const invalidReceipts = [
+        { schema: 'bad', network: 'stellar:testnet', asset: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA', amount: '10000', transactionHash: 'a'.repeat(64) },
+        { schema: 'x402.payment.receipt', network: 'stellar:mainnet', asset: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA', amount: '10000', transactionHash: 'a'.repeat(64) },
+        { schema: 'x402.payment.receipt', network: 'stellar:testnet', asset: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF', amount: '10000', transactionHash: 'a'.repeat(64) },
+        { schema: 'x402.payment.receipt', network: 'stellar:testnet', asset: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA', amount: '9999', transactionHash: 'a'.repeat(64) },
+        { schema: 'x402.payment.receipt', network: 'stellar:testnet', asset: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA', amount: '10000', transactionHash: 'abc' },
+      ]
+
+      for (const receipt of invalidReceipts) {
+        const decoded = decodePaymentReceipt(receipt, {
+          network: 'stellar:testnet',
+          asset: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+          amount: '10000',
+        })
+        expect(decoded.ok).toBe(false)
+      }
     })
   })
 

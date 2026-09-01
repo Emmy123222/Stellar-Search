@@ -17,7 +17,7 @@ import { ExactStellarScheme }                  from '@x402/stellar/exact/client'
 import { signAuthEntry, getNetworkDetails }    from '@stellar/freighter-api'
 import { Networks }                            from '@stellar/stellar-sdk'
 import { Buffer }                              from 'buffer'
-import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
+import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl, isValidTxHash } from '../lib/stellar'
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
   typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
@@ -188,11 +188,13 @@ export function useSearch(walletAddress: string | null = null) {
       const data = (await paidRes.json()) as SearchResponse
       console.log('✅ Search complete!')
 
+      const validTxHash = isValidTxHash(data.txHash) ? data.txHash : null
+
       // Flow step 6 — result received and rendered
       setSession({
         query,
         results:     data.results    ?? [],
-        txHash:      data.txHash     ?? null,
+        txHash:      validTxHash,
         paidAmount:  data.paidAmount ?? null,
         status:      'complete',
         step:        6,
@@ -200,25 +202,24 @@ export function useSearch(walletAddress: string | null = null) {
         suggestions: data.suggestions ?? [],
       })
 
-      if (data.txHash) {
-        const settledTxHash = data.txHash
+      if (validTxHash) {
         toast.success(`Payment settled: ${data.paidAmount || '0.001'} USDC`, {
           description: 'View transaction on Stellar network',
           action: {
             label: 'Explorer',
-            onClick: () => window.open(explorerTxUrl(settledTxHash), '_blank')
+            onClick: () => window.open(explorerTxUrl(validTxHash), '_blank')
           }
         })
       }
 
       // Persist receipt
-      if (data.txHash) {
+      if (validTxHash) {
         try {
           const receiptsRaw = localStorage.getItem('stellarsearch_receipts')
           const receipts: SearchReceipt[] = receiptsRaw ? JSON.parse(receiptsRaw) : []
           
           const newReceipt: SearchReceipt = {
-            txHash: data.txHash,
+            txHash: validTxHash,
             query: query.trim(),
             amount: data.paidAmount || '0.001',
             timestamp: new Date().toISOString(),
