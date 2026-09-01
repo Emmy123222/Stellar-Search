@@ -12,6 +12,10 @@ export interface SearchResult {
 
 export interface SearchSession {
   query: string
+  originalQuery?: string
+  executedQuery?: string
+  suggestedQuery?: string
+  isCorrected?: boolean
   results: SearchResult[]
   txHash: string | null
   paidAmount: string | null
@@ -99,6 +103,10 @@ export interface NewsResult {
 
 export interface SearchResponse {
   query: string
+  originalQuery?: string
+  executedQuery?: string
+  suggestedQuery?: string
+  isCorrected?: boolean
   results: SearchResult[]
   count: number
   network: string
@@ -187,6 +195,10 @@ export interface BatchJsonlResultEvent {
   requestId: string
   index: number
   query: string
+  originalQuery?: string
+  executedQuery?: string
+  suggestedQuery?: string
+  isCorrected?: boolean
   results: SearchResult[]
   count: number
   latencyMs: number

@@ -28,6 +28,10 @@ describe('Standardized API Response Schemas (src/types/index.ts)', () => {
 
     const mockResponse: SearchResponse = {
       query: 'Stellar docs',
+      originalQuery: 'Stelar docs',
+      executedQuery: 'Stellar docs',
+      suggestedQuery: 'Stellar docs',
+      isCorrected: true,
       results: [mockResult],
       count: 1,
       network: 'stellar:testnet',
@@ -42,6 +46,10 @@ describe('Standardized API Response Schemas (src/types/index.ts)', () => {
     const webResponse: WebSearchResponse = mockResponse
 
     expect(webResponse.query).toBe('Stellar docs')
+    expect(webResponse.originalQuery).toBe('Stelar docs')
+    expect(webResponse.executedQuery).toBe('Stellar docs')
+    expect(webResponse.suggestedQuery).toBe('Stellar docs')
+    expect(webResponse.isCorrected).toBe(true)
     expect(webResponse.results).toHaveLength(1)
     expect(webResponse.results[0].title).toBe('Stellar Documentation')
     expect(webResponse.paidAmount).toBe('0.001')
