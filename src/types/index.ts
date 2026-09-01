@@ -12,6 +12,10 @@ export interface SearchResult {
 
 export interface SearchSession {
   query: string
+  originalQuery?: string
+  executedQuery?: string
+  suggestedQuery?: string
+  isCorrected?: boolean
   results: SearchResult[]
   txHash: string | null
   paidAmount: string | null
@@ -82,6 +86,10 @@ export interface NewsResult {
 
 export interface SearchResponse {
   query: string
+  originalQuery?: string
+  executedQuery?: string
+  suggestedQuery?: string
+  isCorrected?: boolean
   results: SearchResult[]
   count: number
   network: string
@@ -124,65 +132,168 @@ export type ImageResponse = ImageSearchResponse
 export type NewsResponse = NewsSearchResponse
 export type ErrorResponse = ApiErrorResponse
 
-// ─── Collections ────────────────────────────────────────────────────────────
+// ─── JSON Lines batch streaming (issue #325) ─────────────────────────────────
 
-/** Current schema version. Bump when the shape of CollectionsStore changes. */
-export const COLLECTIONS_SCHEMA_VERSION = 1 as const
+export const BATCH_JSONL_VERSION = 1 as const
+export const MAX_BATCH_SIZE = 10
+export const MAX_BATCH_TOTAL_USDC = '0.01'
 
-/** Maximum total saved results across all collections per device. */
-export const COLLECTIONS_QUOTA_MAX = 500 as const
+export type BatchItemStatus = 'pending' | 'settled' | 'success' | 'error' | 'skipped'
 
-/** Maximum number of named collections per device. */
-export const COLLECTIONS_MAX_COUNT = 50 as const
+export interface BatchSearchRequest {
+  queries: string[]
+  count?: number
+  freshness?: 'pd' | 'pw' | 'pm'
+  idempotencyKey?: string
+}
 
-/** localStorage key used by useCollections. */
-export const COLLECTIONS_STORAGE_KEY = 'stellarsearch_collections' as const
+export type BatchJsonlEventType = 'quote' | 'settlement' | 'result' | 'error' | 'done'
 
-/**
- * A single paid search result saved into a collection.
- * Extends SearchResult with the originating query and payment metadata
- * so provenance is always available offline.
- */
-export interface SavedResult {
-  /** Stable unique id (copied from SearchResult.id). */
-  id: string
-  /** Collection this result belongs to. */
-  collectionId: string
-  /** ISO-8601 timestamp of when the result was saved. */
-  savedAt: string
-  /** The search query that produced this result. */
-  query: string
-  /** x402 transaction hash of the paid search that produced this result. */
-  txHash: string | null
-  /** Stellar network the payment was settled on. */
+export interface BatchJsonlQuoteEvent {
+  v: typeof BATCH_JSONL_VERSION
+  type: 'quote'
+  requestId: string
+  totalQueries: number
+  pricePerQuery: string
+  totalAmount: string
+  currency: string
   network: string
-  /** Snapshot of the result at save time. */
-  result: SearchResult
+  payTo: string
+  idempotencyKey?: string
 }
 
-/** A named, ordered collection of saved results. */
-export interface Collection {
-  /** UUID v4. */
+export interface BatchJsonlSettlementEvent {
+  v: typeof BATCH_JSONL_VERSION
+  type: 'settlement'
+  requestId: string
+  paymentId: string | null
+  txHash: string | null
+  verified: boolean
+  settledAt: string
+}
+
+export interface BatchJsonlResultEvent {
+  v: typeof BATCH_JSONL_VERSION
+  type: 'result'
+  requestId: string
+  index: number
+  query: string
+  originalQuery?: string
+  executedQuery?: string
+  suggestedQuery?: string
+  isCorrected?: boolean
+  results: SearchResult[]
+  count: number
+  latencyMs: number
+  paidAmount: string
+  currency: string
+  network: string
+  txHash: string | null
+}
+
+export interface BatchJsonlErrorEvent {
+  v: typeof BATCH_JSONL_VERSION
+  type: 'error'
+  requestId: string
+  index: number
+  query: string
+  error: string
+  code: string
+}
+
+export interface BatchJsonlDoneEvent {
+  v: typeof BATCH_JSONL_VERSION
+  type: 'done'
+  requestId: string
+  succeeded: number
+  failed: number
+  totalUsdcSpent: string
+  aggregateLatencyMs: number
+  completedAt: string
+}
+
+export type BatchJsonlEvent =
+  | BatchJsonlQuoteEvent
+  | BatchJsonlSettlementEvent
+  | BatchJsonlResultEvent
+  | BatchJsonlErrorEvent
+  | BatchJsonlDoneEvent
+
+// ─── Asynchronous paid search jobs with webhooks (issue #324) ─────────────────
+
+export type JobStatus = 'pending' | 'settling' | 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface SearchJobRequest {
+  query: string
+  count?: number
+  freshness?: 'pd' | 'pw' | 'pm'
+  webhookUrl?: string
+  webhookSecret?: string
+  idempotencyKey?: string
+}
+
+export interface SearchJob {
   id: string
-  /** User-chosen display name (1-100 chars). */
-  name: string
-  /** ISO-8601 creation timestamp. */
+  query: string
+  count: number
+  freshness?: string
+  status: JobStatus
   createdAt: string
-  /** ISO-8601 last-modified timestamp. */
   updatedAt: string
-  /** Ordered list of saved result ids belonging to this collection. */
-  resultIds: string[]
+  paymentId: string | null
+  txHash: string | null
+  verified: boolean
+  paidAmount: string
+  currency: string
+  network: string
+  result?: SearchResponse
+  error?: string
+  webhookUrl?: string
+  webhookSecret?: string
+  idempotencyKey?: string
+  attempts: number
+  statusUrl: string
 }
 
-/**
- * Root object stored under COLLECTIONS_STORAGE_KEY.
- * Version-tagged so future schema changes can migrate forward.
- */
-export interface CollectionsStore {
-  /** Schema version — must equal COLLECTIONS_SCHEMA_VERSION to be trusted as-is. */
-  version: typeof COLLECTIONS_SCHEMA_VERSION
-  /** Map from collection id to Collection metadata. */
-  collections: Record<string, Collection>
-  /** Map from saved-result id to SavedResult. */
-  results: Record<string, SavedResult>
+export interface SearchJobStatusResponse {
+  job: SearchJob
+  paymentVerified: boolean
+  statusUrl: string
+}
+
+export interface WebhookDeliveryState {
+  jobId: string
+  url: string
+  attempt: number
+  nextRetryAt?: string
+  lastError?: string
+  deliveredAt?: string
+  signature?: string
+}
+
+// ─── MCP resources & receipts (issue #326) ───────────────────────────────────
+
+export interface StoredReceipt {
+  id: string
+  query: string
+  txHash: string | null
+  amount: string
+  currency: string
+  network: string
+  timestamp: string
+  latencyMs: number
+  count: number
+}
+
+export interface CapabilityDoc {
+  name: string
+  version: string
+  network: string
+  pricePerQuery: string
+  currency: string
+  contract: string
+  endpoints: Record<string, string>
+  mcpTools: string[]
+  mcpResources: string[]
+  mcpPrompts: string[]
 }
