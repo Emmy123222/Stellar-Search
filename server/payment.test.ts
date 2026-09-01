@@ -127,7 +127,7 @@ describe('settle — successful search after payment', () => {
     expect(res.body.results[0].title).toBe('Stellar')
   })
 
-  it('response includes x402 settlement metadata', async () => {
+  it('response includes x402 settlement metadata and query metadata', async () => {
     const res = await request(app).get('/search?q=stellar').set('x-payment', makeReceipt('tx_settle_meta'))
     expect(res.status).toBe(200)
     expect(res.body.paidAmount).toBe('0.001')
@@ -135,6 +135,45 @@ describe('settle — successful search after payment', () => {
     expect(res.body.network).toMatch(/^stellar:/)
     expect(typeof res.body.latencyMs).toBe('number')
     expect(res.body.latencyMs).toBeGreaterThanOrEqual(0)
+    expect(res.body.originalQuery).toBe('stellar')
+    expect(res.body.executedQuery).toBe('stellar')
+    expect(res.body.isCorrected).toBe(false)
+  })
+
+  it('distinguishes original, executed, and suggested query text on auto-correction', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        searchParameters: { q: 'stellar blockchain' },
+        searchInformation: { originalQuery: 'stelarr blockchan' },
+        organic: [{ title: 'Stellar', link: 'https://stellar.org', snippet: 'Blockchain' }],
+      }),
+    } as any)
+    const res = await request(app).get('/search?q=stelarr+blockchan').set('x-payment', makeReceipt('tx_settle_spell'))
+    expect(res.status).toBe(200)
+    expect(res.body.originalQuery).toBe('stelarr blockchan')
+    expect(res.body.executedQuery).toBe('stellar blockchain')
+    expect(res.body.suggestedQuery).toBe('stellar blockchain')
+    expect(res.body.isCorrected).toBe(true)
+    expect(res.body.query).toBe('stellar blockchain')
+  })
+
+  it('provides suggestedQuery when didYouMean is present without auto-correction', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        searchParameters: { q: 'stelarr blockchan' },
+        spelling: { didYouMean: 'stellar blockchain' },
+        organic: [{ title: 'Stelarr Results', link: 'https://stellar.org/alt', snippet: 'Alt' }],
+      }),
+    } as any)
+    const res = await request(app).get('/search?q=stelarr+blockchan').set('x-payment', makeReceipt('tx_settle_did_you_mean'))
+    expect(res.status).toBe(200)
+    expect(res.body.originalQuery).toBe('stelarr blockchan')
+    expect(res.body.executedQuery).toBe('stelarr blockchan')
+    expect(res.body.suggestedQuery).toBe('stellar blockchain')
+    expect(res.body.isCorrected).toBe(false)
+    expect(res.body.query).toBe('stelarr blockchan')
   })
 
   it('respects count param and returns correct result count', async () => {
@@ -392,3 +431,70 @@ describe('x402 settlement semantics — Express + Vercel constants aligned', () 
     expect(res.body.latencyMs).toBeGreaterThanOrEqual(0)
   })
 })
+
+// ─── Upstream Serper payload validation ───────────────────────────────────────
+
+describe('malformed upstream Serper payloads — server normalization', () => {
+  it('handles null or non-object Serper responses safely (returns 200 with empty results)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => null,
+    } as any)
+    const res = await request(app).get('/search?q=stellar').set('x-payment', makeReceipt('tx_malformed_null'))
+    expect(res.status).toBe(200)
+    expect(res.body.results).toEqual([])
+    expect(res.body.count).toBe(0)
+  })
+
+  it('skips organic rows missing valid HTTP/HTTPS link or containing malformed fields', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        organic: [
+          { title: 'Bad Link 1', link: 'javascript:alert(1)' },
+          { title: 'Valid Link', link: 'https://example.com/ok', snippet: 'Good' },
+          { title: 'Missing Link' },
+        ],
+      }),
+    } as any)
+    const res = await request(app).get('/search?q=stellar').set('x-payment', makeReceipt('tx_malformed_organic'))
+    expect(res.status).toBe(200)
+    expect(res.body.results).toHaveLength(1)
+    expect(res.body.results[0].title).toBe('Valid Link')
+    expect(res.body.results[0].url).toBe('https://example.com/ok')
+  })
+
+  it('skips image rows missing valid imageUrl and handles malformed image dimensions', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        images: [
+          { title: 'No Image', link: 'https://example.com' },
+          { title: 'Valid Img', imageUrl: 'https://example.com/img.png', imageWidth: 'invalid' },
+        ],
+      }),
+    } as any)
+    const res = await request(app).get('/images?q=stellar').set('x-payment', makeReceipt('tx_malformed_img'))
+    expect(res.status).toBe(200)
+    expect(res.body.results).toHaveLength(1)
+    expect(res.body.results[0].imageUrl).toBe('https://example.com/img.png')
+    expect(res.body.results[0].width).toBeUndefined()
+  })
+
+  it('skips news rows missing valid link', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        news: [
+          { title: 'Bad News', link: 'not-a-url' },
+          { title: 'Good News', link: 'https://news.example.com/item' },
+        ],
+      }),
+    } as any)
+    const res = await request(app).get('/news?q=stellar').set('x-payment', makeReceipt('tx_malformed_news'))
+    expect(res.status).toBe(200)
+    expect(res.body.results).toHaveLength(1)
+    expect(res.body.results[0].title).toBe('Good News')
+  })
+})
+
