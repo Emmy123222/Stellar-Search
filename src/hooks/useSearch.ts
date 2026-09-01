@@ -12,12 +12,40 @@
 
 import { useState, useCallback }              from 'react'
 import { toast }                               from 'sonner'
-import { x402Client, x402HTTPClient }          from '@x402/fetch'
-import { ExactStellarScheme }                  from '@x402/stellar/exact/client'
-import { signAuthEntry, getNetworkDetails }    from '@stellar/freighter-api'
-import { Networks }                            from '@stellar/stellar-sdk'
 import { Buffer }                              from 'buffer'
-import { HORIZON_URL, IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
+import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
+
+// The x402/Freighter/Stellar payment stack is loaded on demand, on the first
+// call to `search()`, rather than imported statically — every page load
+// previously pulled all of it into the main bundle even for a user who never
+// runs a paid search (#336). Memoized so a second search in the same session
+// doesn't re-import.
+let paymentDepsPromise: Promise<{
+  x402Client: typeof import('@x402/fetch').x402Client
+  x402HTTPClient: typeof import('@x402/fetch').x402HTTPClient
+  ExactStellarScheme: typeof import('@x402/stellar/exact/client').ExactStellarScheme
+  signAuthEntry: typeof import('@stellar/freighter-api').signAuthEntry
+  getNetworkDetails: typeof import('@stellar/freighter-api').getNetworkDetails
+  Networks: typeof import('@stellar/stellar-sdk').Networks
+}> | null = null
+function loadPaymentDeps() {
+  if (!paymentDepsPromise) {
+    paymentDepsPromise = Promise.all([
+      import('@x402/fetch'),
+      import('@x402/stellar/exact/client'),
+      import('@stellar/freighter-api'),
+      import('@stellar/stellar-sdk'),
+    ]).then(([fetchMod, schemeMod, freighterMod, stellarMod]) => ({
+      x402Client: fetchMod.x402Client,
+      x402HTTPClient: fetchMod.x402HTTPClient,
+      ExactStellarScheme: schemeMod.ExactStellarScheme,
+      signAuthEntry: freighterMod.signAuthEntry,
+      getNetworkDetails: freighterMod.getNetworkDetails,
+      Networks: stellarMod.Networks,
+    }))
+  }
+  return paymentDepsPromise
+}
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
   typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
@@ -30,40 +58,16 @@ const SOROBAN_RPC_TESTNET = 'https://soroban-testnet.stellar.org'
 const SOROBAN_RPC_MAINNET = 'https://soroban-rpc.mainnet.stellar.org' // Or another public RPC
 const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET
 
-export interface SearchReceipt {
-  txHash: string
-  query: string
-  amount: string
-  timestamp: string
-  network: string
-}
+import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSession } from '../types'
 
-export interface SearchResult {
-  id: string
-  title: string
-  url: string
-  description: string
-  source: string
-  relevanceScore: number
-  publishedAt?: string
-}
+export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
 
-// x402 flow steps, per the official x402 quickstart:
-//   1 Request   2 402 Received   3 Sign Auth   4 Retry   5 Facilitate   6 Result
-export type PaymentStep = 1 | 2 | 3 | 4 | 5 | 6
-
-export interface SearchSession {
-  query: string
-  results: SearchResult[]
-  txHash: string | null
-  paidAmount: string | null
-  status: 'idle' | 'searching' | 'complete' | 'error'
-  step?: PaymentStep
-  error?: string
-  durationMs?: number
-  suggestions: string[]
-}
-
+/**
+ * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
+ *
+ * @param walletAddress - The Stellar public key address of the connected wallet, or `null` if unauthenticated.
+ * @returns Object containing search session state (`session`), search execution function (`search`), and session reset function (`reset`).
+ */
 export function useSearch(walletAddress: string | null = null) {
   const [session, setSession] = useState<SearchSession>({
     query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
@@ -88,6 +92,10 @@ export function useSearch(walletAddress: string | null = null) {
 
       setSession({
         query,
+        originalQuery: query,
+        executedQuery: query,
+        suggestedQuery: undefined,
+        isCorrected: false,
         results: [],
         txHash: null,
         paidAmount: null,
@@ -107,12 +115,17 @@ export function useSearch(walletAddress: string | null = null) {
       }
 
     const advance = (step: PaymentStep) =>
-      setSession(prev => ({ ...prev, step }))
+      setSession((prev: SearchSession) => ({ ...prev, step }))
 
     try {
       if (!walletAddress) throw new Error('Connect your Freighter wallet first.')
 
       console.log('🔍 Starting search with wallet:', walletAddress)
+
+      const {
+        x402Client, x402HTTPClient, ExactStellarScheme,
+        signAuthEntry, getNetworkDetails, Networks,
+      } = await loadPaymentDeps()
 
       // Step 1 — verify Freighter is on correct network
       if (!(typeof window !== 'undefined' && window.__STELLAR_SEARCH_E2E_WALLET__)) {
@@ -170,10 +183,20 @@ export function useSearch(walletAddress: string | null = null) {
 
       if (firstRes.status !== 402) {
         if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`)
-        const data = await firstRes.json()
+        const data = (await firstRes.json()) as SearchResponse
         return setSession({
-          query, results: data.results ?? [], txHash: null,
-          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
+          query: data.executedQuery ?? data.query ?? query,
+          originalQuery: data.originalQuery ?? query,
+          executedQuery: data.executedQuery ?? data.query ?? query,
+          suggestedQuery: data.suggestedQuery,
+          isCorrected: data.isCorrected ?? false,
+          results: data.results ?? [],
+          txHash: null,
+          paidAmount: null,
+          status: 'complete',
+          step: 6,
+          durationMs: Date.now() - t0,
+          suggestions: data.suggestions ?? [],
         })
       }
 
@@ -211,27 +234,32 @@ export function useSearch(walletAddress: string | null = null) {
         throw new Error(`Payment failed: server returned ${paidRes.status} — ${text}`)
       }
 
-      const data = await paidRes.json()
+      const data = (await paidRes.json()) as SearchResponse
       console.log('✅ Search complete!')
 
       // Flow step 6 — result received and rendered
       setSession({
-        query,
-        results:     data.results    ?? [],
-        txHash:      data.txHash     ?? null,
-        paidAmount:  data.paidAmount ?? null,
-        status:      'complete',
-        step:        6,
-        durationMs:  Date.now() - t0,
-        suggestions: data.suggestions ?? [],
+        query:        data.executedQuery ?? data.query ?? query,
+        originalQuery: data.originalQuery ?? query,
+        executedQuery: data.executedQuery ?? data.query ?? query,
+        suggestedQuery: data.suggestedQuery,
+        isCorrected:  data.isCorrected ?? false,
+        results:      data.results    ?? [],
+        txHash:       data.txHash     ?? null,
+        paidAmount:   data.paidAmount ?? null,
+        status:       'complete',
+        step:         6,
+        durationMs:   Date.now() - t0,
+        suggestions:  data.suggestions ?? [],
       })
 
       if (data.txHash) {
+        const settledTxHash = data.txHash
         toast.success(`Payment settled: ${data.paidAmount || '0.001'} USDC`, {
           description: 'View transaction on Stellar network',
           action: {
             label: 'Explorer',
-            onClick: () => window.open(explorerTxUrl(data.txHash), '_blank')
+            onClick: () => window.open(explorerTxUrl(settledTxHash), '_blank')
           }
         })
       }
@@ -263,7 +291,7 @@ export function useSearch(walletAddress: string | null = null) {
       console.error('❌ Search failed:', err)
       const msg = err.message || 'Search failed.'
       toast.error('Search Payment Failed', { description: msg })
-      setSession(prev => ({
+      setSession((prev: SearchSession) => ({
         ...prev,
         status: 'error',
         error:  msg,
@@ -272,7 +300,18 @@ export function useSearch(walletAddress: string | null = null) {
   }, [walletAddress])
 
   const reset = useCallback(() => {
-    setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [] })
+    setSession({
+      query: '',
+      originalQuery: '',
+      executedQuery: '',
+      suggestedQuery: undefined,
+      isCorrected: false,
+      results: [],
+      txHash: null,
+      paidAmount: null,
+      status: 'idle',
+      suggestions: [],
+    })
   }, [])
 
   return { session, search, reset }

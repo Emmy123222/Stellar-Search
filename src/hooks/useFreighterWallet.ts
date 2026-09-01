@@ -5,45 +5,88 @@
  */
 
 import { useState, useCallback, useEffect } from 'react'
-import {
-  isConnected,
-  requestAccess,
-  getAddress,
-  getNetwork,
-} from '@stellar/freighter-api'
-import { Horizon } from '@stellar/stellar-sdk'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
+import type { WalletState, StellarTransaction } from '../types'
 
-declare global {
-  interface Window {
-    __STELLAR_SEARCH_E2E_WALLET__?: boolean
+export type { WalletState, StellarTransaction }
+
+// `@stellar/freighter-api` and `@stellar/stellar-sdk` are loaded on demand
+// rather than imported statically — every page (docs, a still-disconnected
+// search) previously pulled both into the main bundle just by mounting this
+// hook, even though neither is needed until the wallet is actually connected
+// (or, for Horizon, until a connected wallet's balances/history are fetched)
+// (#336). Each loader is memoized so repeated calls (e.g. connect() followed
+// by refresh()) reuse the same module/instance instead of re-importing.
+
+type FreighterApi = typeof import('@stellar/freighter-api')
+let freighterApiPromise: Promise<FreighterApi> | null = null
+function loadFreighterApi(): Promise<FreighterApi> {
+  if (!freighterApiPromise) {
+    freighterApiPromise = import('@stellar/freighter-api')
   }
+  return freighterApiPromise
 }
 
-export interface WalletState {
-  publicKey: string | null
-  connected: boolean
-  network: string
-  xlmBalance: string
-  usdcBalance: string
-  loading: boolean
-  error: string | null
+type HorizonServer = InstanceType<
+  typeof import('@stellar/stellar-sdk').Horizon.Server
+>
+let horizonPromise: Promise<HorizonServer> | null = null
+function loadHorizon(): Promise<HorizonServer> {
+  if (!horizonPromise) {
+    horizonPromise = import('@stellar/stellar-sdk').then(
+      ({ Horizon }) => new Horizon.Server(HORIZON_URL)
+    )
+  }
+  return horizonPromise
 }
 
-export interface StellarTransaction {
-  id: string
-  hash: string
-  type: string
-  amount: string
-  asset: string
-  from: string
-  to: string
-  timestamp: string
-  memo?: string
+/**
+ * Safely extracts and normalizes transaction memo data from Horizon transaction records or embedded operation objects.
+ * Handles missing memo, text memo, and non-text memo (ID, hash, return) cases.
+ */
+export function extractSafeMemo(
+  memo: unknown,
+  memoType?: unknown
+): string | undefined {
+  if (memoType === 'none') {
+    return undefined
+  }
+
+  if (memo === null || memo === undefined) {
+    return undefined
+  }
+
+  if (typeof memo === 'string') {
+    const trimmed = memo.trim()
+    return trimmed.length > 0 ? trimmed : undefined
+  }
+
+  if (typeof memo === 'number' || typeof memo === 'bigint') {
+    return String(memo)
+  }
+
+  if (typeof memo === 'object') {
+    try {
+      if (typeof Buffer !== 'undefined' && Buffer.isBuffer(memo)) {
+        const str = memo.toString('utf8').trim()
+        return str.length > 0 ? str : undefined
+      }
+      const json = JSON.stringify(memo)
+      return json !== '{}' ? json : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  return undefined
 }
 
-const horizon = new Horizon.Server(HORIZON_URL)
-
+/**
+ * Custom React hook to manage connection, balances (XLM & USDC), and recent transaction history for the Freighter wallet on Stellar.
+ *
+ * @returns Object containing the current wallet state (`wallet`), list of recent transactions (`transactions`),
+ * transaction loading state (`txLoading`), and action callbacks (`connect`, `disconnect`, `refresh`).
+ */
 export function useFreighterWallet() {
   const [wallet, setWallet] = useState<WalletState>({
     publicKey: null,
@@ -60,6 +103,7 @@ export function useFreighterWallet() {
   // Fetch real balances from Horizon
   const fetchBalances = useCallback(async (publicKey: string) => {
     try {
+      const horizon = await loadHorizon()
       const account = await horizon.loadAccount(publicKey)
 
       let xlm = '0'
@@ -77,24 +121,25 @@ export function useFreighterWallet() {
         }
       }
 
-      setWallet(prev => ({
+      setWallet((prev: WalletState) => ({
         ...prev,
         xlmBalance: xlm,
         usdcBalance: usdc,
         error: null,
       }))
     } catch (err: any) {
-      setWallet(prev => ({
+      setWallet((prev: WalletState) => ({
         ...prev,
         error: err.message || 'Failed to load account',
       }))
     }
   }, [])
 
-  // Fetch real transaction history from Horizon
+  // Fetch real transaction history from Horizon with expanded transaction memo lookup
   const fetchTransactions = useCallback(async (publicKey: string) => {
     setTxLoading(true)
     try {
+      const horizon = await loadHorizon()
       const ops = await horizon
         .operations()
         .forAccount(publicKey)
@@ -102,25 +147,80 @@ export function useFreighterWallet() {
         .limit(15)
         .call()
 
+      // Expanded transaction lookup to reliably retrieve memos
+      const txMap = new Map<string, { memo?: unknown; memo_type?: unknown }>()
+      try {
+        const txPage = await horizon
+          .transactions()
+          .forAccount(publicKey)
+          .order('desc')
+          .limit(15)
+          .call()
+
+        for (const txRecord of txPage.records) {
+          if (txRecord && typeof txRecord === 'object' && 'hash' in txRecord) {
+            txMap.set((txRecord as any).hash, {
+              memo: (txRecord as any).memo,
+              memo_type: (txRecord as any).memo_type,
+            })
+          }
+        }
+      } catch {
+        // Fallback to individual transaction lookups or embedded op transactions
+      }
+
+      // Fallback lookup for individual transactions if not included in recent txPage
+      const missingHashes = Array.from(
+        new Set(
+          ops.records
+            .map((op: any) => op.transaction_hash)
+            .filter((hash: string | undefined): hash is string => Boolean(hash) && !txMap.has(hash!))
+        )
+      )
+
+      if (missingHashes.length > 0) {
+        await Promise.allSettled(
+          missingHashes.map(async (hash) => {
+            try {
+              const txRecord = await horizon.transactions().transaction(hash).call()
+              if (txRecord && typeof txRecord === 'object') {
+                txMap.set(hash, {
+                  memo: (txRecord as any).memo,
+                  memo_type: (txRecord as any).memo_type,
+                })
+              }
+            } catch {
+              // Ignore single lookup failures
+            }
+          })
+        )
+      }
+
       const txs: StellarTransaction[] = ops.records
         .filter((op: any) => op.type === 'payment' || op.type === 'create_account')
-        .map((op: any) => ({
-          id: op.id,
-          hash: op.transaction_hash,
-          type: op.type,
-          amount: op.amount ? parseFloat(op.amount).toFixed(4) : '—',
-          asset:
-            op.asset_type === 'native'
-              ? 'XLM'
-              : op.asset_code || 'Unknown',
-          from: op.from || op.funder || '',
-          to: op.to || op.account || '',
-          timestamp: op.created_at,
-          memo: op.transaction?.memo,
-        }))
+        .map((op: any) => {
+          const txDetails = txMap.get(op.transaction_hash)
+          const rawMemo = txDetails ? txDetails.memo : op.transaction?.memo
+          const rawMemoType = txDetails ? txDetails.memo_type : op.transaction?.memo_type
+
+          return {
+            id: op.id,
+            hash: op.transaction_hash,
+            type: op.type,
+            amount: op.amount ? parseFloat(op.amount).toFixed(4) : '—',
+            asset:
+              op.asset_type === 'native'
+                ? 'XLM'
+                : op.asset_code || 'Unknown',
+            from: op.from || op.funder || '',
+            to: op.to || op.account || '',
+            timestamp: op.created_at,
+            memo: extractSafeMemo(rawMemo, rawMemoType),
+          }
+        })
 
       setTransactions(txs)
-    } catch (_) {
+    } catch {
       setTransactions([])
     } finally {
       setTxLoading(false)
@@ -129,23 +229,10 @@ export function useFreighterWallet() {
 
   // Connect Freighter wallet
   const connect = useCallback(async () => {
-    setWallet(prev => ({ ...prev, loading: true, error: null }))
+    setWallet((prev: WalletState) => ({ ...prev, loading: true, error: null }))
 
     try {
-      if (typeof window !== 'undefined' && window.__STELLAR_SEARCH_E2E_WALLET__) {
-        setWallet(prev => ({
-          ...prev,
-          publicKey: 'GTESTWALLET7E2ESEARCHFIXTURE7E2ESEARCHFIXTURE7E2ESEARCH',
-          connected: true,
-          network: 'TESTNET',
-          xlmBalance: '100.0000',
-          usdcBalance: '10.000000',
-          loading: false,
-          error: null,
-        }))
-        return
-      }
-
+      const { isConnected, requestAccess, getAddress, getNetwork } = await loadFreighterApi()
       const connected = await isConnected()
       if (!connected.isConnected) {
         throw new Error(
@@ -166,7 +253,7 @@ export function useFreighterWallet() {
       const networkResult = await getNetwork()
       const network = networkResult.network || 'TESTNET'
 
-      setWallet(prev => ({
+      setWallet((prev: WalletState) => ({
         ...prev,
         publicKey: addressResult.address,
         connected: true,
@@ -179,7 +266,7 @@ export function useFreighterWallet() {
       await fetchBalances(addressResult.address)
       await fetchTransactions(addressResult.address)
     } catch (err: any) {
-      setWallet(prev => ({
+      setWallet((prev: WalletState) => ({
         ...prev,
         loading: false,
         connected: false,
@@ -214,12 +301,13 @@ export function useFreighterWallet() {
 
     const check = async () => {
       try {
+        const { isConnected, getAddress, getNetwork } = await loadFreighterApi()
         const connected = await isConnected()
         if (connected.isConnected) {
           const addr = await getAddress()
           if (addr.address) {
             const net = await getNetwork()
-            setWallet(prev => ({
+            setWallet((prev: WalletState) => ({
               ...prev,
               publicKey: addr.address,
               connected: true,
