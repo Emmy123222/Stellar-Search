@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { TrendingUp, Zap, Clock, Shield } from 'lucide-react'
 import { fetchServerStats } from '../../lib/stellar'
+import { usePageVisible } from '../../hooks/usePageVisible'
 
 interface ServerStats {
   totalQueries: number
@@ -49,11 +50,19 @@ export function StatsGrid({ pollingIntervalMs = 10_000 }: StatsGridProps) {
       }
   }, [])
 
+  const isVisible = usePageVisible()
+
   useEffect(() => {
+    // Stop polling entirely while the tab is hidden (#338) -- no point
+    // burning a network request every pollingIntervalMs for a page the
+    // user isn't looking at. Re-fetch immediately on returning so the
+    // stats aren't stale by up to a full interval.
+    if (!isVisible) return
+
     load()
     const id = setInterval(load, pollingIntervalMs)
     return () => clearInterval(id)
-  }, [load, pollingIntervalMs])
+  }, [load, pollingIntervalMs, isVisible])
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
