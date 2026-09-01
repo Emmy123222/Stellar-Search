@@ -233,3 +233,110 @@ export function normalizeNewsResults(rawData: unknown): NewsResult[] {
 
   return validResults
 }
+
+export interface QueryMetadata {
+  originalQuery: string
+  executedQuery: string
+  suggestedQuery?: string
+  isCorrected: boolean
+}
+
+/**
+ * Normalizes query metadata from Serper upstream search response deterministically.
+ * Distinguishes originalQuery, executedQuery, and suggestedQuery ("did you mean" / spelling corrections).
+ */
+export function normalizeQueryMetadata(
+  rawData: unknown,
+  fallbackOriginalQuery: string = ''
+): QueryMetadata {
+  const defaultOriginal = typeof fallbackOriginalQuery === 'string' ? fallbackOriginalQuery.trim() : ''
+
+  if (!rawData || typeof rawData !== 'object') {
+    return {
+      originalQuery: defaultOriginal,
+      executedQuery: defaultOriginal,
+      suggestedQuery: undefined,
+      isCorrected: false,
+    }
+  }
+
+  const payload = rawData as Record<string, unknown>
+
+  // 1. Resolve original query
+  let originalQuery = defaultOriginal
+  const searchInfo = payload.searchInformation as Record<string, unknown> | undefined
+  if (searchInfo && typeof searchInfo.originalQuery === 'string' && searchInfo.originalQuery.trim()) {
+    originalQuery = searchInfo.originalQuery.trim()
+  } else if (typeof payload.originalQuery === 'string' && payload.originalQuery.trim()) {
+    originalQuery = payload.originalQuery.trim()
+  }
+
+  // 2. Resolve suggested query from various Serper / Google structures
+  let rawSuggestion: string | undefined
+
+  const spelling = payload.spelling as Record<string, unknown> | undefined
+  const spell = payload.spell as Record<string, unknown> | string | undefined
+
+  if (spelling && typeof spelling.didYouMean === 'string' && spelling.didYouMean.trim()) {
+    rawSuggestion = spelling.didYouMean.trim()
+  } else if (spelling && typeof spelling.queryCorrection === 'string' && spelling.queryCorrection.trim()) {
+    rawSuggestion = spelling.queryCorrection.trim()
+  } else if (spelling && typeof spelling.correctedQuery === 'string' && spelling.correctedQuery.trim()) {
+    rawSuggestion = spelling.correctedQuery.trim()
+  } else if (typeof payload.didYouMean === 'string' && payload.didYouMean.trim()) {
+    rawSuggestion = payload.didYouMean.trim()
+  } else if (typeof payload.queryCorrection === 'string' && payload.queryCorrection.trim()) {
+    rawSuggestion = payload.queryCorrection.trim()
+  } else if (searchInfo && typeof searchInfo.queryCorrection === 'string' && searchInfo.queryCorrection.trim()) {
+    rawSuggestion = searchInfo.queryCorrection.trim()
+  } else if (typeof spell === 'string' && spell.trim()) {
+    rawSuggestion = spell.trim()
+  } else if (spell && typeof spell === 'object') {
+    const spellObj = spell as Record<string, unknown>
+    if (typeof spellObj.queryCorrection === 'string' && spellObj.queryCorrection.trim()) {
+      rawSuggestion = spellObj.queryCorrection.trim()
+    } else if (typeof spellObj.didYouMean === 'string' && spellObj.didYouMean.trim()) {
+      rawSuggestion = spellObj.didYouMean.trim()
+    } else if (typeof spellObj.corrected === 'string' && spellObj.corrected.trim()) {
+      rawSuggestion = spellObj.corrected.trim()
+    }
+  }
+
+  // 3. Resolve executed query
+  let executedQuery = originalQuery
+  const searchParams = payload.searchParameters as Record<string, unknown> | undefined
+  if (searchParams && typeof searchParams.q === 'string' && searchParams.q.trim()) {
+    executedQuery = searchParams.q.trim()
+  } else if (typeof payload.executedQuery === 'string' && payload.executedQuery.trim()) {
+    executedQuery = payload.executedQuery.trim()
+  }
+
+  // If searchParameters.q is missing/same as originalQuery, but rawSuggestion was auto-applied
+  // (e.g. searchInfo indicates auto-correction happened):
+  if (
+    executedQuery.toLowerCase() === originalQuery.toLowerCase() &&
+    searchInfo &&
+    searchInfo.autoCorrected === true &&
+    rawSuggestion
+  ) {
+    executedQuery = rawSuggestion
+  }
+
+  const isCorrected = executedQuery.toLowerCase() !== originalQuery.toLowerCase()
+
+  // Suggested query text: if a suggestion exists and differs from original query
+  let suggestedQuery: string | undefined = undefined
+  if (rawSuggestion && rawSuggestion.toLowerCase() !== originalQuery.toLowerCase()) {
+    suggestedQuery = rawSuggestion
+  } else if (isCorrected) {
+    suggestedQuery = executedQuery
+  }
+
+  return {
+    originalQuery,
+    executedQuery,
+    suggestedQuery,
+    isCorrected,
+  }
+}
+

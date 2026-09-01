@@ -7,6 +7,8 @@ import {
 } from '../src/lib/constants'
 import { consumePaymentPayload, decodePaymentReceipt } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
+import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { normalizeOrganicResults, normalizeQueryMetadata } from '../src/lib/serperNormalizer'
 import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
 
 // ─── Config ───────────────────────────────────────────────────────────────
@@ -157,14 +159,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const latencyMs    = Date.now() - t0
 
     const results = normalizeOrganicResults(data)
+    const queryMeta = normalizeQueryMetadata(data, q.trim())
 
     const responseBody: SearchResponse = {
-      query:      q.trim(),
+      query:          queryMeta.executedQuery,
+      originalQuery:  queryMeta.originalQuery,
+      executedQuery:  queryMeta.executedQuery,
+      suggestedQuery: queryMeta.suggestedQuery,
+      isCorrected:    queryMeta.isCorrected,
       results,
-      count:      results.length,
-      network:    NETWORK,
-      paidAmount: AMOUNT_USDC,
-      currency:   'USDC',
+      count:          results.length,
+      network:        NETWORK,
+      paidAmount:     AMOUNT_USDC,
+      currency:       'USDC',
       txHash,
       latencyMs,
     }
