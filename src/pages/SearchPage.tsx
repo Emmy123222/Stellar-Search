@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Zap, AlertCircle } from 'lucide-react'
 import {
@@ -7,6 +8,7 @@ import {
   PaymentFlowVisualizer,
   StatsGrid,
   ZeroBalanceBanner,
+  SpellingCorrectionBanner,
 } from '../components'
 import type { SearchSession } from '../hooks/useSearch'
 import type { WalletState } from '../hooks/useFreighterWallet'
@@ -21,9 +23,17 @@ interface Props {
 }
 
 export function SearchPage({ wallet, onConnectWallet, session, search, reset }: Props) {
+  const [dismissedSuggestion, setDismissedSuggestion] = useState(false)
+
   const handleSearch = (query: string, freshness?: string) => {
+    setDismissedSuggestion(false)
     if (!wallet.connected) { onConnectWallet(); return }
     search(query, freshness)
+  }
+
+  const handleReset = () => {
+    setDismissedSuggestion(false)
+    reset()
   }
 
   const isSearching = session.status === 'searching'
@@ -127,13 +137,25 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
               </div>
             )}
 
+            {session.status === 'complete' && (
+              <SpellingCorrectionBanner
+                originalQuery={session.originalQuery}
+                executedQuery={session.executedQuery || session.query}
+                suggestedQuery={session.suggestedQuery}
+                isCorrected={session.isCorrected}
+                onSearch={handleSearch}
+                onDismiss={() => setDismissedSuggestion(true)}
+                isDismissed={dismissedSuggestion}
+              />
+            )}
+
             {(session.status === 'complete' || session.status === 'searching') && (
               <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
                 <SearchResults results={session.results} query={session.query} isLoading={session.status === 'searching'} txHash={session.txHash} />
               </motion.div>
             )}
 
-            {session.status === 'complete' && session.suggestions.length > 0 && (
+            {session.status === 'complete' && session.suggestions && session.suggestions.length > 0 && (
               <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                 <SearchSuggestions onSelect={handleSearch} aiSuggestions={session.suggestions} />
               </motion.div>
@@ -141,7 +163,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
             {(session.status === 'complete' || session.status === 'error') && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
-                <button onClick={reset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
+                <button onClick={handleReset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
                   ← NEW SEARCH
                 </button>
               </motion.div>

@@ -1,0 +1,85 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    groups:
+      lint-and-tooling:
+        patterns:
+          - "eslint*"
+          - "@eslint/*"
+          - "@typescript-eslint/*"
+          - "typescript"
+          - "@types/*"
+          - "globals"
+          - "tsx"
+          - "postcss*"
+          - "autoprefixer"
+          - "tailwindcss"
+          - "concurrently"
+      test-dependencies:
+        patterns:
+          - "vitest*"
+          - "@vitest/*"
+          - "@testing-library/*"
+          - "supertest"
+          - "@types/supertest"
+          - "jsdom"
+      frontend-ui:
+        patterns:
+          - "lucide-react"
+          - "clsx"
+          - "sonner"
+          - "recharts"
+          - "@types/recharts"
+          - "framer-motion"
+        update-types:
+          - "minor"
+          - "patch"
+      stellar-and-payment-minor-patch:
+        patterns:
+          - "@stellar/*"
+          - "@x402/*"
+          - "@modelcontextprotocol/*"
+          - "groq-sdk"
+        update-types:
+          - "minor"
+          - "patch"
+      server-runtime-minor-patch:
+        patterns:
+          - "express*"
+          - "@types/express*"
+          - "cors"
+          - "@types/cors"
+          - "helmet"
+          - "winston"
+          - "dotenv"
+          - "@vercel/node"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions:
+        patterns:
+          - "*"
