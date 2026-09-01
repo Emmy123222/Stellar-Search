@@ -28,4 +28,5 @@ fi
 
 echo "Setup complete! Next steps:"
 echo "1. Open .env and fill in the required keys."
-echo "2. Run 'npm run dev:all' to start both frontend and backend."
+echo "2. Run 'npm run config:check' to validate the configuration (values are never printed)."
+echo "3. Run 'npm run dev:all' to start both frontend and backend."

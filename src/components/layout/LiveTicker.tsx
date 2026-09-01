@@ -1,5 +1,6 @@
 import { useReducedMotion } from '../../hooks/useReducedMotion'
 import { IS_MAINNET, AMOUNT_USDC } from '../../lib/stellar'
+import { usePageVisible } from '../../hooks/usePageVisible'
 
 interface Props {
   walletConnected: boolean
@@ -16,7 +17,12 @@ const getTickerItems = () => [
 ]
 
 export function LiveTicker({ walletConnected }: Props) {
+  // The scroll is a pure CSS animation (animate-ticker), which browsers do
+  // NOT pause on their own when a tab is backgrounded -- so pause it
+  // explicitly via animation-play-state (#338). Honors prefers-reduced-motion
+  // by skipping the animation entirely (#147).
   const reducedMotion = useReducedMotion()
+  const isVisible = usePageVisible()
   const items = [
     ...getTickerItems(),
     ['STATUS', walletConnected ? 'WALLET CONNECTED' : 'NOT CONNECTED'],
@@ -31,7 +37,7 @@ export function LiveTicker({ walletConnected }: Props) {
     >
       <div
         className={`flex items-center gap-8 whitespace-nowrap ${reducedMotion ? '' : 'animate-ticker'}`}
-        style={{ width: 'max-content' }}
+        style={{ width: 'max-content', animationPlayState: !reducedMotion && isVisible ? 'running' : 'paused' }}
       >
         {doubled.map(([k, v], i) => (
           <div key={i} className="inline-flex items-center gap-2 px-6">
