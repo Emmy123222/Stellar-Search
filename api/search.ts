@@ -1,162 +1,203 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { 
-  STELLAR_NETWORK, 
-  USDC_CONTRACT, 
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import {
+  STELLAR_NETWORK,
+  USDC_CONTRACT,
   AMOUNT_STROOPS,
-  AMOUNT_USDC
-} from '../src/lib/constants'
-import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
-import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
-import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
+  AMOUNT_USDC,
+} from "../src/lib/constants";
+import { consumePaymentPayload } from "../src/lib/paymentIntegrity";
+import { normalizeOrganicResults } from "../src/lib/serperNormalizer";
+import type { SearchResponse, ApiErrorResponse } from "../src/types/index.js";
+
+function validateFreshness(
+  freshness: unknown,
+): { ok: true; value?: string } | { ok: false; error: string } {
+  if (freshness === undefined || freshness === null || freshness === "") {
+    return { ok: true };
+  }
+  if (typeof freshness !== "string") {
+    return {
+      ok: false,
+      error:
+        "Unsupported freshness parameter. Allowed values: empty, pd, pw, pm",
+    };
+  }
+
+  const normalized = freshness.trim().toLowerCase();
+  if (!["pd", "pw", "pm"].includes(normalized)) {
+    return {
+      ok: false,
+      error:
+        "Unsupported freshness parameter. Allowed values: empty, pd, pw, pm",
+    };
+  }
+
+  return { ok: true, value: normalized };
+}
 
 // ─── Config ───────────────────────────────────────────────────────────────
-const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
-const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
-const SERPER_API_KEY    = process.env.SERPER_API_KEY!
+const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!;
+const NETWORK = STELLAR_NETWORK as "stellar:testnet" | "stellar:mainnet";
+const SERPER_API_KEY = process.env.SERPER_API_KEY!;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-
   // ─── CORS ─────────────────────────────────────────────────────────────────
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', [
-    'Content-Type',
-    'Authorization',
-    'X-Payment',
-    'payment-signature',
-    'x-payment',
-    'X-PAYMENT',
-  ].join(', '))
-  res.setHeader('Access-Control-Expose-Headers', [
-    'PAYMENT-REQUIRED',
-    'X-Payment-Response',
-  ].join(', '))
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    [
+      "Content-Type",
+      "Authorization",
+      "X-Payment",
+      "payment-signature",
+      "x-payment",
+      "X-PAYMENT",
+    ].join(", "),
+  );
+  res.setHeader(
+    "Access-Control-Expose-Headers",
+    ["PAYMENT-REQUIRED", "X-Payment-Response"].join(", "),
+  );
 
-  if (req.method === 'OPTIONS') return res.status(200).end()
-  if (req.method !== 'GET') {
-    const errorBody: ApiErrorResponse = { error: 'Method not allowed' }
-    return res.status(405).json(errorBody)
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "GET") {
+    const errorBody: ApiErrorResponse = { error: "Method not allowed" };
+    return res.status(405).json(errorBody);
   }
 
-  const { q, count = '5', freshness } = req.query as Record<string, string>
+  const { q, count = "5", freshness } = req.query as Record<string, string>;
 
   if (!q?.trim()) {
-    const errorBody: ApiErrorResponse = { error: 'Missing required parameter: q' }
-    return res.status(400).json(errorBody)
+    const errorBody: ApiErrorResponse = {
+      error: "Missing required parameter: q",
+    };
+    return res.status(400).json(errorBody);
   }
+
+  const freshnessValidation = validateFreshness(freshness);
+  if (!freshnessValidation.ok) {
+    const errorBody: ApiErrorResponse = { error: freshnessValidation.error };
+    return res.status(400).json(errorBody);
+  }
+  const normalizedFreshness = freshnessValidation.value;
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
-    req.headers['payment-signature'] ||
-    req.headers['x-payment']         ||
-    req.headers['X-PAYMENT']
+    req.headers["payment-signature"] ||
+    req.headers["x-payment"] ||
+    req.headers["X-PAYMENT"];
 
   if (!paymentHeader) {
     // Return x402 v2 payment requirements
     // The key fix: asset must be a Soroban C... contract address, NOT "USDC:ISSUER"
     const paymentRequired = {
       x402Version: 2,
-      error:       'Payment required',
+      error: "Payment required",
       resource: {
-        url:         `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers['host']}${req.url}`,
-        description: 'StellarSearch: pay-per-query web search — 0.001 USDC on Stellar',
-        mimeType:    'application/json',
+        url: `${req.headers["x-forwarded-proto"] || "http"}://${req.headers["host"]}${req.url}`,
+        description:
+          "StellarSearch: pay-per-query web search — 0.001 USDC on Stellar",
+        mimeType: "application/json",
       },
       accepts: [
         {
-          scheme:            'exact',
-          network:           NETWORK,            // "stellar:testnet"
-          amount:            AMOUNT_STROOPS,     // "10000" (stroops, not dollars)
-          asset:             USDC_CONTRACT,      // "CBIELTK6..." (Soroban contract)
-          payTo:             RECEIVING_ADDRESS,  // your G... address
+          scheme: "exact",
+          network: NETWORK, // "stellar:testnet"
+          amount: AMOUNT_STROOPS, // "10000" (stroops, not dollars)
+          asset: USDC_CONTRACT, // "CBIELTK6..." (Soroban contract)
+          payTo: RECEIVING_ADDRESS, // your G... address
           maxTimeoutSeconds: 300,
           extra: { areFeesSponsored: true },
         },
       ],
-    }
+    };
 
     res.setHeader(
-      'PAYMENT-REQUIRED',
-      Buffer.from(JSON.stringify(paymentRequired)).toString('base64')
-    )
-    const errorBody: ApiErrorResponse = { error: 'Payment required' }
-    return res.status(402).json(errorBody)
+      "PAYMENT-REQUIRED",
+      Buffer.from(JSON.stringify(paymentRequired)).toString("base64"),
+    );
+    const errorBody: ApiErrorResponse = { error: "Payment required" };
+    return res.status(402).json(errorBody);
   }
 
   // ─── Payment Replay Protection ───────────────────────────────────────────
-  const consumption = consumePaymentPayload(paymentHeader)
+  const consumption = consumePaymentPayload(paymentHeader);
   if (!consumption.ok) {
-    const errorBody: ApiErrorResponse = { error: consumption.error }
-    return res.status(402).json(errorBody)
+    const errorBody: ApiErrorResponse = { error: consumption.error };
+    return res.status(402).json(errorBody);
   }
 
   // ─── Payment present — proceed with search ────────────────────────────────
-  console.log('✅ Payment header received')
+  console.log("✅ Payment header received");
 
-  let txHash: string | null = null
+  let txHash: string | null = null;
   try {
-    const decoded = Buffer.from(paymentHeader as string, 'base64').toString('utf8')
-    const parsed  = JSON.parse(decoded)
-    txHash = parsed.transactionHash || parsed.txHash || null
+    const decoded = Buffer.from(paymentHeader as string, "base64").toString(
+      "utf8",
+    );
+    const parsed = JSON.parse(decoded);
+    txHash = parsed.transactionHash || parsed.txHash || null;
   } catch {
     // payment header not base64 JSON — fine, tx hash just won't show
   }
 
-  const t0 = Date.now()
+  const t0 = Date.now();
 
   try {
     // ─── Serper.dev ──────────────────────────────────────────────────────────
     const requestBody: Record<string, unknown> = {
-      q:   q.trim(),
+      q: q.trim(),
       num: Math.min(parseInt(count) || 5, 20),
-    }
+    };
 
-    if (freshness) {
+    if (normalizedFreshness) {
       const dateFilters: Record<string, string> = {
-        pd: 'qdr:d',  // past day
-        pw: 'qdr:w',  // past week
-        pm: 'qdr:m',  // past month
-      }
-      if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
+        pd: "qdr:d", // past day
+        pw: "qdr:w", // past week
+        pm: "qdr:m", // past month
+      };
+      requestBody.tbs = dateFilters[normalizedFreshness];
     }
 
-    const serperRes = await fetch('https://google.serper.dev/search', {
-      method:  'POST',
+    const serperRes = await fetch("https://google.serper.dev/search", {
+      method: "POST",
       headers: {
-        'X-API-KEY':    SERPER_API_KEY,
-        'Content-Type': 'application/json',
+        "X-API-KEY": SERPER_API_KEY,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(requestBody),
-    })
+    });
 
     if (!serperRes.ok) {
-      const errText = await serperRes.text()
-      console.error('[serper]', serperRes.status, errText)
-      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
-      return res.status(502).json(errorBody)
+      const errText = await serperRes.text();
+      console.error("[serper]", serperRes.status, errText);
+      const errorBody: ApiErrorResponse = {
+        error: `Serper.dev API error: ${serperRes.status}`,
+      };
+      return res.status(502).json(errorBody);
     }
 
-    const data: unknown = await serperRes.json()
-    const latencyMs    = Date.now() - t0
+    const data: unknown = await serperRes.json();
+    const latencyMs = Date.now() - t0;
 
-    const results = normalizeOrganicResults(data)
+    const results = normalizeOrganicResults(data);
 
     const responseBody: SearchResponse = {
-      query:      q.trim(),
+      query: q.trim(),
       results,
-      count:      results.length,
-      network:    NETWORK,
+      count: results.length,
+      network: NETWORK,
       paidAmount: AMOUNT_USDC,
-      currency:   'USDC',
+      currency: "USDC",
       txHash,
       latencyMs,
-    }
+    };
 
-    return res.json(responseBody)
-
+    return res.json(responseBody);
   } catch (err: any) {
-    console.error('[search error]', err.message)
-    const errorBody: ApiErrorResponse = { error: 'Search failed.' }
-    return res.status(500).json(errorBody)
+    console.error("[search error]", err.message);
+    const errorBody: ApiErrorResponse = { error: "Search failed." };
+    return res.status(500).json(errorBody);
   }
 }
