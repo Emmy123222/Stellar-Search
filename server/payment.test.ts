@@ -392,3 +392,70 @@ describe('x402 settlement semantics — Express + Vercel constants aligned', () 
     expect(res.body.latencyMs).toBeGreaterThanOrEqual(0)
   })
 })
+
+// ─── Upstream Serper payload validation ───────────────────────────────────────
+
+describe('malformed upstream Serper payloads — server normalization', () => {
+  it('handles null or non-object Serper responses safely (returns 200 with empty results)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => null,
+    } as any)
+    const res = await request(app).get('/search?q=stellar').set('x-payment', makeReceipt('tx_malformed_null'))
+    expect(res.status).toBe(200)
+    expect(res.body.results).toEqual([])
+    expect(res.body.count).toBe(0)
+  })
+
+  it('skips organic rows missing valid HTTP/HTTPS link or containing malformed fields', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        organic: [
+          { title: 'Bad Link 1', link: 'javascript:alert(1)' },
+          { title: 'Valid Link', link: 'https://example.com/ok', snippet: 'Good' },
+          { title: 'Missing Link' },
+        ],
+      }),
+    } as any)
+    const res = await request(app).get('/search?q=stellar').set('x-payment', makeReceipt('tx_malformed_organic'))
+    expect(res.status).toBe(200)
+    expect(res.body.results).toHaveLength(1)
+    expect(res.body.results[0].title).toBe('Valid Link')
+    expect(res.body.results[0].url).toBe('https://example.com/ok')
+  })
+
+  it('skips image rows missing valid imageUrl and handles malformed image dimensions', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        images: [
+          { title: 'No Image', link: 'https://example.com' },
+          { title: 'Valid Img', imageUrl: 'https://example.com/img.png', imageWidth: 'invalid' },
+        ],
+      }),
+    } as any)
+    const res = await request(app).get('/images?q=stellar').set('x-payment', makeReceipt('tx_malformed_img'))
+    expect(res.status).toBe(200)
+    expect(res.body.results).toHaveLength(1)
+    expect(res.body.results[0].imageUrl).toBe('https://example.com/img.png')
+    expect(res.body.results[0].width).toBeUndefined()
+  })
+
+  it('skips news rows missing valid link', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        news: [
+          { title: 'Bad News', link: 'not-a-url' },
+          { title: 'Good News', link: 'https://news.example.com/item' },
+        ],
+      }),
+    } as any)
+    const res = await request(app).get('/news?q=stellar').set('x-payment', makeReceipt('tx_malformed_news'))
+    expect(res.status).toBe(200)
+    expect(res.body.results).toHaveLength(1)
+    expect(res.body.results[0].title).toBe('Good News')
+  })
+})
+
