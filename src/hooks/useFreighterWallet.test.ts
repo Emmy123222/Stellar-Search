@@ -22,7 +22,7 @@ const { mockLoadAccount, mockOperationsCall, mockTransactionsCall, mockSingleTra
   mockSingleTransactionCall: vi.fn(),
 }))
 
-vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
+vi.mock('@stellar/stellar-sdk', async (importOriginal: any) => {
   const orig: any = await importOriginal()
   class MockHorizonServer {
     loadAccount = mockLoadAccount
@@ -285,5 +285,69 @@ describe('useFreighterWallet — wallet payment readiness', () => {
 
     expect(result.current.transactions[2].hash).toBe('ghi789')
     expect(result.current.transactions[2].memo).toBeUndefined()
+  })
+
+  it('prevents stale horizon responses from overwriting new-account state', async () => {
+    mockIsConnected.mockResolvedValue({ isConnected: true })
+    mockRequestAccess.mockResolvedValue({})
+    mockGetNetwork.mockResolvedValue({ network: 'TESTNET' })
+    mockOperationsCall.mockResolvedValue({ records: [] })
+    mockTransactionsCall.mockResolvedValue({ records: [] })
+    
+    let resolveFirst: any;
+    const firstPromise = new Promise(resolve => resolveFirst = resolve)
+    let resolveSecond: any;
+    const secondPromise = new Promise(resolve => resolveSecond = resolve)
+
+    mockLoadAccount.mockImplementation(async (pubKey) => {
+      if (pubKey === 'OLD_ACCOUNT') {
+        await firstPromise
+        return {
+          balances: [{ asset_type: 'native', balance: '10.0000' }],
+        }
+      } else if (pubKey === 'NEW_ACCOUNT') {
+        await secondPromise
+        return {
+          balances: [{ asset_type: 'native', balance: '20.0000' }],
+        }
+      }
+      return { balances: [] }
+    })
+
+    const { result } = renderHook(() => useFreighterWallet())
+    
+    // Connect first time (OLD_ACCOUNT)
+    mockGetAddress.mockResolvedValue({ address: 'OLD_ACCOUNT', error: undefined })
+    let connectPromise: Promise<void>;
+    act(() => {
+      connectPromise = result.current.connect()
+    })
+    
+    // Connect second time (NEW_ACCOUNT) BEFORE first responds
+    mockGetAddress.mockResolvedValue({ address: 'NEW_ACCOUNT', error: undefined })
+    let connectPromise2: Promise<void>;
+    act(() => {
+      connectPromise2 = result.current.connect()
+    })
+
+    // Now resolve them out of order (NEW_ACCOUNT resolves first, then OLD_ACCOUNT)
+    resolveSecond()
+    await act(async () => {
+      await connectPromise2
+    })
+    
+    // Wait for the state to reflect NEW_ACCOUNT
+    await waitFor(() => expect(result.current.wallet.xlmBalance).toBe('20.0000'))
+    expect(result.current.wallet.publicKey).toBe('NEW_ACCOUNT')
+    
+    // Now resolve OLD_ACCOUNT
+    resolveFirst()
+    await act(async () => {
+      await connectPromise
+    })
+    
+    // State should still be NEW_ACCOUNT's balance
+    expect(result.current.wallet.xlmBalance).toBe('20.0000')
+    expect(result.current.wallet.publicKey).toBe('NEW_ACCOUNT')
   })
 })

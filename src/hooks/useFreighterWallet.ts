@@ -4,7 +4,7 @@
  * Fetches live balances from Stellar Horizon
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
 import type { WalletState, StellarTransaction } from '../types'
 
@@ -100,11 +100,16 @@ export function useFreighterWallet() {
   const [transactions, setTransactions] = useState<StellarTransaction[]>([])
   const [txLoading, setTxLoading] = useState(false)
 
+  const balanceGenRef = useRef(0)
+
   // Fetch real balances from Horizon
   const fetchBalances = useCallback(async (publicKey: string) => {
+    const currentGen = ++balanceGenRef.current
     try {
       const horizon = await loadHorizon()
       const account = await horizon.loadAccount(publicKey)
+
+      if (balanceGenRef.current !== currentGen) return
 
       let xlm = '0'
       let usdc = '0'
@@ -128,6 +133,7 @@ export function useFreighterWallet() {
         error: null,
       }))
     } catch (err: any) {
+      if (balanceGenRef.current !== currentGen) return
       setWallet((prev: WalletState) => ({
         ...prev,
         error: err.message || 'Failed to load account',
@@ -135,8 +141,11 @@ export function useFreighterWallet() {
     }
   }, [])
 
+  const txGenRef = useRef(0)
+
   // Fetch real transaction history from Horizon with expanded transaction memo lookup
   const fetchTransactions = useCallback(async (publicKey: string) => {
+    const currentGen = ++txGenRef.current
     setTxLoading(true)
     try {
       const horizon = await loadHorizon()
@@ -147,6 +156,8 @@ export function useFreighterWallet() {
         .limit(15)
         .call()
 
+      if (txGenRef.current !== currentGen) return
+
       // Expanded transaction lookup to reliably retrieve memos
       const txMap = new Map<string, { memo?: unknown; memo_type?: unknown }>()
       try {
@@ -156,6 +167,8 @@ export function useFreighterWallet() {
           .order('desc')
           .limit(15)
           .call()
+
+        if (txGenRef.current !== currentGen) return
 
         for (const txRecord of txPage.records) {
           if (txRecord && typeof txRecord === 'object' && 'hash' in txRecord) {
@@ -196,6 +209,8 @@ export function useFreighterWallet() {
         )
       }
 
+      if (txGenRef.current !== currentGen) return
+
       const txs: StellarTransaction[] = ops.records
         .filter((op: any) => op.type === 'payment' || op.type === 'create_account')
         .map((op: any) => {
@@ -221,9 +236,12 @@ export function useFreighterWallet() {
 
       setTransactions(txs)
     } catch {
+      if (txGenRef.current !== currentGen) return
       setTransactions([])
     } finally {
-      setTxLoading(false)
+      if (txGenRef.current === currentGen) {
+        setTxLoading(false)
+      }
     }
   }, [])
 
