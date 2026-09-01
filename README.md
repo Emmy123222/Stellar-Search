@@ -71,8 +71,17 @@ npm run dev
 ### 6. Test the x402 flow
 
 ```bash
-npm run test:search "Stellar blockchain"
+# Discovery mode: health + runtime checks
+npm run search:cli -- "Stellar x402" --mode discovery --json
+
+# Quote mode: fetch the x402 quote without settling payment
+npm run search:cli -- "Stellar x402" --mode quote --json --receipt ./tmp/quote.json
+
+# Search mode: run the paid flow with a timeout and optional freshness filter
+npm run search:cli -- "Stellar x402" --mode search --count 5 --timeout 30000 --freshness pw
 ```
+
+The CLI supports `discovery`, `quote`, and `search` modes, emits machine-readable JSON when `--json` is used, and can write a receipt file with `--receipt path/to/file.json`. For paid actions, prefer secure environment variables or a protected prompt for signing material; never pass private keys on the command line or print them in logs.
 
 ---
 
