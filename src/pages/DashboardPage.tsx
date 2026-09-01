@@ -34,6 +34,7 @@ import {
   explorerTxUrl,
   explorerAccountUrl,
 } from '../lib/stellar'
+import { SavedResearchPanel } from '../components/search'
 import type { StellarTransaction } from '../hooks/useFreighterWallet'
 import type { SearchReceipt } from '../types'
 
@@ -982,6 +983,9 @@ export function DashboardPage({
           )}
         </div>
       </motion.div>
+
+      {/* Saved Research — notes & tags (#305) */}
+      <SavedResearchPanel />
 
       {/* Network info */}
       <div className="grid sm:grid-cols-3 gap-3">
