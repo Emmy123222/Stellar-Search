@@ -23,7 +23,7 @@ jobs:
 
       - name: Cache TypeScript intermediates
         id: typecheck-cache
-        uses: actions/cache@v4
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: |
             node_modules/.cache
@@ -57,7 +57,7 @@ jobs:
 
       - name: Cache ESLint intermediates
         id: lint-cache
-        uses: actions/cache@v4
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: |
             node_modules/.cache
@@ -92,7 +92,7 @@ jobs:
 
       - name: Cache Vite & Vitest intermediates
         id: test-cache
-        uses: actions/cache@v4
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: |
             node_modules/.vite
@@ -124,10 +124,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 20
           cache: 'npm'
@@ -135,7 +135,7 @@ jobs:
 
       - name: Cache Vite & build intermediates
         id: build-cache
-        uses: actions/cache@v4
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: |
             node_modules/.vite
@@ -171,7 +171,7 @@ jobs:
 
       - name: Cache Vite & Vitest intermediates
         id: coverage-cache
-        uses: actions/cache@v4
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: |
             node_modules/.vite
