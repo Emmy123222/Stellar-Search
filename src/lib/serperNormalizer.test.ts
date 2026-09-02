@@ -5,6 +5,7 @@ import {
   normalizeOrganicResults,
   normalizeImageResults,
   normalizeNewsResults,
+  normalizeQueryMetadata,
 } from './serperNormalizer'
 
 describe('serperNormalizer helper functions', () => {
@@ -222,4 +223,167 @@ describe('serperNormalizer helper functions', () => {
       })
     })
   })
+
+  describe('normalizeQueryMetadata', () => {
+    it('handles null, undefined, non-object, and empty payloads safely', () => {
+      expect(normalizeQueryMetadata(null, 'test query')).toEqual({
+        originalQuery: 'test query',
+        executedQuery: 'test query',
+        suggestedQuery: undefined,
+        isCorrected: false,
+      })
+
+      expect(normalizeQueryMetadata(undefined, '   test query   ')).toEqual({
+        originalQuery: 'test query',
+        executedQuery: 'test query',
+        suggestedQuery: undefined,
+        isCorrected: false,
+      })
+
+      expect(normalizeQueryMetadata('non-object', '')).toEqual({
+        originalQuery: '',
+        executedQuery: '',
+        suggestedQuery: undefined,
+        isCorrected: false,
+      })
+    })
+
+    it('identifies uncorrected matching query', () => {
+      const input = {
+        searchParameters: { q: 'stellar blockchain' },
+      }
+      const meta = normalizeQueryMetadata(input, 'stellar blockchain')
+      expect(meta).toEqual({
+        originalQuery: 'stellar blockchain',
+        executedQuery: 'stellar blockchain',
+        suggestedQuery: undefined,
+        isCorrected: false,
+      })
+    })
+
+    it('handles case-insensitive query match without marking as corrected', () => {
+      const input = {
+        searchParameters: { q: 'Stellar Blockchain' },
+      }
+      const meta = normalizeQueryMetadata(input, 'stellar blockchain')
+      expect(meta.isCorrected).toBe(false)
+      expect(meta.originalQuery).toBe('stellar blockchain')
+      expect(meta.executedQuery).toBe('Stellar Blockchain')
+      expect(meta.suggestedQuery).toBeUndefined()
+    })
+
+    it('identifies auto-corrected queries when searchParameters.q differs from original query', () => {
+      const input = {
+        searchParameters: { q: 'stellar blockchain' },
+      }
+      const meta = normalizeQueryMetadata(input, 'stelarr blockchan')
+      expect(meta).toEqual({
+        originalQuery: 'stelarr blockchan',
+        executedQuery: 'stellar blockchain',
+        suggestedQuery: 'stellar blockchain',
+        isCorrected: true,
+      })
+    })
+
+    it('extracts originalQuery from searchInformation.originalQuery when provided', () => {
+      const input = {
+        searchParameters: { q: 'stellar blockchain' },
+        searchInformation: { originalQuery: 'stelarr blockchan' },
+      }
+      const meta = normalizeQueryMetadata(input, 'fallback')
+      expect(meta).toEqual({
+        originalQuery: 'stelarr blockchan',
+        executedQuery: 'stellar blockchain',
+        suggestedQuery: 'stellar blockchain',
+        isCorrected: true,
+      })
+    })
+
+    it('extracts "Did you mean?" suggestions from spelling.didYouMean without auto-correction', () => {
+      const input = {
+        searchParameters: { q: 'stelarr blockchan' },
+        spelling: { didYouMean: 'stellar blockchain' },
+      }
+      const meta = normalizeQueryMetadata(input, 'stelarr blockchan')
+      expect(meta).toEqual({
+        originalQuery: 'stelarr blockchan',
+        executedQuery: 'stelarr blockchan',
+        suggestedQuery: 'stellar blockchain',
+        isCorrected: false,
+      })
+    })
+
+    it('extracts suggestions from spelling.queryCorrection, spelling.correctedQuery, and queryCorrection', () => {
+      expect(
+        normalizeQueryMetadata({ spelling: { queryCorrection: 'soroban smart contracts' } }, 'soroban contracts')
+      ).toEqual({
+        originalQuery: 'soroban contracts',
+        executedQuery: 'soroban contracts',
+        suggestedQuery: 'soroban smart contracts',
+        isCorrected: false,
+      })
+
+      expect(
+        normalizeQueryMetadata({ spelling: { correctedQuery: 'soroban smart contracts' } }, 'soroban contracts')
+      ).toEqual({
+        originalQuery: 'soroban contracts',
+        executedQuery: 'soroban contracts',
+        suggestedQuery: 'soroban smart contracts',
+        isCorrected: false,
+      })
+
+      expect(
+        normalizeQueryMetadata({ queryCorrection: 'soroban smart contracts' }, 'soroban contracts')
+      ).toEqual({
+        originalQuery: 'soroban contracts',
+        executedQuery: 'soroban contracts',
+        suggestedQuery: 'soroban smart contracts',
+        isCorrected: false,
+      })
+
+      expect(
+        normalizeQueryMetadata({ didYouMean: 'soroban smart contracts' }, 'soroban contracts')
+      ).toEqual({
+        originalQuery: 'soroban contracts',
+        executedQuery: 'soroban contracts',
+        suggestedQuery: 'soroban smart contracts',
+        isCorrected: false,
+      })
+    })
+
+    it('extracts suggestions from spell string and spell object structures', () => {
+      expect(
+        normalizeQueryMetadata({ spell: 'stellar consensus' }, 'stelar consensus')
+      ).toEqual({
+        originalQuery: 'stelar consensus',
+        executedQuery: 'stelar consensus',
+        suggestedQuery: 'stellar consensus',
+        isCorrected: false,
+      })
+
+      expect(
+        normalizeQueryMetadata({ spell: { queryCorrection: 'stellar consensus' } }, 'stelar consensus')
+      ).toEqual({
+        originalQuery: 'stelar consensus',
+        executedQuery: 'stelar consensus',
+        suggestedQuery: 'stellar consensus',
+        isCorrected: false,
+      })
+    })
+
+    it('handles searchInformation autoCorrected flag correctly', () => {
+      const input = {
+        searchParameters: { q: 'stelarr' },
+        searchInformation: { autoCorrected: true, queryCorrection: 'stellar' },
+      }
+      const meta = normalizeQueryMetadata(input, 'stelarr')
+      expect(meta).toEqual({
+        originalQuery: 'stelarr',
+        executedQuery: 'stellar',
+        suggestedQuery: 'stellar',
+        isCorrected: true,
+      })
+    })
+  })
 })
+

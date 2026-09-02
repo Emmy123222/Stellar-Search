@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../../../src/lib/constants'
-import { consumePaymentPayload } from '../../../src/lib/paymentIntegrity'
-import { normalizeOrganicResults } from '../../../src/lib/serperNormalizer'
+import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../../src/lib/constants'
+import { consumePaymentPayload } from '../../src/lib/paymentIntegrity'
+import { normalizeOrganicResults, normalizeQueryMetadata } from '../../src/lib/serperNormalizer'
 import crypto from 'crypto'
 
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -69,9 +69,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const parsedCount = Math.min(Math.max(parseInt(String(rawCount ?? '5')) || 5, 1), 20)
 
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT']) as string | undefined
-  let paymentId: string | null = null
-  let txHash: string | null = null
-  let verified = false
   if (!paymentHeader) {
     const quoteEvent = {
       v: 1, type: 'quote', requestId, totalQueries: cleanQueries.length,
@@ -88,13 +85,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const consumption = consumePaymentPayload(paymentHeader)
   if (!consumption.ok) return res.status(402).json({ error: consumption.error })
-  paymentId = consumption.paymentId
-  verified = true
+  const paymentId = consumption.paymentId
+  const verified = true
+  let txHash: string | null = null
   try {
     const decoded = Buffer.from(paymentHeader as string, 'base64').toString('utf8')
     const parsed = JSON.parse(decoded)
     txHash = parsed.transactionHash || parsed.txHash || null
-  } catch {}
+  } catch {
+    // ignore parse error
+  }
 
   if (idempotencyKey) {
     batchIdempotencyStore.set(idempotencyKey, { requestId, expiresAt: Date.now() + 24 * 3600 * 1000 })
@@ -152,7 +152,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const data: unknown = await serperRes.json()
       const latencyMs = Date.now() - t0
       const results = normalizeOrganicResults(data)
-      writeEvent({ v: 1, type: 'result', requestId, index: i, query: q, results, count: results.length, latencyMs, paidAmount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, txHash })
+      const queryMeta = normalizeQueryMetadata(data, q)
+      writeEvent({
+        v: 1,
+        type: 'result',
+        requestId,
+        index: i,
+        query: queryMeta.executedQuery,
+        originalQuery: queryMeta.originalQuery,
+        executedQuery: queryMeta.executedQuery,
+        suggestedQuery: queryMeta.suggestedQuery,
+        isCorrected: queryMeta.isCorrected,
+        results,
+        count: results.length,
+        latencyMs,
+        paidAmount: AMOUNT_USDC,
+        currency: 'USDC',
+        network: NETWORK,
+        txHash,
+      })
       succeeded++
     } catch (err: any) {
       if (err?.name === 'AbortError' || controller.signal.aborted) {

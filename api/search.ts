@@ -1,18 +1,25 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { 
-  STELLAR_NETWORK, 
-  USDC_CONTRACT, 
-  AMOUNT_STROOPS,
-  AMOUNT_USDC
+  USDC_CONTRACT_MAINNET,
+  USDC_CONTRACT_TESTNET,
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
-import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
-import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
+import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 
 // ─── Config ───────────────────────────────────────────────────────────────
-const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
-const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
-const SERPER_API_KEY    = process.env.SERPER_API_KEY!
+let config
+try {
+  config = readServerConfig()
+} catch (error) {
+  console.error(formatConfigurationError(error))
+  throw error
+}
+const RECEIVING_ADDRESS = config.receivingAddress
+const NETWORK           = config.stellarNetwork
+const SERPER_API_KEY    = config.serperApiKey
+const AMOUNT_STROOPS    = config.amountStroops
+const AMOUNT_USDC       = config.amountUsdc
+const USDC_CONTRACT     = NETWORK === 'stellar:mainnet' ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_TESTNET
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
@@ -140,14 +147,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const latencyMs    = Date.now() - t0
 
     const results = normalizeOrganicResults(data)
+    const queryMeta = normalizeQueryMetadata(data, q.trim())
 
     const responseBody: SearchResponse = {
-      query:      q.trim(),
+      query:          queryMeta.executedQuery,
+      originalQuery:  queryMeta.originalQuery,
+      executedQuery:  queryMeta.executedQuery,
+      suggestedQuery: queryMeta.suggestedQuery,
+      isCorrected:    queryMeta.isCorrected,
       results,
-      count:      results.length,
-      network:    NETWORK,
-      paidAmount: AMOUNT_USDC,
-      currency:   'USDC',
+      count:          results.length,
+      network:        NETWORK,
+      paidAmount:     AMOUNT_USDC,
+      currency:       'USDC',
       txHash,
       latencyMs,
     }
