@@ -1,3 +1,4 @@
+import { readBrowserConfig } from '../lib/config'
 /**
  * useSearch.ts
  * Fixed x402 + Freighter payment flow.
@@ -12,18 +13,10 @@
 
 import { useState, useCallback }              from 'react'
 import { toast }                               from 'sonner'
-import { x402Client, x402HTTPClient }          from '@x402/fetch'
-import { ExactStellarScheme }                  from '@x402/stellar/exact/client'
-import { signAuthEntry, getNetworkDetails }    from '@stellar/freighter-api'
-import { Networks }                            from '@stellar/stellar-sdk'
 import { Buffer }                              from 'buffer'
 import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
 
-const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
-  typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
-    ? `${window.location.origin}/api`
-    : 'http://localhost:3001'
-)
+const SERVER_URL = readBrowserConfig().apiBaseUrl
 
 // Soroban RPC URLs
 const SOROBAN_RPC_TESTNET = 'https://soroban-testnet.stellar.org'
@@ -64,6 +57,10 @@ export function useSearch(walletAddress: string | null = null) {
 
       setSession({
         query,
+        originalQuery: query,
+        executedQuery: query,
+        suggestedQuery: undefined,
+        isCorrected: false,
         results: [],
         txHash: null,
         paidAmount: null,
@@ -89,6 +86,11 @@ export function useSearch(walletAddress: string | null = null) {
       if (!walletAddress) throw new Error('Connect your Freighter wallet first.')
 
       console.log('🔍 Starting search with wallet:', walletAddress)
+
+      const {
+        x402Client, x402HTTPClient, ExactStellarScheme,
+        signAuthEntry, getNetworkDetails, Networks,
+      } = await loadPaymentDeps()
 
       // Step 1 — verify Freighter is on correct network
       const net = await getNetworkDetails()
@@ -146,8 +148,18 @@ export function useSearch(walletAddress: string | null = null) {
         if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`)
         const data = (await firstRes.json()) as SearchResponse
         return setSession({
-          query, results: data.results ?? [], txHash: null,
-          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
+          query: data.executedQuery ?? data.query ?? query,
+          originalQuery: data.originalQuery ?? query,
+          executedQuery: data.executedQuery ?? data.query ?? query,
+          suggestedQuery: data.suggestedQuery,
+          isCorrected: data.isCorrected ?? false,
+          results: data.results ?? [],
+          txHash: null,
+          paidAmount: null,
+          status: 'complete',
+          step: 6,
+          durationMs: Date.now() - t0,
+          suggestions: data.suggestions ?? [],
         })
       }
 
@@ -190,14 +202,18 @@ export function useSearch(walletAddress: string | null = null) {
 
       // Flow step 6 — result received and rendered
       setSession({
-        query,
-        results:     data.results    ?? [],
-        txHash:      data.txHash     ?? null,
-        paidAmount:  data.paidAmount ?? null,
-        status:      'complete',
-        step:        6,
-        durationMs:  Date.now() - t0,
-        suggestions: data.suggestions ?? [],
+        query:        data.executedQuery ?? data.query ?? query,
+        originalQuery: data.originalQuery ?? query,
+        executedQuery: data.executedQuery ?? data.query ?? query,
+        suggestedQuery: data.suggestedQuery,
+        isCorrected:  data.isCorrected ?? false,
+        results:      data.results    ?? [],
+        txHash:       data.txHash     ?? null,
+        paidAmount:   data.paidAmount ?? null,
+        status:       'complete',
+        step:         6,
+        durationMs:   Date.now() - t0,
+        suggestions:  data.suggestions ?? [],
       })
 
       if (data.txHash) {
@@ -247,7 +263,18 @@ export function useSearch(walletAddress: string | null = null) {
   }, [walletAddress])
 
   const reset = useCallback(() => {
-    setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [] })
+    setSession({
+      query: '',
+      originalQuery: '',
+      executedQuery: '',
+      suggestedQuery: undefined,
+      isCorrected: false,
+      results: [],
+      txHash: null,
+      paidAmount: null,
+      status: 'idle',
+      suggestions: [],
+    })
   }, [])
 
   return { session, search, reset }

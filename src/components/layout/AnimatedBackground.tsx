@@ -109,9 +109,24 @@ export function AnimatedBackground() {
     }
     draw()
 
+    // Pause the RAF loop entirely while the tab is hidden (#338) -- a
+    // background tab still gets requestAnimationFrame callbacks throttled
+    // by the browser, but not stopped, so this avoids the wasted per-frame
+    // canvas work (and CPU/battery drain) outright rather than relying on
+    // browser throttling alone.
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(animId)
+      } else {
+        draw()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     return () => {
       cancelAnimationFrame(animId)
       window.removeEventListener('resize', resize)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [])
 
