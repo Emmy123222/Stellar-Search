@@ -505,41 +505,96 @@ and whether results were delivered — never the query text. See
 
 ## Project structure
 
+Four runtimes share one set of contracts. Anything under `src/lib/` is
+**shared** — imported by the browser bundle, the Express server, the Vercel
+functions, and the MCP server alike — so a change there must keep all four
+aligned. Everything else is runtime-specific.
+
 ```
 stellar-search/
-├── src/                        # React frontend
-│   ├── hooks/
-│   │   ├── useFreighterWallet.ts   # Real Freighter + Horizon integration
-│   │   └── useSearch.ts            # Calls real server endpoint
+├── src/                              # SHARED types/logic + React frontend (browser)
+│   ├── lib/                          # ── shared by browser, Express, Vercel, MCP ──
+│   │   ├── config.ts                 # Typed env parsing: server / browser / MCP views
+│   │   ├── constants.ts              # STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS
+│   │   ├── paramValidation.ts        # count/freshness contract for every paid route (#188)
+│   │   ├── paymentIntegrity.ts       # x402 payload identity + single-use replay guard
+│   │   ├── reconciliation.ts         # ReconciliationRecord builder + drift classification
+│   │   ├── serverHealth.ts           # /health stats contract: what each runtime measures (#226)
+│   │   ├── serperNormalizer.ts       # Serper → SearchResult / ImageResult / NewsResult
+│   │   ├── receiptBundle.ts          # Signed receipt bundle export + integrity proofs
+│   │   ├── hashing.ts                # Hash helpers for receipts/proofs
+│   │   ├── aiChatService.ts          # Groq chat client (browser-side)
+│   │   ├── onboarding.ts             # First-run onboarding state (#342)
+│   │   └── stellar.ts                # Horizon/explorer helpers (browser-facing)
+│   ├── types/index.ts                # SHARED response, batch JSONL, and job contracts
 │   ├── components/
-│   │   ├── AnimatedBackground.tsx  # Canvas animation
-│   │   ├── WalletPanel.tsx         # Real Freighter connect + live balances
-│   │   ├── PaymentFlowVisualizer.tsx
-│   │   ├── SearchResults.tsx
-│   │   ├── StatsGrid.tsx           # Polls real /health endpoint
-│   │   └── GroqAssistant.tsx       # Real Groq AI chat
-│   ├── pages/
-│   │   ├── SearchPage.tsx
-│   │   ├── DocsPage.tsx
-│   │   └── DashboardPage.tsx       # Live Horizon tx history
-│   └── lib/stellar.ts              # Horizon helpers
-├── server/
-│   └── index.ts                # Express + @x402/express + Serper.dev + Groq + batch/jsonl + jobs/webhooks
-├── api/
-│   ├── search.ts               # Vercel parity for GET /search
-│   ├── search/batch.ts         # Vercel parity for POST /search/batch (JSONL)
-│   ├── jobs.ts                 # POST /jobs (+ GET /jobs list)
-│   ├── jobs/[id].ts            # GET /jobs/:id status + verified payment
-│   ├── ai/chat.ts              # Vercel AI chat (streaming)
-│   └── health.ts               # Vercel health
-├── mcp-server/
-│   └── index.ts                # MCP tools + resources + prompts + progress
+│   │   ├── search/                   # SearchBar, SearchResults, ImageResults, NewsResults,
+│   │   │                             # ModeSelector, SearchSuggestions, SavedResearchPanel,
+│   │   │                             # SpellingCorrectionBanner, PaymentFlowVisualizer
+│   │   ├── wallet/WalletPanel.tsx    # Freighter connect + live Horizon balances
+│   │   ├── layout/                   # Navbar, Footer, AnimatedBackground, LiveTicker
+│   │   ├── ai/GroqAssistant.tsx      # Groq AI chat panel
+│   │   ├── onboarding/               # OnboardingFlow (#342)
+│   │   └── ui/                       # StatsGrid (health-contract aware), ZeroBalanceBanner
+│   ├── hooks/                        # useSearch, useFreighterWallet, useSavedResearch,
+│   │                                 # usePageVisible
+│   ├── pages/                        # SearchPage, DocsPage, DashboardPage
+│   └── i18n/                         # i18next setup + locales/en/*.json (#345)
+│
+├── server/                           # EXPRESS runtime (the only one serving /images, /news)
+│   ├── index.ts                      # App + x402 middleware, paid-route param validation,
+│   │                                 # /search /images /news /search/batch /jobs /health /ai/chat
+│   ├── corsConfig.ts                 # Allow-list CORS options shared by all Express routes
+│   ├── logger.ts                     # Winston JSON logger
+│   └── reconciliationStore.ts        # Append-only JSONL settlement log
+│
+├── api/                              # VERCEL serverless runtime (no /images or /news — see
+│   │                                 # "Runtime availability" under Paid HTTP API)
+│   ├── index.ts                      # Service descriptor for GET /api
+│   ├── search.ts                     # Vercel parity for GET /search
+│   ├── search/batch.ts               # Vercel parity for POST /search/batch (JSONL)
+│   ├── jobs.ts                       # POST /jobs + GET /jobs list
+│   ├── jobs/[id].ts                  # GET /jobs/:id status + verified payment
+│   ├── ai/chat.ts                    # Groq AI chat (free)
+│   └── health.ts                     # Health: config facts + declared stats gap (#226)
+│
+├── mcp-server/index.ts               # MCP runtime: web_search, image_search, news_search,
+│                                     # ai_summarize, check_balance, get_search_stats
+│                                     # + resources, prompts, progress notifications
+│
 ├── scripts/
-│   └── test-search.ts          # End-to-end test script
-├── .env.example
-├── claude_mcp.json
+│   ├── test-search.ts                # CLI: discovery / quote / search modes (+ receipts)
+│   ├── check-config.ts               # `npm run config:check` env validation
+│   ├── reconcile-report.ts           # `npm run reconcile:report` settlement drift report
+│   ├── smoke.mjs                     # Non-secret preview smoke suite (dependency-free)
+│   ├── verify-sbom.mjs               # CI: assert the CycloneDX SBOM is well-formed
+│   ├── check-vulnerabilities.mjs     # CI: HIGH/CRITICAL dependency gate
+│   └── setup.sh                      # `npm run setup`
+│
+├── .github/workflows/
+│   ├── ci.yml                        # Typecheck, lint, test, coverage gate, supply chain
+│   └── preview-smoke.yml             # Smoke-tests the Vercel Preview URL on every PR
+│
+├── vercel.json                       # Serverless routing, SPA rewrites, CORS headers
+├── vite.config.ts                    # Vite build, dev proxy → Express, coverage thresholds
+├── tsconfig*.json                    # Per-runtime TS projects: base / node / server / api /
+│                                     # mcp / scripts
+├── .env.example                      # Placeholders only — never real secrets
+├── claude_mcp.json                   # Claude Desktop / Claude Code MCP registration
 └── README.md
 ```
+
+Tests live beside the code they cover as `*.test.ts` / `*.test.tsx`, so each
+runtime's suite stays with that runtime:
+
+| Scope | Notable suites |
+|---|---|
+| Shared (`src/lib/`) | `paramValidation`, `paymentIntegrity`, `serperNormalizer`, `reconciliation`, `receiptBundle`, `serverHealth`, `config`, `constants`, `hashing`, `onboarding`, `stellar` |
+| Express (`server/`) | `parameterMatrix` (all paid routes), `payment`, `validateQuery`, `corsConfig`, `health`, `reconciliationStore`, `reconciliation.integration` |
+| Vercel (`api/`) | `search`, `search/batch`, `jobs`, `jobs/[id]`, `ai/chat`, `health` |
+| MCP (`mcp-server/`) | `tools`, `clampCount` |
+| Browser (`src/`) | `SearchPage`, `DocsPage`, `SearchBar`, `SpellingCorrectionBanner`, `ZeroBalanceBanner`, `StatsGrid`, `useSearch`, `useFreighterWallet`, `usePageVisible`, `i18n` |
+| Scripts | `scripts/test-search.test.ts`, `scripts/smoke.test.ts` |
 
 ---
 
