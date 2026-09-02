@@ -39,6 +39,9 @@ export function PaymentFlowVisualizer({ session }: Props) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -16 }}
       className="rounded-xl p-5 space-y-4"
+      role="status"
+      aria-live="polite"
+      aria-busy={isSearching}
       style={{
         background: 'rgba(6,13,20,0.7)',
         border: '1px solid rgba(0,245,255,0.1)',
@@ -53,7 +56,7 @@ export function PaymentFlowVisualizer({ session }: Props) {
       </div>
 
       {/* Step indicators */}
-      <div className="relative">
+      <div className="relative" aria-hidden="true">
         <div className="absolute top-5 left-5 right-5 h-px bg-white/8 z-0" />
         <div className="relative z-10 flex justify-between">
           {STEPS.map((step, i) => {
