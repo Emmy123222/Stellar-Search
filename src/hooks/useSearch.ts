@@ -1,4 +1,4 @@
-import { readBrowserConfig } from '../lib/config'
+import { resolveApiUrl } from '../lib/config'
 /**
  * useSearch.ts
  * Fixed x402 + Freighter payment flow.
@@ -16,7 +16,7 @@ import { toast }                               from 'sonner'
 import { Buffer }                              from 'buffer'
 import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
 
-const SERVER_URL = readBrowserConfig().apiBaseUrl
+const SERVER_URL = (path: string) => resolveApiUrl(path)
 
 // Soroban RPC URLs
 const SOROBAN_RPC_TESTNET = 'https://soroban-testnet.stellar.org'
@@ -220,8 +220,8 @@ export function useSearch(walletAddress: string | null = null) {
 
       // Flow step 1 — initial request, expect 402
       advance(1)
-      console.log('🚀 Initial request:', `${SERVER_URL}/search?${params}`)
-      const firstRes = await fetch(`${SERVER_URL}${endpoint}?${params}`)
+      console.log('🚀 Initial request:', `${SERVER_URL(endpoint)}?${params}`)
+      const firstRes = await fetch(`${SERVER_URL(endpoint)}?${params}`)
       console.log('📡 Status:', firstRes.status)
 
       if (firstRes.status !== 402) {
@@ -263,7 +263,7 @@ export function useSearch(walletAddress: string | null = null) {
       // Flow step 4 — retry with X-PAYMENT header
       advance(4)
       console.log('🔄 Retrying with payment...')
-      const paidResPromise = fetch(`${SERVER_URL}/search?${params}`, {
+      const paidResPromise = fetch(`${SERVER_URL('/search')}?${params}`, {
         headers: paymentHeaders,
       })
 
