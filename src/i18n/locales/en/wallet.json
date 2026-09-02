@@ -1,0 +1,18 @@
+{
+  "connect": "CONNECT FREIGHTER",
+  "connecting": "CONNECTING…",
+  "disconnect": "Disconnect",
+  "menuLabel": "Wallet menu",
+  "panelLabel": "FREIGHTER WALLET",
+  "wrongNetwork": "WRONG NETWORK",
+  "expectedNetwork": "(EXPECTED {{network}})",
+  "usdcBalanceLabel": "USDC BALANCE",
+  "xlmBalanceLabel": "XLM BALANCE",
+  "gasFeesNote": "for gas fees",
+  "queriesRemaining_one": "~{{count}} query",
+  "queriesRemaining_other": "~{{count}} queries",
+  "recentTransactions": "RECENT TRANSACTIONS",
+  "noTransactions": "No transactions yet",
+  "buyUsdc": "Buy USDC ↗",
+  "fundTestnet": "Fund Testnet ↗"
+}
