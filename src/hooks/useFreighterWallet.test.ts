@@ -11,18 +11,30 @@ beforeAll(async () => {
   await loadNamespace('errors')
 })
 
-const { mockIsConnected, mockRequestAccess, mockGetAddress, mockGetNetwork } = vi.hoisted(() => ({
-  mockIsConnected: vi.fn(),
-  mockRequestAccess: vi.fn(),
-  mockGetAddress: vi.fn(),
-  mockGetNetwork: vi.fn(),
-}))
+const { mockIsConnected, mockRequestAccess, mockGetAddress, mockGetNetwork, mockWatch, mockStop, triggerWatcher } = vi.hoisted(() => {
+  let watcherCb: any = null;
+  return {
+    mockIsConnected: vi.fn(),
+    mockRequestAccess: vi.fn(),
+    mockGetAddress: vi.fn(),
+    mockGetNetwork: vi.fn(),
+    mockWatch: vi.fn().mockImplementation((cb) => { watcherCb = cb }),
+    mockStop: vi.fn(),
+    triggerWatcher: (params: any) => {
+      if (watcherCb) watcherCb(params)
+    }
+  }
+})
 
 vi.mock('@stellar/freighter-api', () => ({
   isConnected: (...args: any[]) => mockIsConnected(...args),
   requestAccess: (...args: any[]) => mockRequestAccess(...args),
   getAddress: (...args: any[]) => mockGetAddress(...args),
   getNetwork: (...args: any[]) => mockGetNetwork(...args),
+  WatchWalletChanges: class {
+    watch(cb: any) { return mockWatch(cb) }
+    stop() { return mockStop() }
+  }
 }))
 
 const { mockLoadAccount, mockOperationsCall, mockTransactionsCall, mockSingleTransactionCall } = vi.hoisted(() => ({
@@ -392,5 +404,36 @@ describe('useFreighterWallet — wallet payment readiness', () => {
 
     expect(result.current.transactions[2].hash).toBe('ghi789')
     expect(result.current.transactions[2].memo).toBeUndefined()
+  })
+
+  it('reacts to freighter account changes atomically', async () => {
+    mockIsConnected.mockResolvedValue({ isConnected: true })
+    mockRequestAccess.mockResolvedValue({})
+    mockGetAddress.mockResolvedValue({ address: TEST_ADDRESS })
+    mockGetNetwork.mockResolvedValue({ network: 'TESTNET' })
+    mockLoadAccount.mockResolvedValue({
+      balances: [{ asset_type: 'native', balance: '10.0000' }],
+    })
+    mockOperationsCall.mockResolvedValue({ records: [] })
+
+    const { result } = renderHook(() => useFreighterWallet())
+    await act(async () => {
+      await result.current.connect()
+    })
+    await waitFor(() => expect(result.current.wallet.connected).toBe(true))
+    expect(mockWatch).toHaveBeenCalled()
+
+    const NEW_ADDRESS = 'GBBB'
+    mockLoadAccount.mockResolvedValue({
+      balances: [{ asset_type: 'native', balance: '99.0000' }],
+    })
+    
+    await act(async () => {
+      triggerWatcher({ address: NEW_ADDRESS, network: 'TESTNET' })
+    })
+
+    await waitFor(() => expect(result.current.wallet.publicKey).toBe(NEW_ADDRESS))
+    expect(result.current.wallet.xlmBalance).toBe('99.0000')
+    expect(mockLoadAccount).toHaveBeenCalledWith(NEW_ADDRESS)
   })
 })
