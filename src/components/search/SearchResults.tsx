@@ -114,7 +114,15 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
     )
   }
 
-  if (!results.length) return null
+  if (!results.length) {
+    return (
+      <div role="status" aria-live="polite" className="rounded-xl p-8 text-center" style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <h2 className="font-display text-sm text-white tracking-widest">NO RESULTS FOR “{query}”</h2>
+        <p className="mt-3 text-sm text-white/55">Your paid search completed, but nothing matched this query.</p>
+        <p className="mt-2 text-xs text-white/40">Try broader keywords, remove a filter, or start a new search.</p>
+      </div>
+    )
+  }
 
   const summarize = async () => {
     if (summarizing) return
