@@ -64,6 +64,16 @@ function recordMcpTiming(phase: string, ms: number) {
 
 const groq = new Groq({ apiKey: GROQ_API_KEY })
 
+/** Clamp a search count to [min, max], falling back to defaultValue on NaN/fractional/negative. */
+export function clampCount(
+  value: unknown,
+  { min, max, defaultValue }: { min: number; max: number; defaultValue: number },
+): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < min) return defaultValue
+  return Math.floor(Math.min(n, max))
+}
+
 // ─── Receipt store (opted-in, in-memory, capped) ──────────────────────────
 export interface McpReceipt {
   id: string
@@ -471,10 +481,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       await sendProgress(server, progressToken, 'settlement', 'Settling 0.001 USDC on Stellar')
       if (isAborted()) throw Object.assign(new Error('Request cancelled'), { code: 'CANCELLED' })
 
-      await sendProgress(server, progressToken, 'search', `Searching Serper for "${query}"`)
-
-      const params = new URLSearchParams({ q: query, count: String(count) })
+      const safeCount = clampCount(count, { min: 1, max: 10, defaultValue: 5 })
+      const params = new URLSearchParams({ q: query, count: String(safeCount) })
       if (freshness) params.set('freshness', freshness)
+      await sendProgress(server, progressToken, 'search', `Searching Serper for "${query}"`)
 
       const res = await fetch(`${SERVER_URL}/search?${params}`, { signal: controller.signal })
 
@@ -529,7 +539,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (isAborted()) throw Object.assign(new Error('Request cancelled'), { code: 'CANCELLED' })
       await sendProgress(server, progressToken, 'search', `Searching images for "${query}"`)
 
-      const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 10)
+      const safeCount = clampCount(count, { min: 1, max: 10, defaultValue: 5 })
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
 
       const res = await fetch(`${SERVER_URL}/images?${params}`, { signal: controller.signal })
@@ -585,7 +595,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (isAborted()) throw Object.assign(new Error('Request cancelled'), { code: 'CANCELLED' })
       await sendProgress(server, progressToken, 'search', `Searching news for "${query}"`)
 
-      const safeCount = Math.min(Math.max(parseInt(String(count)) || 10, 1), 20)
+      const safeCount = clampCount(count, { min: 1, max: 20, defaultValue: 10 })
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
       if (freshness) params.set('freshness', freshness)
 

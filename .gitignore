@@ -19,3 +19,4 @@ coverage/
 sbom.cyclonedx.json
 osv-results.json
 osv-results.sarif
+logs/

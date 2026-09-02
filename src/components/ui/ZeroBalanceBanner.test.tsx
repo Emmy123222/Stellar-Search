@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { ZeroBalanceBanner } from './ZeroBalanceBanner'
 
 const TEST_ACCOUNT = 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3'
@@ -134,7 +134,7 @@ describe('ZeroBalanceBanner — wallet and trustline state guidance', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('allows user to dismiss banner and preserves dismissal in sessionStorage', () => {
+  it('allows user to dismiss banner and preserves dismissal in sessionStorage', async () => {
     const { rerender } = render(
       <ZeroBalanceBanner
         connected={true}
@@ -148,7 +148,9 @@ describe('ZeroBalanceBanner — wallet and trustline state guidance', () => {
     expect(dismissBtn).toBeInTheDocument()
 
     fireEvent.click(dismissBtn)
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    })
     expect(sessionStorage.getItem(`zero-balance-banner-dismissed:${TEST_ACCOUNT}`)).toBe('1')
 
     // Rerendering retains dismissal
