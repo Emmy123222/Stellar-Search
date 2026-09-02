@@ -162,7 +162,26 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
                 className="flex items-center gap-3 p-4 rounded-xl border border-red-500/25 bg-red-500/5 focus:outline-none"
               >
                 <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-                <p className="text-sm text-red-300">{session.error}</p>
+                <div className="flex-1">
+                  <p className="text-sm text-red-300">{session.error}</p>
+                  {session.errorCode && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (session.errorCode === 'wallet_required' || session.errorCode === 'network_mismatch') onConnectWallet()
+                        else if (session.errorCode === 'payment_rejected' || session.errorCode === 'provider_unavailable' || session.errorCode === 'request_failed') search(session.query, undefined, searchMode === 'web' ? 5 : 10, searchMode)
+                        else handleReset()
+                      }}
+                      className="mt-2 text-xs font-display tracking-wider text-neon-cyan hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-neon-cyan rounded"
+                    >
+                      {session.errorCode === 'wallet_required' ? 'CONNECT WALLET' :
+                       session.errorCode === 'network_mismatch' ? 'CHECK NETWORK' :
+                       session.errorCode === 'insufficient_balance' ? 'VIEW BALANCE' :
+                       session.errorCode === 'payment_rejected' ? 'RETRY PAYMENT' :
+                       session.errorCode === 'provider_unavailable' ? 'RETRY PROVIDER' : 'START NEW SEARCH'}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
