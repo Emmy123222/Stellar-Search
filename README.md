@@ -752,6 +752,123 @@ Coverage verifies the **x402 settlement semantics** for paid routes (`/search`, 
 
 ---
 
+## Preview deployment smoke tests
+
+Unit tests cannot see a deployment. Serverless routing, CORS, environment
+wiring, static assets, and the SPA rewrite only exist once Vercel has built a
+Preview — so every pull request runs a smoke suite against its own Preview URL
+before it can merge.
+
+- **Suite:** `scripts/smoke.mjs` (12 checks)
+- **Workflow:** `.github/workflows/preview-smoke.yml` — job name **`Preview smoke tests`**
+- **Routing config under test:** `vercel.json`
+
+### What it checks
+
+| # | Check | Endpoint | Expected | Catches |
+|---|---|---|---|---|
+| 1 | SPA shell | `GET /` | `200` `text/html` with `#root` | broken build output / `outputDirectory` |
+| 2 | Static asset | `GET /favicon.svg` | `200` `image/svg+xml` | assets not published |
+| 3 | SPA rewrite | `GET /docs` | `200` `text/html` | missing `rewrites` in `vercel.json` |
+| 4 | Service descriptor | `GET /api` | `200` JSON, `name: StellarSearch` | serverless routing not wired |
+| 5 | Environment wiring | `GET /api/health` | `200`, `status: ok`, `protocol: x402` | missing `STELLAR_RECEIVING_ADDRESS` / `SERPER_API_KEY` |
+| 6 | CORS preflight | `OPTIONS /api/search` | `200`/`204` allowing `payment-signature` + `x-payment` | browser clients unable to send the signed payload |
+| 7 | Method guard | `POST /api/search` | `405` | handler-level regressions |
+| 8 | Missing `q` | `GET /api/search` | `400` | validation not reached |
+| 9 | `count` out of bounds | `GET /api/search?count=999` | `400` **not** `402` | validation running after the payment gate |
+| 10 | Repeated `count` | `?count=1&count=2` | `400` | array coercion regressions |
+| 11 | Unknown `freshness` | `?freshness=yesterday` | `400` | enum drift |
+| 12 | **x402 challenge** | `GET /api/search?q=…` | `402` + valid `PAYMENT-REQUIRED` | settlement-semantics drift (see below) |
+
+Check 12 decodes the base64 `PAYMENT-REQUIRED` header and asserts the
+**verified x402 settlement semantics** that a bad deploy silently breaks:
+`scheme=exact`, `network=stellar:testnet|stellar:mainnet`, an **integer stroop**
+`amount` (never a decimal dollar figure), an `asset` that is a Soroban `C…`
+contract address (never `USDC:ISSUER`), a `payTo` Stellar `G…` address, and a
+positive `maxTimeoutSeconds`. It also asserts `PAYMENT-REQUIRED` is listed in
+`Access-Control-Expose-Headers`, without which a browser client cannot read the
+challenge at all.
+
+### Non-secret by construction
+
+The suite needs **no repository secrets, no Vercel token, no wallet, and no
+signing material**, and it **never settles a payment** — the x402 checks stop at
+the 402 challenge, so a run costs **0 USDC**. It is also dependency-free plain
+ESM, so CI runs it straight from a checkout without `npm ci`.
+
+Response artifacts are header-filtered before they are written: `authorization`,
+`set-cookie`, `x-api-key`, and the payment headers are never captured, and
+bodies are truncated to 2 KB.
+
+### Failure reporting
+
+A failing run fails the check and reports the **exact endpoint** three ways:
+
+1. a `::error::` annotation per failed endpoint in the PR checks UI, titled
+   `METHOD /path (status)`;
+2. a Markdown report in the job summary naming each failed endpoint, the status
+   received versus expected, and a collapsible **response artifact** (filtered
+   headers + truncated body);
+3. an uploaded `preview-smoke-results` artifact (14-day retention) containing
+   `smoke-results.json` and `smoke-report.md`.
+
+```
+✗ 2 of 12 checks failed:
+  GET https://preview.vercel.app/docs → 404 (expected 200)
+      deep link was not rewritten to index.html — got "text/plain". Check the "rewrites" block in vercel.json.
+  GET https://preview.vercel.app/api/health → 500 (expected 200)
+      health did not return JSON — a 500 here usually means required env vars
+      (STELLAR_RECEIVING_ADDRESS, SERPER_API_KEY) are not set on this deployment
+```
+
+### Running it yourself
+
+```bash
+# Against any deployment (a bare host is assumed to be https)
+node scripts/smoke.mjs https://your-preview.vercel.app
+
+# Capture artifacts locally
+node scripts/smoke.mjs my-preview.vercel.app \
+  --json smoke-artifacts/smoke-results.json \
+  --markdown smoke-artifacts/smoke-report.md
+```
+
+Exit code is `0` when all checks pass and `1` otherwise.
+
+### Wiring it up
+
+1. Connect the repository to Vercel so Preview deployments are created for pull
+   requests. The workflow triggers on GitHub's `deployment_status` event, which
+   Vercel's integration emits with the Preview URL — **no Vercel token needed**.
+2. In **Settings → Branches → Branch protection rules** for `main`, add
+   **`Preview smoke tests`** to the required status checks.
+3. Set `STELLAR_RECEIVING_ADDRESS` and `SERPER_API_KEY` for the **Preview**
+   environment in Vercel Project Settings, or check 5 will fail by design.
+
+To smoke-test a URL by hand, run the workflow from **Actions → Preview smoke →
+Run workflow** and paste the deployment URL.
+
+### `vercel.json`
+
+The routing config the suite validates:
+
+- `rewrites` — everything except `/api/*` falls through to `/index.html` so the
+  SPA renders on a deep link.
+- `headers` — CORS for `/api/*`, allowing the `payment-signature` / `x-payment`
+  request headers and **exposing** `PAYMENT-REQUIRED`, `PAYMENT-RESPONSE`, and
+  `X-Payment-Response` so browser clients can complete the x402 flow;
+  `Cache-Control: no-store` so a paid response is never cached.
+- `functions` — `maxDuration: 30` for `api/**/*.ts`, enough for the JSONL batch
+  stream and async job routes.
+
+> **Runtime boundary:** the Preview only exercises the **Vercel** runtime, which
+> serves `/api/search`, `/api/search/batch`, `/api/jobs`, `/api/jobs/:id`,
+> `/api/ai/chat`, and `/api/health`. `/images` and `/news` are **Express-only**
+> and are covered by `server/parameterMatrix.test.ts` instead — see
+> [Runtime availability](#runtime-availability).
+
+---
+
 ## Supply chain security & SBOM
 
 The `supply-chain` CI job generates a **CycloneDX SBOM** from the committed lockfile and runs a **dependency vulnerability gate** using [OSV-Scanner](https://google.github.io/osv-scanner/).

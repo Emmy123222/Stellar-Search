@@ -1,0 +1,123 @@
+name: Preview smoke
+
+# Validates the things only a real deployment can prove — serverless routing,
+# CORS, environment wiring, static assets, the SPA rewrite, and the shape of
+# the x402 402 challenge — before a PR can merge.
+#
+# Trigger: Vercel's GitHub integration reports each Preview build through the
+# `deployment_status` event, which carries the preview URL in
+# `environment_url`. No Vercel token or project secret is needed here, and the
+# suite itself is non-secret: it never signs or settles a payment, so a run
+# costs 0 USDC.
+#
+# Required check: enable "Preview smoke tests" in branch protection for `main`.
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      preview_url:
+        description: 'Deployment URL to smoke-test (e.g. https://my-preview.vercel.app)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-smoke-${{ github.event.deployment_status.target_url || github.event.inputs.preview_url || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Preview smoke tests
+    runs-on: ubuntu-latest
+    # Only run once a Preview deployment has actually succeeded. Production
+    # deployments are skipped — this gate is about pre-merge validation.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment_status.environment != 'Production' &&
+       github.event.deployment_status.environment != 'production')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+        # No `npm ci`: scripts/smoke.mjs is dependency-free ESM on purpose, so
+        # this gate stays green even while the lockfile is being changed.
+
+      - name: Resolve deployment URL
+        id: target
+        env:
+          DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+          DISPATCH_URL: ${{ github.event.inputs.preview_url }}
+        run: |
+          URL="${DISPATCH_URL:-$DEPLOYMENT_URL}"
+          if [ -z "$URL" ]; then
+            echo "::error::No deployment URL available on this event; nothing to smoke-test."
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Smoke-testing $URL"
+
+      - name: Wait for the deployment to answer
+        env:
+          URL: ${{ steps.target.outputs.url }}
+        run: |
+          # A deployment can report "success" a moment before its edge routes
+          # are answering. Poll briefly so the suite fails on real breakage
+          # rather than on a cold start.
+          for attempt in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL/api/health" || true)
+            if [ "$code" != "000" ]; then
+              echo "Deployment answered with HTTP $code after ${attempt} attempt(s)."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$URL did not answer within 150s."
+          exit 1
+
+      - name: Run non-secret smoke suite
+        id: smoke
+        env:
+          URL: ${{ steps.target.outputs.url }}
+        run: |
+          node scripts/smoke.mjs "$URL" \
+            --json smoke-artifacts/smoke-results.json \
+            --markdown smoke-artifacts/smoke-report.md
+
+      - name: Publish report to the job summary
+        if: always()
+        run: |
+          if [ -f smoke-artifacts/smoke-report.md ]; then
+            cat smoke-artifacts/smoke-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No smoke report was produced — the suite could not run." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload response artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-smoke-results
+          path: smoke-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Annotate each failed endpoint
+        # Surfaces the exact failing endpoint and status in the PR checks UI,
+        # so a reviewer does not have to open the artifact to see what broke.
+        if: failure() && hashFiles('smoke-artifacts/smoke-results.json') != ''
+        run: |
+          node -e '
+            const s = require("./smoke-artifacts/smoke-results.json");
+            for (const r of s.results.filter((x) => !x.ok)) {
+              const detail = r.failures.join(" | ").replace(/\r?\n/g, " ");
+              console.log(`::error title=${r.method} ${r.path} (${r.status ?? "no response"})::${detail}`);
+            }
+          '
