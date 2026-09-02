@@ -57,12 +57,31 @@ export interface StellarTransaction {
   memo?: string
 }
 
+export type ReceiptVerificationStatus = 'unverified' | 'pending' | 'confirmed' | 'mismatched'
+
+export interface ReceiptVerificationDetail {
+  status: ReceiptVerificationStatus
+  verifiedAt?: string
+  ledgerSequence?: number
+  network?: string
+  txHash?: string
+  asset?: string
+  amount?: string
+  destination?: string
+  mismatches?: string[]
+  error?: string
+}
+
 export interface SearchReceipt {
   txHash: string
   query: string
   amount: string
+  asset?: string
+  destination?: string
   timestamp: string
   network: string
+  status?: ReceiptVerificationStatus
+  verificationDetails?: ReceiptVerificationDetail
 }
 
 export interface ApiStat {
@@ -105,6 +124,8 @@ export interface SearchResponse {
   paidAmount: string
   currency: string
   txHash: string | null
+  destination?: string
+  payTo?: string
   latencyMs: number
   suggestions?: string[]
 }

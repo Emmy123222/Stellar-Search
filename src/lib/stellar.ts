@@ -6,6 +6,7 @@ import { STELLAR_EXPERT_URL } from './constants'
 import { readBrowserConfig } from './config'
 
 export * from './constants'
+export * from './receiptVerification'
 
 /**
  * Truncates a Stellar public key address for display by preserving leading and trailing characters.

@@ -3,6 +3,7 @@ import {
   BUNDLE_VERSION,
   createReceiptBundle,
   verifyBundleOffline,
+  verifyBundleOnline,
   canonicalPayload,
   type SearchReceiptBundle,
 } from './receiptBundle'
@@ -273,3 +274,66 @@ describe('downloadBundle', () => {
     createObjectURLSpy.mockRestore()
   })
 })
+
+// ---------------------------------------------------------------------------
+// verifyBundleOnline (online Horizon verification)
+// ---------------------------------------------------------------------------
+
+describe('verifyBundleOnline', () => {
+  it('returns ledgerValid=false when offline integrity check fails', async () => {
+    const bundle = await createReceiptBundle([RECEIPT_A], 'stellar:testnet')
+    bundle.proof = '0'.repeat(64) // Tampered proof
+
+    const result = await verifyBundleOnline(bundle)
+    expect(result.integrityValid).toBe(false)
+    expect(result.ledgerValid).toBe(false)
+  })
+
+  it('validates all receipts on Horizon and returns ledgerValid=true on match', async () => {
+    const bundle = await createReceiptBundle([RECEIPT_A], 'stellar:testnet')
+
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({ successful: true, ledger: 100200 }),
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({
+          _embedded: {
+            records: [
+              {
+                type: 'payment',
+                to: 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3',
+                amount: '0.001',
+                asset_code: 'USDC',
+              },
+            ],
+          },
+        }),
+      })
+
+    const result = await verifyBundleOnline(bundle, { fetchFn })
+    expect(result.integrityValid).toBe(true)
+    expect(result.ledgerValid).toBe(true)
+    expect(result.findings.some((f) => f.includes('successfully verified on Stellar Horizon ledger'))).toBe(true)
+  })
+
+  it('reports ledgerValid=false when a receipt is mismatched on Horizon', async () => {
+    const bundle = await createReceiptBundle([RECEIPT_A], 'stellar:testnet')
+
+    const fetchFn = vi.fn().mockResolvedValue({
+      status: 404,
+      ok: false,
+      statusText: 'Not Found',
+    })
+
+    const result = await verifyBundleOnline(bundle, { fetchFn })
+    expect(result.integrityValid).toBe(true)
+    expect(result.ledgerValid).toBe(false)
+    expect(result.findings.some((f) => f.includes('Transaction not found on Stellar Horizon ledger'))).toBe(true)
+  })
+})
+

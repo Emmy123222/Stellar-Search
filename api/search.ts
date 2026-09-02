@@ -5,6 +5,8 @@ import {
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
+import { normalizeOrganicResults, normalizeQueryMetadata } from '../src/lib/serperNormalizer'
+import type { SearchResponse, ApiErrorResponse } from '../src/types'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 let config

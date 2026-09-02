@@ -145,6 +145,8 @@ describe('useSearch — lazy-loaded x402 payment flow (#336)', () => {
           suggestions: [],
           txHash: 'deadbeef',
           paidAmount: '0.001',
+          currency: 'USDC',
+          destination: WALLET,
           network: 'stellar:testnet',
         }),
       })
@@ -163,6 +165,11 @@ describe('useSearch — lazy-loaded x402 payment flow (#336)', () => {
     const receipts = JSON.parse(localStorage.getItem('stellarsearch_receipts') || '[]')
     expect(receipts).toHaveLength(1)
     expect(receipts[0].txHash).toBe('deadbeef')
+    expect(receipts[0].amount).toBe('0.001')
+    expect(receipts[0].asset).toBe('USDC')
+    expect(receipts[0].destination).toBe(WALLET)
+    expect(receipts[0].network).toBe('stellar:testnet')
+    expect(receipts[0].status).toBe('unverified')
     vi.unstubAllGlobals()
   })
 

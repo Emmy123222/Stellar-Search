@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import Groq from 'groq-sdk'
 import { readServerConfig } from '../../src/lib/config'
+import { validateChatMessages, executeChatCompletion } from '../../src/lib/aiChatService'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -18,31 +19,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Groq is an optional feature: keep paid search deployable without its key.
-  const groqApiKey = readServerConfig().groqApiKey
+  const groqApiKey = process.env.GROQ_API_KEY || (function() {
+    try {
+      return readServerConfig().groqApiKey
+    } catch {
+      return undefined
+    }
+  })()
   if (!groqApiKey) return res.status(503).json({ error: 'AI assistant is not configured.' })
   const groq = new Groq({ apiKey: groqApiKey })
 
   try {
-    const stream = await streamChatCompletion(
-      groq,
-      {
-        messages: messages!,
-        model,
-      },
-      controller.signal
-    )
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices?.[0]?.delta?.content
-      if (delta) sendEvent('delta', { content: delta })
-    }
-    sendEvent('done', { model })
-    res.end()
+    const result = await executeChatCompletion(groq, {
+      messages: messages!,
+      model: requestedModel,
+    })
+    return res.json(result)
   } catch (err: any) {
-    if (controller.signal.aborted) return res.end()
-    console.error('[groq stream error]', err?.message)
-    const formatted = formatAiError(err)
-    sendEvent('error', { error: formatted.message })
-    res.end()
+    console.error('[groq error]', err?.message)
+    return res.status(500).json({ error: 'AI generation failed.' })
   }
 }

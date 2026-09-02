@@ -15,6 +15,7 @@ vi.mock('groq-sdk', () => ({
 describe('Vercel API: /api/ai/chat handler', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.GROQ_API_KEY = 'gsk_test'
   })
 
   it('rejects non-POST requests with 405', async () => {
