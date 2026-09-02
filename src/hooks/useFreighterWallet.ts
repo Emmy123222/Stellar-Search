@@ -6,9 +6,10 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
-import type { WalletState, StellarTransaction } from '../types'
+import i18n from '../i18n'
+import type { WalletState, StellarTransaction, WalletAccountStatus } from '../types'
 
-export type { WalletState, StellarTransaction }
+export type { WalletState, StellarTransaction, WalletAccountStatus }
 
 // `@stellar/freighter-api` and `@stellar/stellar-sdk` are loaded on demand
 // rather than imported statically — every page (docs, a still-disconnected
@@ -96,6 +97,9 @@ export function useFreighterWallet() {
     usdcBalance: '0',
     loading: false,
     error: null,
+    accountExists: false,
+    hasUsdcTrustline: false,
+    accountStatus: 'unfunded',
   })
   const [transactions, setTransactions] = useState<StellarTransaction[]>([])
   const [txLoading, setTxLoading] = useState(false)
@@ -108,6 +112,7 @@ export function useFreighterWallet() {
 
       let xlm = '0'
       let usdc = '0'
+      let hasTrustline = false
 
       for (const balance of account.balances) {
         if (balance.asset_type === 'native') {
@@ -117,21 +122,56 @@ export function useFreighterWallet() {
           (balance as any).asset_code === 'USDC' &&
           (balance as any).asset_issuer === USDC_ISSUER
         ) {
+          // A balance line existing at all means the trustline is
+          // established, regardless of the amount (#342) — checked before
+          // reading .balance so a freshly-opened, still-zero trustline is
+          // still correctly detected as "established".
+          hasTrustline = true
           usdc = parseFloat(balance.balance).toFixed(6)
         }
       }
+
+      const isZeroUsdc = parseFloat(usdc) === 0
+      const status: WalletAccountStatus = !hasTrustline
+        ? 'no_trustline'
+        : isZeroUsdc
+          ? 'zero_balance'
+          : 'funded'
 
       setWallet((prev: WalletState) => ({
         ...prev,
         xlmBalance: xlm,
         usdcBalance: usdc,
+        accountExists: true,
+        hasUsdcTrustline: hasTrustline,
+        accountStatus: status,
         error: null,
       }))
     } catch (err: any) {
-      setWallet((prev: WalletState) => ({
-        ...prev,
-        error: err.message || 'Failed to load account',
-      }))
+      const isNotFound =
+        err?.response?.status === 404 ||
+        err?.name === 'NotFoundError' ||
+        (typeof err?.message === 'string' && (
+          err.message.includes('404') ||
+          err.message.toLowerCase().includes('not found')
+        ))
+
+      if (isNotFound) {
+        setWallet((prev: WalletState) => ({
+          ...prev,
+          xlmBalance: '0',
+          usdcBalance: '0',
+          accountExists: false,
+          hasUsdcTrustline: false,
+          accountStatus: 'unfunded',
+          error: null,
+        }))
+      } else {
+        setWallet((prev: WalletState) => ({
+          ...prev,
+          error: err.message || i18n.t('errors:accountLoadFailed'),
+        }))
+      }
     }
   }, [])
 
@@ -235,9 +275,7 @@ export function useFreighterWallet() {
       const { isConnected, requestAccess, getAddress, getNetwork } = await loadFreighterApi()
       const connected = await isConnected()
       if (!connected.isConnected) {
-        throw new Error(
-          'Freighter extension not found. Install it from freighter.app'
-        )
+        throw new Error(i18n.t('errors:freighterNotFound'))
       }
 
       const accessResult = await requestAccess()
@@ -270,7 +308,7 @@ export function useFreighterWallet() {
         ...prev,
         loading: false,
         connected: false,
-        error: err.message || 'Connection failed',
+        error: err.message || i18n.t('errors:connectionFailed'),
       }))
     }
   }, [fetchBalances, fetchTransactions])
@@ -284,6 +322,9 @@ export function useFreighterWallet() {
       usdcBalance: '0',
       loading: false,
       error: null,
+      accountExists: false,
+      hasUsdcTrustline: false,
+      accountStatus: 'unfunded',
     })
     setTransactions([])
   }, [])

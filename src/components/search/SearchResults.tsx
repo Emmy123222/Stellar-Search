@@ -1,8 +1,10 @@
+import { readBrowserConfig } from '../../lib/config'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy, Bookmark } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
-import { explorerTxUrl, truncateHash, SERVER_URL } from '../../lib/stellar'
+import { useSavedResearch } from '../../hooks/useSavedResearch'
+import { explorerTxUrl, truncateHash } from '../../lib/stellar'
 
 interface Props {
   results: SearchResult[]
@@ -11,12 +13,14 @@ interface Props {
   txHash?: string | null
 }
 
+const SERVER_URL = readBrowserConfig().apiBaseUrl
 export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
   const [copiedUrl, setCopiedUrl]           = useState<string | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const { isSaved, toggle: toggleSaved }    = useSavedResearch()
 
   const exportAsJSON = () => {
     if (!results.length) return
@@ -364,9 +368,29 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
                 )}
               </div>
 
-              <h3 className="text-white font-medium text-sm leading-snug mb-1 group-hover:text-neon-cyan transition-colors">
-                {r.title}
-              </h3>
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <h3 className="text-white font-medium text-sm leading-snug group-hover:text-neon-cyan transition-colors">
+                  {r.title}
+                </h3>
+                {/* Save to research button — bookmarks this result with editable notes/tags (#305) */}
+                <button
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    toggleSaved(r, query)
+                  }}
+                  className="relative flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center transition-all hover:bg-white/10"
+                  style={{
+                    border: isSaved(query, r.id) ? '1px solid rgba(255,184,0,0.4)' : '1px solid rgba(255,255,255,0.1)',
+                    color: isSaved(query, r.id) ? '#ffb800' : 'rgba(255,255,255,0.4)',
+                  }}
+                  aria-label={isSaved(query, r.id) ? 'Remove from saved research' : 'Save to research'}
+                  aria-pressed={isSaved(query, r.id)}
+                  title={isSaved(query, r.id) ? 'Saved — click to remove' : 'Save to research'}
+                >
+                  <Bookmark className="w-3 h-3" fill={isSaved(query, r.id) ? 'currentColor' : 'none'} />
+                </button>
+              </div>
 
               <div className="flex items-center gap-2 mb-2">
                 <p className="font-mono text-xs truncate" style={{ color: 'rgba(0,245,255,0.35)' }}>

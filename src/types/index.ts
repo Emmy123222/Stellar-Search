@@ -26,14 +26,23 @@ export interface SearchSession {
   durationMs?: number
 }
 
+export type WalletAccountStatus = 'unfunded' | 'no_trustline' | 'zero_balance' | 'funded'
+
 export interface WalletState {
   publicKey: string | null
   connected: boolean
   network: string
   xlmBalance: string
   usdcBalance: string
+  /** True once the account has a USDC trustline (a balance line exists for
+   *  it), independent of whether that balance is currently 0. Distinct
+   *  from `usdcBalance === '0'`, which is also true for an account with a
+   *  trustline but nothing funded into it yet (#342). */
+  hasUsdcTrustline: boolean
   loading: boolean
   error: string | null
+  accountExists: boolean
+  accountStatus: WalletAccountStatus
 }
 
 export interface StellarTransaction {
@@ -296,4 +305,24 @@ export interface CapabilityDoc {
   mcpTools: string[]
   mcpResources: string[]
   mcpPrompts: string[]
+}
+
+// ─── Saved research: notes & tags (issue #305) ───────────────────────────────
+//
+// A user-curated bookmark of a search result, kept alongside (not instead
+// of) the ephemeral in-session `SearchResult` list. Persisted locally under
+// `stellarsearch_saved_research`, mirroring the existing `SearchReceipt`
+// localStorage pattern used by the Dashboard's audit log.
+
+export interface SavedResearchItem {
+  /** Stable id for this saved item — derived from the source result's id + query so re-saving the same result from the same query is idempotent. */
+  id: string
+  query: string
+  title: string
+  url: string
+  description: string
+  source: string
+  savedAt: string
+  notes: string
+  tags: string[]
 }

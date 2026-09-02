@@ -3,20 +3,11 @@
  * Centralized Stellar network constants for both Frontend and Backend.
  */
 
-// Use process.env for Node.js and import.meta.env for Vite
-const getEnv = (key: string, fallback: string) => {
-  if (typeof process !== 'undefined' && process.env && process.env[key]) {
-    return process.env[key]
-  }
-  // @ts-ignore
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[`VITE_${key}`]) {
-    // @ts-ignore
-    return import.meta.env[`VITE_${key}`]
-  }
-  return fallback
-}
+import { readBrowserConfig } from './config'
 
-export const STELLAR_NETWORK = getEnv('STELLAR_NETWORK', 'stellar:testnet')
+// Browser code only receives VITE_* values through this typed view.
+const browserConfig = readBrowserConfig()
+export const STELLAR_NETWORK = browserConfig.stellarNetwork
 export const IS_MAINNET = STELLAR_NETWORK === 'stellar:mainnet'
 export const EXPECTED_WALLET_NETWORK = IS_MAINNET ? 'PUBLIC' : 'TESTNET'
 
@@ -43,6 +34,18 @@ export const USDC_CONTRACT = IS_MAINNET ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_
 // Payments
 export const AMOUNT_STROOPS = '10000' // 0.001 USDC
 export const AMOUNT_USDC = '0.001'
+
+const getEnv = (key: string, fallback: string) => {
+  if (typeof process !== 'undefined' && process.env && process.env[key]) {
+    return process.env[key]
+  }
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[`VITE_${key}`]) {
+    // @ts-ignore
+    return import.meta.env[`VITE_${key}`]
+  }
+  return fallback
+}
 
 /**
  * Resolves the base URL for backend API requests across development, production, and Vercel environments

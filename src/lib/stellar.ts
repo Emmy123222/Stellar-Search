@@ -2,7 +2,8 @@
  * stellar.ts — Real Stellar Horizon helpers (no mock data)
  */
 
-import { STELLAR_EXPERT_URL, getServerUrl } from './constants'
+import { STELLAR_EXPERT_URL } from './constants'
+import { readBrowserConfig } from './config'
 
 export * from './constants'
 
@@ -74,12 +75,12 @@ export function formatTimeAgo(isoString: string): string {
  */
 export async function fetchServerStats() {
   try {
-    const serverUrl = getServerUrl()
-    const res = await fetch(`${serverUrl}/health`)
+    const SERVER_URL = readBrowserConfig().apiBaseUrl
+    
+    const res = await fetch(`${SERVER_URL}/health`)
     if (!res.ok) return null
     return await res.json()
   } catch {
     return null
   }
 }
-

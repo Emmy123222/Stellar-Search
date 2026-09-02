@@ -10,9 +10,7 @@ vi.mock('groq-sdk', () => ({
   },
 }))
 
-import handler, { AVAILABLE_MODELS } from './chat'
-
-const vercelAiChatHandler = handler
+import handler from './chat'
 
 function mockReqRes(method = 'POST', body: any = {}) {
   const req: any = {
@@ -88,59 +86,108 @@ describe('api/ai/chat — Vercel Groq chat handler', () => {
       error: 'Groq AI error: Rate limit exceeded',
     })
   })
+
+  it('returns 503 when Groq API key is missing', async () => {
+    const original = process.env.GROQ_API_KEY
+    try {
+      delete process.env.GROQ_API_KEY
+      const { req, res } = mockReqRes('POST', {
+        messages: [{ role: 'user', content: 'Hi' }],
+      })
+      await handler(req, res)
+      expect(res.status).toHaveBeenCalledWith(503)
+      expect(res.json).toHaveBeenCalledWith({ error: 'AI assistant is not configured.' })
+    } finally {
+      process.env.GROQ_API_KEY = original
+    }
+  })
+
+  it('streams response as SSE when text/event-stream header is requested', async () => {
+    mockCreate.mockResolvedValue([
+      { choices: [{ delta: { content: 'Hello ' } }] },
+      { choices: [{ delta: { content: 'world!' } }] },
+    ])
+
+    const writtenChunks: string[] = []
+    const req: any = {
+      method: 'POST',
+      headers: { accept: 'text/event-stream' },
+      body: { messages: [{ role: 'user', content: 'Hi' }] },
+      on: vi.fn(),
+    }
+    const res: any = {
+      setHeader: vi.fn(),
+      write: vi.fn((chunk: string) => {
+        writtenChunks.push(chunk)
+        return true
+      }),
+      end: vi.fn(),
+      flushHeaders: vi.fn(),
+    }
+
+    await handler(req, res)
+
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream')
+    expect(res.end).toHaveBeenCalled()
+    expect(writtenChunks.some(c => c.includes('Hello '))).toBe(true)
+    expect(writtenChunks.some(c => c.includes('world!'))).toBe(true)
+    expect(writtenChunks.some(c => c.includes('event: done'))).toBe(true)
+  })
+
+  it('handles stream error by sending error SSE event', async () => {
+    mockCreate.mockImplementation(() => {
+      throw new Error('Stream failed')
+    })
+
+    const writtenChunks: string[] = []
+    const req: any = {
+      method: 'POST',
+      headers: { accept: 'text/event-stream' },
+      body: { messages: [{ role: 'user', content: 'Hi' }] },
+      on: vi.fn(),
+    }
+    const res: any = {
+      setHeader: vi.fn(),
+      write: vi.fn((chunk: string) => {
+        writtenChunks.push(chunk)
+        return true
+      }),
+      end: vi.fn(),
+      flushHeaders: vi.fn(),
+    }
+
+    await handler(req, res)
+
+    expect(writtenChunks.some(c => c.includes('event: error'))).toBe(true)
+    expect(res.end).toHaveBeenCalled()
+  })
+
+  it('handles client disconnect abort during stream error', async () => {
+    let closeCb: () => void = () => {}
+    const req: any = {
+      method: 'POST',
+      headers: { accept: 'text/event-stream' },
+      body: { messages: [{ role: 'user', content: 'Hi' }] },
+      on: vi.fn((event: string, cb: () => void) => {
+        if (event === 'close') closeCb = cb
+      }),
+    }
+    mockCreate.mockImplementation(() => {
+      closeCb()
+      throw new Error('Aborted')
+    })
+
+    const res: any = {
+      setHeader: vi.fn(),
+      write: vi.fn(),
+      end: vi.fn(),
+      flushHeaders: vi.fn(),
+    }
+
+    await handler(req, res)
+    expect(res.end).toHaveBeenCalled()
+  })
 })
-
-// Helper to create mock Express/Vercel req/res objects
-function createMockReqRes(options: {
-  method?: string
-  body?: any
-  headers?: Record<string, string>
-  query?: Record<string, string>
-}) {
-  const req: any = {
-    method: options.method || 'POST',
-    body: options.body || {},
-    headers: options.headers || {},
-    query: options.query || {},
-    on: vi.fn(),
-  }
-
-  let statusCode = 200
-  let responseData: any = null
-  let headers: Record<string, string> = {}
-  let streamOutput = ''
-
-  const res: any = {
-    status: (code: number) => {
-      statusCode = code
-      return res
-    },
-    json: (data: any) => {
-      responseData = data
-      headers['content-type'] = 'application/json'
-      return res
-    },
-    setHeader: (key: string, value: string) => {
-      headers[key.toLowerCase()] = value
-      return res
-    },
-    write: (chunk: string) => {
-      streamOutput += chunk
-      return true
-    },
-    end: () => res,
-    flushHeaders: vi.fn(),
-  }
-
-  return {
-    req,
-    res,
-    getStatusCode: () => statusCode,
-    getResponseData: () => responseData,
-    getHeaders: () => headers,
-    getStreamOutput: () => streamOutput,
-  }
-}
 
 describe('AI Chat Serverless & Express Contract Tests (api/ai/chat.ts)', () => {
   beforeEach(() => {

@@ -70,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT']) as string | undefined
   let paymentId: string | null
-  let txHash: string | null = null
+  let txHash: string | null
   let verified: boolean
   if (!paymentHeader) {
     const quoteEvent = {

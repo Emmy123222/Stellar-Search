@@ -1,8 +1,8 @@
+import { readBrowserConfig } from '../../lib/config'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bot, Send, X, ChevronDown } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
-import { SERVER_URL } from '../../lib/stellar'
 
 interface Message {
   role: 'system' | 'user' | 'assistant'
@@ -34,6 +34,7 @@ const SYSTEM_INTRO: Message = {
     "Hi! I'm your AI research assistant powered by Groq. I can help you craft better search queries, summarise results, or explain topics. Each search costs 0.001 USDC on Stellar. What would you like to research?",
 }
 
+const SERVER_URL = readBrowserConfig().apiBaseUrl
 // Parse an SSE stream from `/ai/chat` and invoke `onDelta` for each token.
 // Stops cleanly on `event: done` or `event: error`.
 async function consumeSSE(

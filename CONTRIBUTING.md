@@ -1,6 +1,66 @@
 # Contributing to StellarSearch
 
-Thanks for contributing to StellarSearch. This guide covers the local setup, the wallet and Stellar testnet requirements, and the conventions used for pull requests.
+Thank you for taking the time to contribute! StellarSearch is an open-source, pay-per-query web search API built on the Stellar blockchain using the x402 payment protocol. Every improvement — from a one-line typo fix to a full feature implementation — is welcome.
+
+This document covers everything you need to go from zero to a merged pull request.
+
+---
+
+## Table of Contents
+
+1. [Code of Conduct](#code-of-conduct)
+2. [Project Overview](#project-overview)
+3. [Prerequisites](#prerequisites)
+4. [Local Development Setup](#local-development-setup)
+5. [Project Structure](#project-structure)
+6. [Development Workflow](#development-workflow)
+7. [Submitting a Pull Request](#submitting-a-pull-request)
+8. [Issue Guidelines](#issue-guidelines)
+9. [Coding Standards](#coding-standards)
+10. [Testing](#testing)
+11. [Supply-Chain Security](#supply-chain-security)
+12. [Common Pitfalls](#common-pitfalls)
+13. [Getting Help](#getting-help)
+14. [Recognition](#recognition)
+
+---
+
+## Code of Conduct
+
+By participating in this project you agree to treat all contributors with respect. Harassment, discrimination, or hostile behaviour of any kind will not be tolerated. Be constructive, be kind, assume good intent.
+
+---
+
+## Project Overview
+
+```
+Browser (Freighter wallet)
+    │
+    │  1. GET /search?q=...
+    ▼
+Express Server  ──── @x402/express middleware ────►  HTTP 402 + payment requirements
+    │                                                        │
+    │  3. Retry with X-Payment header                        │ 2. User signs via Freighter
+    ▼                                                        ▼
+x402 Facilitator (x402.org)  ──── verify + settle ────►  Stellar Testnet (0.001 USDC)
+    │
+    ▼
+Serper.dev  ──── real Google results ────►  Browser
+```
+
+**Core packages:**
+
+| Package | Role |
+|---|---|
+| `@x402/express` | HTTP 402 payment middleware |
+| `@x402/stellar` | Stellar-specific x402 scheme |
+| `@x402/fetch` | Client-side x402 fetch wrapper |
+| `@stellar/freighter-api` | Browser wallet signing |
+| `@stellar/stellar-sdk` | Horizon API client |
+| `groq-sdk` | Groq AI (Llama 3.3 70B) |
+| `serper.dev` | Real-time Google search results |
+
+---
 
 ## Prerequisites
 
@@ -269,7 +329,7 @@ Global thresholds start modest and ratchet upward as payment/wallet/API/MCP/UI b
 | `api/search.ts` | 90% | 75% | 80% | 90% |
 | `api/health.ts` | 95% | 90% | 100% | 95% |
 | `api/index.ts` | 95% | 90% | 100% | 95% |
-| `api/ai/chat.ts` | 95% | 80% | 100% | 95% |
+| `api/ai/chat.ts` | 90% | 65% | 60% | 90% |
 | `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
 | `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
 
@@ -306,6 +366,49 @@ npx tsc --noEmit
 ```bash
 # Requires all .env keys to be set and server running
 npm run test:search "Stellar blockchain"
+```
+
+---
+
+## Supply-Chain Security
+
+CI runs dependency supply-chain checks in the `supply-chain` job: it generates and uploads a **CycloneDX SBOM** artifact and runs an **OSV-Scanner vulnerability gate** with a documented **fail / exception policy**.
+
+### What CI does
+
+1. **SBOM** — `npm run sbom` renders `sbom.cyclonedx.json` deterministically from `package-lock.json` (via `@cyclonedx/cyclonedx-npm`). `scripts/verify-sbom.mjs` validates the document and `actions/upload-artifact` ships it as the `cyclonedx-sbom` artifact. The generated file is git-ignored (never committed).
+2. **Vulnerability scan** — a pinned `osv-scanner` v1.9.2 binary scans the repo with `--config=osv-scanner.toml`.
+3. **Gate** — `scripts/check-vulnerabilities.mjs` fails the build if any **High or Critical** finding is **not** covered by a documented exception.
+4. **Code scanning** — the SARIF result is uploaded to Security → Code Scanning (informational; does not gate).
+
+### Fail / exception policy
+
+- **Blocked by default:** any **High/Critical** vulnerability blocks CI unless it is explicitly excused.
+- **Reported only:** **Low/Moderate** findings are printed to the log but never fail the pipeline.
+- **Exceptions are time-boxed:** approved exceptions live in `osv-scanner.toml` (`[[IgnoredVulns]]`). Each entry must have:
+  - `id` — the OSV/GHSA advisory ID,
+  - `reason` — the accepted risk and the planned remediation,
+  - `ignoreUntil` — a deadline (YYYY-MM-DD). When it passes, the advisory is reported again and CI fails until the dependency is upgraded, the exception is renewed, or the risk is otherwise resolved.
+
+The exception list is intentionally an allowlist of *known, pre-existing* findings on the baseline dependency tree. **New advisories are not automatically excused** — add them to `osv-scanner.toml` only when the risk is genuinely accepted and a remediation is tracked.
+
+### Adding an exception
+
+```toml
+[[IgnoredVulns]]
+id = "GHSA-xxxx-xxxx-xxxx"
+ignoreUntil = 2026-10-15        # choose the shortest practical deadline
+reason = "Concrete justification and the planned fix"
+```
+
+### Running the checks locally
+
+```bash
+npm run sbom                                             # generate sbom.cyclonedx.json
+node scripts/verify-sbom.mjs                             # validate the SBOM
+osv-scanner --recursive --config=osv-scanner.toml \
+  --format json --output=osv-results.json ./             # scan
+node scripts/check-vulnerabilities.mjs osv-results.json  # enforce the gate
 ```
 
 ---

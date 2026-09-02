@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import Groq from 'groq-sdk'
+import { readServerConfig } from '../../src/lib/config'
 import {
   executeChatCompletion,
   streamChatCompletion,
@@ -7,8 +8,6 @@ import {
   validateChatMessages,
   formatAiError,
 } from '../../src/lib/aiChatService'
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' })
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -25,10 +24,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: validationError })
   }
 
+  // Groq is an optional feature: keep paid search deployable without its key.
+  const groqApiKey = readServerConfig().groqApiKey
+  if (!groqApiKey) return res.status(503).json({ error: 'AI assistant is not configured.' })
+  const groq = new Groq({ apiKey: groqApiKey })
+
   const model = resolveModel(requestedModel)
   const wantsStream =
-    (req.headers.accept || '').includes('text/event-stream') ||
-    req.query.stream === '1'
+    (req.headers?.accept || '').includes('text/event-stream') ||
+    req.query?.stream === '1'
 
   if (!wantsStream) {
     try {
