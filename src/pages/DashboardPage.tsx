@@ -1,12 +1,12 @@
 import { motion } from 'framer-motion'
 import { useState, useEffect, useMemo } from 'react'
-import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search, Bookmark } from 'lucide-react'
+import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search, Download } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, truncateHash, formatTimeAgo, explorerTxUrl, explorerAccountUrl } from '../lib/stellar'
+import { SavedResearchPanel } from '../components/search'
 import type { StellarTransaction } from '../hooks/useFreighterWallet'
 import type { SearchReceipt } from '../types'
-import { useCollections } from '../hooks/useCollections'
-import { CollectionsPanel } from '../components/collections/CollectionsPanel'
+import { createReceiptBundle, downloadBundle } from '../lib/receiptBundle'
 
 interface Props {
   transactions: StellarTransaction[]
@@ -188,63 +188,39 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
             </motion.div>
           )}
 
-          {/* USDC Spent Chart */}
-          {publicKey && chartData.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
-              className="rounded-2xl p-5"
-              style={{ background: 'rgba(6,13,20,0.7)', border: '1px solid rgba(255,184,0,0.15)' }}
-            >
-              <div className="flex items-center gap-2 mb-6">
-                <BarChart2 className="w-4 h-4 text-neon-amber/40" />
-                <span className="font-display text-xs text-white/30 tracking-widest">USDC SPENT OVER TIME</span>
-              </div>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                    <XAxis 
-                      dataKey="date" 
-                      stroke="rgba(255,255,255,0.2)" 
-                      fontSize={10} 
-                      tickLine={false} 
-                      axisLine={false} 
-                      fontFamily="monospace"
-                    />
-                    <YAxis 
-                      stroke="rgba(255,255,255,0.2)" 
-                      fontSize={10} 
-                      tickLine={false} 
-                      axisLine={false} 
-                      tickFormatter={(val: number | string) => `$${val}`}
-                      fontFamily="monospace"
-                    />
-                    <Tooltip 
-                      cursor={{ fill: 'rgba(255,184,0,0.05)' }}
-                      contentStyle={{ 
-                        backgroundColor: 'rgba(6,13,20,0.9)', 
-                        border: '1px solid rgba(255,184,0,0.2)',
-                        borderRadius: '8px',
-                        fontFamily: 'monospace',
-                        fontSize: '12px'
-                      }}
-                      itemStyle={{ color: '#ffb800' }}
-                      labelStyle={{ color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}
-                    />
-                    <Bar 
-                      dataKey="amount" 
-                      fill="#ffb800" 
-                      radius={[4, 4, 0, 0]} 
-                      maxBarSize={40}
-                      animationDuration={1500}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </motion.div>
-          )}
+      {/* Search Audit Log */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="rounded-2xl overflow-hidden"
+        style={{ background: 'rgba(6,13,20,0.7)', border: '1px solid rgba(0,245,255,0.1)' }}
+      >
+        <div className="flex items-center justify-between p-5 border-b border-white/5">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-neon-cyan/40" />
+            <span className="font-display text-xs text-white/30 tracking-widest">SEARCH AUDIT LOG</span>
+            <span className="font-display text-white/15" style={{ fontSize: '10px' }}>· PERSISTED LOCALLY</span>
+          </div>
+          <div className="flex items-center gap-3">
+            {receipts.length > 0 && (
+              <button
+                onClick={async () => {
+                  const network = IS_MAINNET ? 'stellar:mainnet' : 'stellar:testnet'
+                  const bundle = await createReceiptBundle(receipts, network)
+                  downloadBundle(bundle)
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neon-cyan/20 text-neon-cyan/60 hover:text-neon-cyan hover:border-neon-cyan/40 transition-colors font-display text-[10px] tracking-wider"
+              >
+                <Download className="w-3 h-3" />
+                DOWNLOAD BUNDLE
+              </button>
+            )}
+            <div className="font-display text-[10px] text-white/20 uppercase tracking-wider">
+              {receipts.length} RECEIPTS
+            </div>
+          </div>
+        </div>
 
           {/* Live transactions from Horizon */}
           <motion.div
@@ -330,7 +306,16 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
             </div>
           </motion.div>
 
-          {/* Search Audit Log */}
+      {/* Saved Research — notes & tags (#305) */}
+      <SavedResearchPanel />
+
+      {/* Network info */}
+      <div className="grid sm:grid-cols-3 gap-3">
+        {[
+          { label: 'Network',          value: IS_MAINNET ? 'Stellar Mainnet' : 'Stellar Testnet',  sub: STELLAR_NETWORK, color: IS_MAINNET ? '#ffb800' : '#00f5ff' },
+          { label: 'Price per query',  value: `${AMOUNT_USDC} USDC`,       sub: `≈ $${AMOUNT_USDC} USD`,    color: '#ffb800' },
+          { label: 'Settlement',       value: '~5 seconds',       sub: 'Stellar finality', color: '#39ff14' },
+        ].map(({ label, value, sub, color }) => (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}

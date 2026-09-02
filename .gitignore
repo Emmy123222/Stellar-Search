@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .env
+.env.production
+.env.*.local
 *.local
 .DS_Store
 *.log
@@ -9,3 +11,9 @@ dist/
 # Local scripts
 create_issues.py
 coverage/
+
+# Generated supply-chain artifacts
+sbom.cyclonedx.json
+osv-results.json
+osv-results.sarif
+logs/

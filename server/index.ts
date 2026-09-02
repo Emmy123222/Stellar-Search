@@ -24,14 +24,15 @@ import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
 import logger from './logger'
-import crypto from 'crypto'
+import crypto, { randomUUID } from 'crypto'
 import {
   STELLAR_NETWORK,
   AMOUNT_USDC,
   AMOUNT_STROOPS,
   USDC_CONTRACT
 } from '../src/lib/constants'
-import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
+import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import {
   normalizeOrganicResults,
   normalizeImageResults,
@@ -44,6 +45,7 @@ import type {
   NewsSearchResponse,
   ApiErrorResponse,
   BatchJsonlEvent,
+  BatchJsonlQuoteEvent,
   BatchJsonlSettlementEvent,
   BatchJsonlResultEvent,
   BatchJsonlErrorEvent,
@@ -51,12 +53,22 @@ import type {
   SearchJob,
   JobStatus,
 } from '../src/types/index.js'
+import { buildReconciliationRecord, type ReconciliationRoute } from '../src/lib/reconciliation.js'
+import { appendReconciliationRecord } from './reconciliationStore.js'
 
 dotenv.config()
 
+let config
+try {
+  config = readServerConfig()
+} catch (error) {
+  console.error(formatConfigurationError(error))
+  throw error
+}
+
 const app  = express()
-const PORT = process.env.PORT || 3001
-const RATE_LIMIT_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PER_MINUTE || '30', 10)
+const PORT = config.port
+const RATE_LIMIT_PER_MINUTE = config.rateLimitPerMinute
 
 const limiter = rateLimit({
   windowMs: 60 * 1000,
@@ -248,18 +260,16 @@ async function deliverWebhookWithRetry(job: SearchJob, maxAttempts = MAX_JOB_WEB
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────
-const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
-const FACILITATOR_URL   = process.env.FACILITATOR_URL   || 'https://www.x402.org/facilitator'
-const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
-const SERPER_API_KEY    = process.env.SERPER_API_KEY!
-const GROQ_API_KEY      = process.env.GROQ_API_KEY!
-
-if (!RECEIVING_ADDRESS) console.warn('⚠  STELLAR_RECEIVING_ADDRESS not set')
-if (!SERPER_API_KEY)    console.warn('⚠  SERPER_API_KEY not set')
-if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
+const RECEIVING_ADDRESS = config.receivingAddress
+const FACILITATOR_URL   = config.facilitatorUrl
+const NETWORK           = config.stellarNetwork
+const SERPER_API_KEY    = config.serperApiKey
+const GROQ_API_KEY      = config.groqApiKey
+const AMOUNT_USDC       = config.amountUsdc
+const AMOUNT_STROOPS    = config.amountStroops
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
-const groq = new Groq({ apiKey: GROQ_API_KEY })
+const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
 
 // ─── x402 payment guard on /search ───────────────────────────────────────
 // paymentMiddlewareFromConfig is the recommended API per official Stellar docs.
@@ -346,10 +356,43 @@ app.use((req, res, next) => {
       if (!consumption.ok) {
         return res.status(402).json({ error: consumption.error })
       }
+      // Captured for reconciliation — links this request to the settled
+      // payment identifier without ever touching query content.
+      ;(req as any).paymentId = consumption.paymentId
     }
   }
   next()
 })
+
+// Builds and persists a ReconciliationRecord for a paid route. Never throws —
+// a logging failure must not affect the response already sent to the client.
+function recordReconciliation(params: {
+  req: Request
+  route: ReconciliationRoute
+  requestId: string
+  providerDelivered: boolean
+  resultCount: number
+  txHash: string | null
+}): void {
+  try {
+    const idempotencyKey = (params.req as any).paymentId ?? null
+    // Nothing to reconcile: no payment was captured and nothing was
+    // delivered (e.g. a bad `q` rejected before any payment attempt).
+    if (idempotencyKey === null && !params.providerDelivered) return
+
+    const record = buildReconciliationRecord({
+      requestId: params.requestId,
+      idempotencyKey,
+      route: params.route,
+      receiptTxHash: params.txHash,
+      providerDelivered: params.providerDelivered,
+      resultCount: params.resultCount,
+    })
+    appendReconciliationRecord(record)
+  } catch (err: any) {
+    console.error('[reconciliation] failed to record:', err.message)
+  }
+}
 
 export const MAX_QUERY_LENGTH = 256
 
@@ -376,18 +419,23 @@ export function validateQuery(
 
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {
-  const { q, count = '5', freshness } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) {
-    const errorBody: ApiErrorResponse = { error: v.error }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-
-  const t0 = Date.now()
+  const requestId = randomUUID()
+  let providerDelivered = false
+  let resultCount = 0
+  let txHash: string | null = null
 
   try {
+    const { q, count = '5', freshness } = req.query as Record<string, string>
+
+    const v = validateQuery(q)
+    if (!v.ok) {
+      const errorBody: ApiErrorResponse = { error: v.error }
+      return res.status(400).json(errorBody)
+    }
+    const cleanQ = v.cleanQ
+
+    const t0 = Date.now()
+
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
       num: Math.min(parseInt(count) || 5, 20),
@@ -433,7 +481,7 @@ app.get('/search', async (req: Request, res: Response) => {
     const queryMeta = normalizeQueryMetadata(data, cleanQ)
 
     // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    txHash = (req.headers['x-payment-response'] as string) || null
 
     // ── Optional AI suggestions via Groq ──────────────────────────────────
     let suggestions: string[] = []
@@ -494,28 +542,37 @@ app.get('/search', async (req: Request, res: Response) => {
       // ignore receipt recording failure
     }
 
+    providerDelivered = true
+    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[search error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.' }
     return res.status(500).json(errorBody)
+  } finally {
+    recordReconciliation({ req, route: '/search', requestId, providerDelivered, resultCount, txHash })
   }
 })
 
 // ─── GET /images ──────────────────────────────────────────────────────────
 app.get('/images', async (req: Request, res: Response) => {
-  const { q, count = '10' } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) {
-    const errorBody: ApiErrorResponse = { error: v.error }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-
-  const t0 = Date.now()
+  const requestId = randomUUID()
+  let providerDelivered = false
+  let resultCount = 0
+  let txHash: string | null = null
 
   try {
+    const { q, count = '10' } = req.query as Record<string, string>
+
+    const v = validateQuery(q)
+    if (!v.ok) {
+      const errorBody: ApiErrorResponse = { error: v.error }
+      return res.status(400).json(errorBody)
+    }
+    const cleanQ = v.cleanQ
+
+    const t0 = Date.now()
+
     const serperRes = await fetch('https://google.serper.dev/images', {
       method: 'POST',
       headers: {
@@ -545,7 +602,7 @@ app.get('/images', async (req: Request, res: Response) => {
 
     const results = normalizeImageResults(data)
 
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    txHash = (req.headers['x-payment-response'] as string) || null
 
     const responseBody: ImageSearchResponse = {
       query: cleanQ,
@@ -558,28 +615,37 @@ app.get('/images', async (req: Request, res: Response) => {
       latencyMs,
     }
 
+    providerDelivered = true
+    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[images error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.' }
     return res.status(500).json(errorBody)
+  } finally {
+    recordReconciliation({ req, route: '/images', requestId, providerDelivered, resultCount, txHash })
   }
 })
 
 // ─── GET /news ────────────────────────────────────────────────────────────
 app.get('/news', async (req: Request, res: Response) => {
-  const { q, count = '10', freshness } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) {
-    const errorBody: ApiErrorResponse = { error: v.error }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-
-  const t0 = Date.now()
+  const requestId = randomUUID()
+  let providerDelivered = false
+  let resultCount = 0
+  let txHash: string | null = null
 
   try {
+    const { q, count = '10', freshness } = req.query as Record<string, string>
+
+    const v = validateQuery(q)
+    if (!v.ok) {
+      const errorBody: ApiErrorResponse = { error: v.error }
+      return res.status(400).json(errorBody)
+    }
+    const cleanQ = v.cleanQ
+
+    const t0 = Date.now()
+
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
       num: Math.min(parseInt(count) || 10, 20),
@@ -622,7 +688,7 @@ app.get('/news', async (req: Request, res: Response) => {
 
     const results = normalizeNewsResults(data)
 
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    txHash = (req.headers['x-payment-response'] as string) || null
 
     const responseBody: NewsSearchResponse = {
       query: cleanQ,
@@ -635,11 +701,15 @@ app.get('/news', async (req: Request, res: Response) => {
       latencyMs,
     }
 
+    providerDelivered = true
+    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     console.error('[news error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.' }
     return res.status(500).json(errorBody)
+  } finally {
+    recordReconciliation({ req, route: '/news', requestId, providerDelivered, resultCount, txHash })
   }
 })
 
@@ -1017,6 +1087,9 @@ app.get('/health', (_req: Request, res: Response) => {
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
 // (back-compat fallback for callers that don't support SSE).
 app.post('/ai/chat', async (req: Request, res: Response) => {
+  if (!groq) {
+    return res.status(503).json({ error: 'AI assistant is not configured.' })
+  }
   const { messages, model: requestedModel } = req.body as {
     messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string

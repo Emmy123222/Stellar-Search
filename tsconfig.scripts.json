@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["scripts/**/*", "src/lib/**/*", "src/types/**/*"],
+  "include": ["scripts/**/*", "src/lib/**/*", "src/types/**/*", "server/reconciliationStore.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -4,11 +4,12 @@
  * Fetches live balances from Stellar Horizon
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
-import type { WalletState, StellarTransaction } from '../types'
+import i18n from '../i18n'
+import type { WalletState, StellarTransaction, WalletAccountStatus } from '../types'
 
-export type { WalletState, StellarTransaction }
+export type { WalletState, StellarTransaction, WalletAccountStatus }
 
 // `@stellar/freighter-api` and `@stellar/stellar-sdk` are loaded on demand
 // rather than imported statically — every page (docs, a still-disconnected
@@ -96,6 +97,9 @@ export function useFreighterWallet() {
     usdcBalance: '0',
     loading: false,
     error: null,
+    accountExists: false,
+    hasUsdcTrustline: false,
+    accountStatus: 'unfunded',
   })
   const [transactions, setTransactions] = useState<StellarTransaction[]>([])
   const [txLoading, setTxLoading] = useState(false)
@@ -108,6 +112,7 @@ export function useFreighterWallet() {
 
       let xlm = '0'
       let usdc = '0'
+      let hasTrustline = false
 
       for (const balance of account.balances) {
         if (balance.asset_type === 'native') {
@@ -117,21 +122,56 @@ export function useFreighterWallet() {
           (balance as any).asset_code === 'USDC' &&
           (balance as any).asset_issuer === USDC_ISSUER
         ) {
+          // A balance line existing at all means the trustline is
+          // established, regardless of the amount (#342) — checked before
+          // reading .balance so a freshly-opened, still-zero trustline is
+          // still correctly detected as "established".
+          hasTrustline = true
           usdc = parseFloat(balance.balance).toFixed(6)
         }
       }
+
+      const isZeroUsdc = parseFloat(usdc) === 0
+      const status: WalletAccountStatus = !hasTrustline
+        ? 'no_trustline'
+        : isZeroUsdc
+          ? 'zero_balance'
+          : 'funded'
 
       setWallet((prev: WalletState) => ({
         ...prev,
         xlmBalance: xlm,
         usdcBalance: usdc,
+        accountExists: true,
+        hasUsdcTrustline: hasTrustline,
+        accountStatus: status,
         error: null,
       }))
     } catch (err: any) {
-      setWallet((prev: WalletState) => ({
-        ...prev,
-        error: err.message || 'Failed to load account',
-      }))
+      const isNotFound =
+        err?.response?.status === 404 ||
+        err?.name === 'NotFoundError' ||
+        (typeof err?.message === 'string' && (
+          err.message.includes('404') ||
+          err.message.toLowerCase().includes('not found')
+        ))
+
+      if (isNotFound) {
+        setWallet((prev: WalletState) => ({
+          ...prev,
+          xlmBalance: '0',
+          usdcBalance: '0',
+          accountExists: false,
+          hasUsdcTrustline: false,
+          accountStatus: 'unfunded',
+          error: null,
+        }))
+      } else {
+        setWallet((prev: WalletState) => ({
+          ...prev,
+          error: err.message || i18n.t('errors:accountLoadFailed'),
+        }))
+      }
     }
   }, [])
 
@@ -235,9 +275,7 @@ export function useFreighterWallet() {
       const { isConnected, requestAccess, getAddress, getNetwork } = await loadFreighterApi()
       const connected = await isConnected()
       if (!connected.isConnected) {
-        throw new Error(
-          'Freighter extension not found. Install it from freighter.app'
-        )
+        throw new Error(i18n.t('errors:freighterNotFound'))
       }
 
       const accessResult = await requestAccess()
@@ -270,7 +308,7 @@ export function useFreighterWallet() {
         ...prev,
         loading: false,
         connected: false,
-        error: err.message || 'Connection failed',
+        error: err.message || i18n.t('errors:connectionFailed'),
       }))
     }
   }, [fetchBalances, fetchTransactions])
@@ -284,6 +322,9 @@ export function useFreighterWallet() {
       usdcBalance: '0',
       loading: false,
       error: null,
+      accountExists: false,
+      hasUsdcTrustline: false,
+      accountStatus: 'unfunded',
     })
     setTransactions([])
   }, [])
@@ -294,6 +335,66 @@ export function useFreighterWallet() {
       await fetchTransactions(wallet.publicKey)
     }
   }, [wallet.publicKey, fetchBalances, fetchTransactions])
+
+  // Track latest wallet state for watcher callback without recreating the watcher
+  const walletRef = useRef(wallet)
+  useEffect(() => {
+    walletRef.current = wallet
+  }, [wallet])
+
+  // Watch for Freighter account or network changes (v3.1.0+)
+  useEffect(() => {
+    let watcher: any = null
+
+    if (wallet.connected) {
+      loadFreighterApi().then((api) => {
+        if (!api.WatchWalletChanges) return
+
+        watcher = new api.WatchWalletChanges()
+        watcher.watch((params: any) => {
+          if (params.error) {
+            disconnect()
+            return
+          }
+
+          const prev = walletRef.current
+          const addressChanged = params.address && params.address !== prev.publicKey
+          const networkChanged = params.network && params.network !== prev.network
+
+          if (addressChanged || networkChanged) {
+            const newAddress = params.address || prev.publicKey || ''
+            
+            // Atomically reset dependent state
+            setWallet((p) => ({
+              ...p,
+              publicKey: newAddress,
+              network: params.network || p.network,
+              xlmBalance: '0',
+              usdcBalance: '0',
+              hasUsdcTrustline: false,
+              loading: true,
+            }))
+            setTransactions([])
+
+            if (newAddress) {
+              Promise.all([
+                fetchBalances(newAddress),
+                fetchTransactions(newAddress)
+              ]).finally(() => {
+                setWallet((p) => ({ ...p, loading: false }))
+              })
+            }
+          }
+        })
+      })
+    }
+
+    return () => {
+      if (watcher) {
+        watcher.stop()
+      }
+    }
+  }, [wallet.connected, fetchBalances, fetchTransactions, disconnect])
 
   // Auto-check if already connected on mount
   useEffect(() => {

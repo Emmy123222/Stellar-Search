@@ -10,8 +10,11 @@ const mockWalletConnected: WalletState = {
   network: 'Testnet',
   xlmBalance: '100.0',
   usdcBalance: '10.0',
+  hasUsdcTrustline: true,
   loading: false,
   error: null,
+  accountExists: true,
+  accountStatus: 'funded',
 }
 
 describe('SearchPage component', () => {
