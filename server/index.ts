@@ -32,6 +32,16 @@ import {
   USDC_CONTRACT
 } from '../src/lib/constants'
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
+import {
+  validateCount,
+  validateFreshness,
+  FRESHNESS_TBS,
+  SEARCH_COUNT,
+  IMAGES_COUNT,
+  NEWS_COUNT,
+  type CountBounds,
+  type Freshness,
+} from '../src/lib/paramValidation'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import {
   normalizeOrganicResults,
@@ -338,6 +348,74 @@ app.use((req, res, next) => {
   next();
 });
 
+// ─── Shared parameter validation for paid routes (#188) ──────────────────
+// Registered BEFORE the x402 middleware on purpose: a malformed `count` or
+// `freshness` is rejected with 400 without ever consulting the payment
+// adapter, the facilitator, or Serper. That keeps a caller from being
+// charged — or from being handed a 402 challenge — for a request the server
+// was always going to refuse.
+
+interface PaidRouteParamSpec {
+  bounds: CountBounds
+  /** `/images` has no Serper date filter, so `freshness` is not accepted there. */
+  supportsFreshness: boolean
+  /** GET routes carry params in the query string, POST routes in the JSON body. */
+  source: 'query' | 'body'
+}
+
+const PAID_ROUTE_PARAMS: Record<string, PaidRouteParamSpec> = {
+  'GET /search':        { bounds: SEARCH_COUNT, supportsFreshness: true,  source: 'query' },
+  'GET /images':        { bounds: IMAGES_COUNT, supportsFreshness: false, source: 'query' },
+  'GET /news':          { bounds: NEWS_COUNT,   supportsFreshness: true,  source: 'query' },
+  'POST /search/batch': { bounds: SEARCH_COUNT, supportsFreshness: true,  source: 'body'  },
+  'POST /jobs':         { bounds: SEARCH_COUNT, supportsFreshness: true,  source: 'body'  },
+}
+
+export interface ValidatedPaidParams {
+  /** Forwarded to Serper as `num`. */
+  count: number
+  freshness?: Freshness
+  /** Serper `tbs` date filter; undefined when no freshness was requested. */
+  tbs?: string
+}
+
+/** Reads the params a paid route validated for this request. */
+function paidParams(req: Request, bounds: CountBounds): ValidatedPaidParams {
+  // The middleware below always populates this for the routes in the table;
+  // the fallback only guards a handler being exercised in isolation.
+  return ((req as any).validatedParams as ValidatedPaidParams | undefined) ?? { count: bounds.default }
+}
+
+app.use((req, res, next) => {
+  const spec = PAID_ROUTE_PARAMS[`${req.method} ${req.path}`]
+  if (!spec) return next()
+
+  const raw = (spec.source === 'body' ? req.body : req.query) ?? {}
+
+  const count = validateCount((raw as Record<string, unknown>).count, spec.bounds)
+  if (!count.ok) {
+    const errorBody: ApiErrorResponse = { error: count.error }
+    return res.status(400).json(errorBody)
+  }
+
+  const params: ValidatedPaidParams = { count: count.value }
+
+  if (spec.supportsFreshness) {
+    const freshness = validateFreshness((raw as Record<string, unknown>).freshness)
+    if (!freshness.ok) {
+      const errorBody: ApiErrorResponse = { error: freshness.error }
+      return res.status(400).json(errorBody)
+    }
+    if (freshness.value) {
+      params.freshness = freshness.value
+      params.tbs = FRESHNESS_TBS[freshness.value]
+    }
+  }
+
+  ;(req as any).validatedParams = params
+  next()
+})
+
 app.use(paymentMiddlewareFromConfig(x402Routes, facilitatorClient, schemes))
 
 // ─── Payment Replay Protection Middleware ─────────────────────────────────
@@ -425,7 +503,7 @@ app.get('/search', async (req: Request, res: Response) => {
   let txHash: string | null = null
 
   try {
-    const { q, count = '5', freshness } = req.query as Record<string, string>
+    const { q } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -434,24 +512,17 @@ app.get('/search', async (req: Request, res: Response) => {
     }
     const cleanQ = v.cleanQ
 
+    // `count`/`freshness` were validated up front by the paid-route
+    // middleware (#188), so no clamping or enum lookup is needed here.
+    const { count, tbs } = paidParams(req, SEARCH_COUNT)
+
     const t0 = Date.now()
 
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
-      num: Math.min(parseInt(count) || 5, 20),
+      num: count,
     }
-
-    // Add freshness filter if provided (Serper supports date filters)
-    if (freshness) {
-      const dateFilters: Record<string, string> = {
-        'pd': 'qdr:d',  // past day
-        'pw': 'qdr:w',  // past week
-        'pm': 'qdr:m',  // past month
-      }
-      if (dateFilters[freshness]) {
-        requestBody.tbs = dateFilters[freshness]
-      }
-    }
+    if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetch('https://google.serper.dev/search', {
       method: 'POST',
@@ -562,7 +633,7 @@ app.get('/images', async (req: Request, res: Response) => {
   let txHash: string | null = null
 
   try {
-    const { q, count = '10' } = req.query as Record<string, string>
+    const { q } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -570,6 +641,9 @@ app.get('/images', async (req: Request, res: Response) => {
       return res.status(400).json(errorBody)
     }
     const cleanQ = v.cleanQ
+
+    // Images have no date filter, so only `count` is validated (1..10).
+    const { count } = paidParams(req, IMAGES_COUNT)
 
     const t0 = Date.now()
 
@@ -581,7 +655,7 @@ app.get('/images', async (req: Request, res: Response) => {
       },
       body: JSON.stringify({
         q: cleanQ,
-        num: Math.min(parseInt(count) || 10, 10),
+        num: count,
       }),
     })
 
@@ -635,7 +709,7 @@ app.get('/news', async (req: Request, res: Response) => {
   let txHash: string | null = null
 
   try {
-    const { q, count = '10', freshness } = req.query as Record<string, string>
+    const { q } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -644,23 +718,15 @@ app.get('/news', async (req: Request, res: Response) => {
     }
     const cleanQ = v.cleanQ
 
+    const { count, tbs } = paidParams(req, NEWS_COUNT)
+
     const t0 = Date.now()
 
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
-      num: Math.min(parseInt(count) || 10, 20),
+      num: count,
     }
-
-    if (freshness) {
-      const dateFilters: Record<string, string> = {
-        'pd': 'qdr:d',
-        'pw': 'qdr:w',
-        'pm': 'qdr:m',
-      }
-      if (dateFilters[freshness]) {
-        requestBody.tbs = dateFilters[freshness]
-      }
-    }
+    if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetch('https://google.serper.dev/news', {
       method: 'POST',
@@ -730,7 +796,9 @@ app.post('/search/batch', async (req: Request, res: Response) => {
     }
   }
 
-  const { queries, count: rawCount, freshness } = (req.body || {}) as { queries?: unknown; count?: unknown; freshness?: string }
+  const { queries } = (req.body || {}) as { queries?: unknown }
+  // Validated up front by the paid-route middleware (#188).
+  const { count: parsedCount, tbs } = paidParams(req, SEARCH_COUNT)
 
   if (!Array.isArray(queries) || queries.length === 0) {
     return res.status(400).json({ error: 'queries array required (1..10)' })
@@ -748,7 +816,6 @@ app.post('/search/batch', async (req: Request, res: Response) => {
     if (!v.ok) return res.status(400).json({ error: `Invalid query "${String(q).slice(0, 30)}": ${v.error}`, index: queries.indexOf(q) })
     cleanQueries.push(v.cleanQ)
   }
-  const parsedCount = Math.min(Math.max(parseInt(String(rawCount ?? '5')) || 5, 1), 20)
 
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
   if (!paymentHeader) {
@@ -829,10 +896,7 @@ app.post('/search/batch', async (req: Request, res: Response) => {
     const t0 = Date.now()
     try {
       const requestBody: Record<string, unknown> = { q, num: parsedCount }
-      if (freshness) {
-        const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
-        if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
-      }
+      if (tbs) requestBody.tbs = tbs
       const serperRes = await fetch('https://google.serper.dev/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
@@ -918,12 +982,13 @@ app.post('/jobs', async (req: Request, res: Response) => {
     }
   }
 
-  const { query, count = '5', freshness, webhookUrl, webhookSecret } = (req.body || {}) as { query?: unknown; count?: unknown; freshness?: string; webhookUrl?: string; webhookSecret?: string }
+  const { query, webhookUrl, webhookSecret } = (req.body || {}) as { query?: unknown; webhookUrl?: string; webhookSecret?: string }
 
   const v = validateQuery(query)
   if (!v.ok) return res.status(400).json({ error: v.error })
   const cleanQ = v.cleanQ
-  const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 20)
+  // Validated up front by the paid-route middleware (#188).
+  const { count: safeCount, freshness, tbs } = paidParams(req, SEARCH_COUNT)
 
   // Webhook validation (SSRF + https)
   if (webhookUrl) {
@@ -993,10 +1058,7 @@ app.post('/jobs', async (req: Request, res: Response) => {
     const t0 = Date.now()
     try {
       const requestBody: Record<string, unknown> = { q: cleanQ, num: safeCount }
-      if (freshness) {
-        const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
-        if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
-      }
+      if (tbs) requestBody.tbs = tbs
       const serperRes = await fetch('https://google.serper.dev/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },

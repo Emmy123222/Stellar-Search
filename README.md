@@ -221,6 +221,288 @@ npm run reconcile:report
 
 ---
 
+## Paid HTTP API — `/search`, `/images`, `/news`
+
+Three paid HTTP endpoints are exposed by the Express server. Each one costs
+`PAYMENT_AMOUNT_USDC` (default **0.001 USDC**, `10000` stroops) settled on
+Stellar through x402, and each one is guarded by the same middleware chain:
+
+```
+parameter validation (400)  →  x402 payment challenge (402)  →  replay guard (402)  →  Serper  →  200
+```
+
+Validation runs **first**, so a malformed request is refused before a payment
+challenge is ever issued and before any payment payload is consumed.
+
+### Runtime availability
+
+| Endpoint | Express (`npm run server`) | Vercel (`api/`) | MCP tool |
+|---|:--:|:--:|---|
+| `GET /search` | ✅ | ✅ `GET /api/search` | `web_search` |
+| `GET /images` | ✅ | ❌ *not deployed* | `image_search` |
+| `GET /news` | ✅ | ❌ *not deployed* | `news_search` |
+
+> **Compatibility note:** `/images` and `/news` currently have **no Vercel
+> serverless equivalent** — `api/` only implements `search`, `search/batch`,
+> `jobs`, `jobs/[id]`, `ai/chat`, and `health`. Agents that need image or news
+> search must target an Express deployment (or the MCP server, which proxies to
+> one via `SEARCH_API_URL`). The MCP tools clamp `count` client-side before
+> calling, so they never trip the 400s below.
+
+### Parameters and limits
+
+| Endpoint | `q` (required) | `count` | `freshness` |
+|---|---|---|---|
+| `GET /search` | 1–256 chars | integer `1..20`, default `5` | `pd` \| `pw` \| `pm` |
+| `GET /images` | 1–256 chars | integer `1..10`, default `10` | **not supported** — ignored |
+| `GET /news` | 1–256 chars | integer `1..20`, default `10` | `pd` \| `pw` \| `pm` |
+
+- **`q`** — required. Trimmed; ASCII control characters and null bytes are
+  stripped. Empty, missing, non-string, or longer than 256 characters → `400`.
+  Must be URL-encoded (use `curl --data-urlencode`, see below).
+- **`count`** — optional. Must be a *single* integer inside the route's bounds.
+  Out-of-range (`0`, `-1`, `999`), non-integer (`abc`, `1.5`, `1e3`), and
+  repeated params (`?count=1&count=2`) are **rejected with `400`** — they are
+  *not* silently clamped. Forwarded to Serper as `num`.
+- **`freshness`** — optional. Maps to the Serper `tbs` date filter:
+  `pd` → `qdr:d` (past day), `pw` → `qdr:w` (past week), `pm` → `qdr:m` (past
+  month). Any other value, or a repeated param, is **rejected with `400`**.
+  `/images` has no date filter, so `freshness` is accepted-and-ignored there
+  rather than rejected.
+- **Rate limit** — `RATE_LIMIT_PER_MINUTE` (default `30`) per IP across all
+  routes; `429` with `Retry-After: 60` once exceeded.
+
+Bounds and enums live in `src/lib/paramValidation.ts` and are shared by every
+paid route on both runtimes — see
+[Parameter validation on paid endpoints (#188)](#parameter-validation-on-paid-endpoints-188).
+
+### Error responses
+
+| Status | Body | When |
+|---|---|---|
+| `400` | `{"error":"Missing required parameter: q"}` | `q` absent or blank |
+| `400` | `{"error":"Query too long. Maximum 256 characters."}` | `q` over 256 chars |
+| `400` | `{"error":"count must be between 1 and 10"}` | `/images?count=999` |
+| `400` | `{"error":"count must be an integer"}` | `?count=1.5` |
+| `400` | `{"error":"count must be a single value"}` | `?count=1&count=2` |
+| `400` | `{"error":"freshness must be one of: pd, pw, pm"}` | `?freshness=yesterday` |
+| `402` | `{}` + `PAYMENT-REQUIRED` header | no payment presented |
+| `402` | `{"error":"Payment payload already consumed"}` | payment header replayed |
+| `429` | `{"error":"Too many requests, please try again later."}` | rate limited |
+| `502` | `{"error":"Serper.dev API error: <status>"}` | upstream Serper failure |
+| `500` | `{"error":"Image search failed. Check server logs."}` | unexpected server error |
+
+### Step 1 — the 402 challenge
+
+An unpaid request returns **`402` with an empty JSON body**. The challenge
+itself travels in the base64-encoded **`PAYMENT-REQUIRED` response header**
+(x402 v2), which is listed in `Access-Control-Expose-Headers` so browser
+clients can read it cross-origin.
+
+```bash
+curl -i --get \
+  --data-urlencode 'q=stellar lumens' \
+  http://localhost:3001/images
+```
+
+```http
+HTTP/1.1 402 Payment Required
+Content-Type: application/json; charset=utf-8
+Access-Control-Expose-Headers: PAYMENT-REQUIRED,X-Payment-Response
+PAYMENT-REQUIRED: eyJ4NDAyVmVyc2lvbiI6MiwiZXJyb3IiOiJQYXltZW50IHJlcXVpcmVkIiwi...
+
+{}
+```
+
+Decode it with:
+
+```bash
+curl -sD - -o /dev/null --get \
+  --data-urlencode 'q=stellar lumens' \
+  http://localhost:3001/images \
+  | grep -i '^payment-required:' | cut -d' ' -f2 \
+  | tr -d '\r' | base64 -d | jq .
+```
+
+```jsonc
+{
+  "x402Version": 2,
+  "error": "Payment required",
+  "resource": {
+    "url": "http://localhost:3001/images?q=stellar%20lumens",
+    "description": "StellarSearch: pay-per-query image search — 0.001 USDC on Stellar",
+    "mimeType": ""
+  },
+  "accepts": [
+    {
+      "scheme": "exact",
+      "network": "stellar:testnet",
+      "amount": "10000",                                          // stroops, not dollars
+      "asset": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA", // Soroban USDC contract
+      "payTo": "G...",                                            // STELLAR_RECEIVING_ADDRESS
+      "maxTimeoutSeconds": 300,
+      "extra": { "areFeesSponsored": true }
+    }
+  ]
+}
+```
+
+`/news` returns the identical structure with a `news search` description.
+`asset` is always a Soroban **`C...` contract address**, never `USDC:ISSUER`.
+
+### Step 2 — pay and retry
+
+Sign the Soroban authorization entry from `accepts[0]` (Freighter in the
+browser, `@x402/fetch` for agents) and replay the request with the signed
+payload. The server accepts the payload on any of these request headers:
+
+| Header | Notes |
+|---|---|
+| `PAYMENT-SIGNATURE` | x402 **v2** — what `@x402/fetch` sends by default |
+| `X-PAYMENT` | x402 **v1** compatibility |
+| `Authorization` | accepted by the replay guard for legacy clients |
+
+The facilitator's settlement receipt comes back on the **`X-PAYMENT-RESPONSE`**
+response header, and the server echoes it into the JSON body as `txHash`.
+
+Each payload is single-use: replaying one within its validity window returns
+`402 {"error":"Payment payload already consumed"}` (see
+[Payment Integrity & Replay Protection](#payment-integrity--replay-protection)).
+
+In practice you do not hand-roll this — use the x402 client:
+
+```bash
+# Quote the challenge without settling, then run the full paid flow
+npm run search:cli -- "stellar lumens" --mode quote --json
+npm run search:cli -- "stellar lumens" --mode search
+```
+
+### Step 3 — the paid response
+
+#### `GET /images`
+
+```bash
+curl -s --get \
+  --data-urlencode 'q=stellar lumens' \
+  --data-urlencode 'count=1' \
+  -H "PAYMENT-SIGNATURE: $SIGNED_PAYLOAD" \
+  http://localhost:3001/images | jq .
+```
+
+```json
+{
+  "query": "stellar lumens",
+  "results": [
+    {
+      "id": "1",
+      "title": "Stellar Lumens logo",
+      "imageUrl": "https://cdn.example.com/xlm.png",
+      "thumbnailUrl": "https://cdn.example.com/xlm-thumb.png",
+      "sourceUrl": "https://example.com/xlm",
+      "source": "example.com",
+      "width": 1200,
+      "height": 630
+    }
+  ],
+  "count": 1,
+  "network": "stellar:testnet",
+  "paidAmount": "0.001",
+  "currency": "USDC",
+  "txHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "latencyMs": 412
+}
+```
+
+#### `GET /news`
+
+```bash
+curl -s --get \
+  --data-urlencode 'q=stellar lumens' \
+  --data-urlencode 'count=1' \
+  --data-urlencode 'freshness=pw' \
+  -H "PAYMENT-SIGNATURE: $SIGNED_PAYLOAD" \
+  http://localhost:3001/news | jq .
+```
+
+```json
+{
+  "query": "stellar lumens",
+  "results": [
+    {
+      "id": "1",
+      "title": "Stellar network upgrade ships",
+      "url": "https://news.example.com/a",
+      "snippet": "Protocol 23 went live...",
+      "source": "Example News",
+      "publishedAt": "2 hours ago",
+      "imageUrl": "https://news.example.com/a.jpg"
+    }
+  ],
+  "count": 1,
+  "network": "stellar:testnet",
+  "paidAmount": "0.001",
+  "currency": "USDC",
+  "txHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "latencyMs": 388
+}
+```
+
+### Result fields
+
+Envelope fields shared by `/search`, `/images`, and `/news`
+(`SearchResponse` / `ImageSearchResponse` / `NewsSearchResponse` in
+`src/types/index.ts`):
+
+| Field | Type | Description |
+|---|---|---|
+| `query` | `string` | The sanitized query actually sent upstream |
+| `results` | `array` | Normalized rows — see the per-endpoint tables below |
+| `count` | `number` | `results.length` **after** normalization, so it can be lower than the requested `count` |
+| `network` | `string` | `stellar:testnet` or `stellar:mainnet` |
+| `paidAmount` | `string` | USDC settled for this request, e.g. `"0.001"` |
+| `currency` | `string` | Always `"USDC"` |
+| `txHash` | `string \| null` | Settlement tx from `X-PAYMENT-RESPONSE`; `null` if the facilitator sent none |
+| `latencyMs` | `number` | Upstream Serper round-trip, excluding payment settlement |
+
+`/search` additionally returns `originalQuery`, `executedQuery`,
+`suggestedQuery`, `isCorrected`, and `suggestions` — see
+[Spelling-Correction Metadata](#spelling-correction-metadata--user-confirmation-302).
+
+**`ImageResult`** — rows without a valid `http(s)` `imageUrl` are dropped by
+`normalizeImageResults`:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string` | 1-based index within this response |
+| `title` | `string` | Image title, or `"No title"` |
+| `imageUrl` | `string` | Full-resolution image URL (validated `http(s)`) |
+| `thumbnailUrl` | `string` | Thumbnail URL; falls back to `imageUrl` |
+| `sourceUrl` | `string` | Page hosting the image; falls back to `imageUrl` |
+| `source` | `string` | Source domain |
+| `width` / `height` | `number?` | Pixel dimensions when Serper reports them |
+
+**`NewsResult`** — rows without a valid `http(s)` `link` are dropped by
+`normalizeNewsResults`:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string` | 1-based index within this response |
+| `title` | `string` | Headline, or `"No title"` |
+| `url` | `string` | Article URL (validated `http(s)`) |
+| `snippet` | `string` | Article excerpt; `""` when absent |
+| `source` | `string` | Publication name; falls back to the URL hostname |
+| `publishedAt` | `string?` | Relative age as reported by Serper, e.g. `"2 hours ago"` |
+| `imageUrl` | `string?` | Article thumbnail when present |
+
+### Settlement guarantees
+
+Every paid `/search`, `/images`, and `/news` request appends a
+`ReconciliationRecord` linking the payment identifier, the settlement tx hash,
+and whether results were delivered — never the query text. See
+[Settlement reconciliation](#settlement-reconciliation).
+
+---
+
 ## Project structure
 
 ```

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { ExternalLink, GitBranch, Globe, Shield, Zap, Server } from 'lucide-react'
-import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, HORIZON_URL } from '../lib/stellar'
+import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, AMOUNT_STROOPS, USDC_CONTRACT, STELLAR_EXPERT_URL, HORIZON_URL } from '../lib/stellar'
 import { loadNamespace } from '../i18n'
 
 const getSteps = () => [
@@ -15,20 +15,56 @@ const getSteps = () => [
   {
     num: '02', icon: Zap, color: '#ffb800',
     title: 'Server returns HTTP 402',
-    desc:  'The @x402/express middleware responds with 402 Payment Required and a payment specification.',
-    code:  `HTTP 402 · X-Payment-Required: {"amount":"10000","currency":"USDC","network":"${STELLAR_NETWORK}"}`,
+    desc:  'The @x402/express middleware responds with 402 and an empty JSON body — the payment specification travels base64-encoded in the PAYMENT-REQUIRED response header.',
+    code:  `HTTP 402 · PAYMENT-REQUIRED: base64({"x402Version":2,"accepts":[{"amount":"${AMOUNT_STROOPS}","network":"${STELLAR_NETWORK}"}]})`,
   },
   {
     num: '03', icon: Shield, color: '#7dd3fc',
     title: 'Sign Soroban auth entry',
-    desc:  'The x402 client signs a Soroban authorization entry via Freighter — no private key exposure.',
-    code:  'signAuthEntry(authEntry) → X-Payment: <base64-sig>',
+    desc:  'The x402 client signs a Soroban authorization entry via Freighter — no private key exposure. The signed payload goes back on PAYMENT-SIGNATURE (x402 v2); X-PAYMENT is accepted for v1 clients.',
+    code:  'signAuthEntry(authEntry) → PAYMENT-SIGNATURE: <base64-payload>',
   },
   {
     num: '04', icon: Server, color: '#39ff14',
     title: 'Settle on Stellar + get results',
     desc:  `OpenZeppelin facilitator verifies the signature, settles ${AMOUNT_USDC} USDC on-chain, and the server returns search results.`,
-    code:  'GET /search + X-Payment: <sig> → 200 OK + results',
+    code:  'GET /search + PAYMENT-SIGNATURE → 200 OK + results + X-PAYMENT-RESPONSE',
+  },
+]
+
+/**
+ * The paid HTTP endpoints, documented from the shared contract in
+ * `src/lib/paramValidation.ts` so the page cannot drift from the server:
+ * `count` bounds and the `freshness` enum are the same values the routes
+ * validate against.
+ */
+const getEndpoints = () => [
+  {
+    method: 'GET', path: '/search', color: '#00f5ff',
+    summary: 'Organic web results, with optional AI-suggested follow-up queries.',
+    count: '1–20 (default 5)',
+    freshness: 'pd · pw · pm',
+    fields: 'id, title, url, description, source, relevanceScore, publishedAt?',
+    runtimes: 'Express · Vercel · MCP web_search',
+    example: `curl --get --data-urlencode 'q=stellar lumens' \\\n  --data-urlencode 'count=5' \\\n  -H "PAYMENT-SIGNATURE: $SIGNED_PAYLOAD" \\\n  http://localhost:3001/search`,
+  },
+  {
+    method: 'GET', path: '/images', color: '#ffb800',
+    summary: 'Image results from the Serper images API. No date filter — `freshness` is ignored.',
+    count: '1–10 (default 10)',
+    freshness: 'not supported',
+    fields: 'id, title, imageUrl, thumbnailUrl, sourceUrl, source, width?, height?',
+    runtimes: 'Express · MCP image_search (no Vercel route)',
+    example: `curl --get --data-urlencode 'q=stellar lumens' \\\n  --data-urlencode 'count=10' \\\n  -H "PAYMENT-SIGNATURE: $SIGNED_PAYLOAD" \\\n  http://localhost:3001/images`,
+  },
+  {
+    method: 'GET', path: '/news', color: '#39ff14',
+    summary: 'Recent articles from the Serper news API, optionally limited by age.',
+    count: '1–20 (default 10)',
+    freshness: 'pd · pw · pm',
+    fields: 'id, title, url, snippet, source, publishedAt?, imageUrl?',
+    runtimes: 'Express · MCP news_search (no Vercel route)',
+    example: `curl --get --data-urlencode 'q=stellar lumens' \\\n  --data-urlencode 'count=10' --data-urlencode 'freshness=pw' \\\n  -H "PAYMENT-SIGNATURE: $SIGNED_PAYLOAD" \\\n  http://localhost:3001/news`,
   },
 ]
 
@@ -47,6 +83,7 @@ export function DocsPage() {
   const { t } = useTranslation('docs')
   const STEPS = getSteps()
   const STACK = getStack()
+  const ENDPOINTS = getEndpoints()
   const networkLabel = IS_MAINNET ? 'Mainnet' : 'Testnet'
 
   // `docs` is the one namespace loaded lazily rather than at app boot
@@ -131,6 +168,122 @@ export function DocsPage() {
               </motion.div>
             )
           })}
+        </div>
+      </section>
+
+      {/* Paid endpoints */}
+      <section className="space-y-5">
+        <div>
+          <span className="font-display text-xs text-neon-cyan/35 tracking-widest">PAY-PER-QUERY HTTP API</span>
+          <h2 className="font-display text-2xl text-white mt-1">Paid endpoints</h2>
+          <p className="text-white/45 text-sm leading-relaxed mt-2 max-w-2xl">
+            Three paid endpoints, each {AMOUNT_USDC} USDC ({AMOUNT_STROOPS} stroops) per request. All of them
+            share one contract: <code className="font-mono text-xs text-white/60">q</code> is required (1–256
+            characters), and <code className="font-mono text-xs text-white/60">count</code> /{' '}
+            <code className="font-mono text-xs text-white/60">freshness</code> are validated <em>before</em> any
+            payment challenge — an out-of-range or repeated value returns{' '}
+            <span className="text-white/60">400</span>, never a 402, so you are never charged for a request the
+            server was always going to refuse.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {ENDPOINTS.map((ep, i) => (
+            <motion.div
+              key={ep.path}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.06 }}
+              className="rounded-xl p-5 space-y-3"
+              style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className="px-2 py-0.5 rounded font-display"
+                  style={{ background: `${ep.color}15`, color: ep.color, border: `1px solid ${ep.color}30`, fontSize: '10px' }}
+                >
+                  {ep.method}
+                </span>
+                <code className="font-mono text-sm text-white">{ep.path}</code>
+                <span className="font-display text-white/25" style={{ fontSize: '10px' }}>
+                  {AMOUNT_USDC} USDC
+                </span>
+              </div>
+
+              <p className="text-white/45 text-sm leading-relaxed">{ep.summary}</p>
+
+              <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-2">
+                {[
+                  ['count', ep.count],
+                  ['freshness', ep.freshness],
+                  ['result fields', ep.fields],
+                  ['available on', ep.runtimes],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex gap-2 min-w-0">
+                    <dt
+                      className="font-display text-white/25 tracking-wider uppercase flex-shrink-0 w-24"
+                      style={{ fontSize: '10px', paddingTop: '2px' }}
+                    >
+                      {label}
+                    </dt>
+                    <dd className="font-mono text-white/55 break-words min-w-0" style={{ fontSize: '11px' }}>
+                      {value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+
+              <pre
+                className="py-2.5 px-3 rounded-lg bg-black/30 border border-white/5 overflow-x-auto"
+              >
+                <code className="font-mono text-xs whitespace-pre" style={{ color: 'rgba(0,245,255,0.6)' }}>
+                  {ep.example}
+                </code>
+              </pre>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* 402 challenge */}
+        <div
+          className="rounded-xl p-5 space-y-3"
+          style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,184,0,0.18)' }}
+        >
+          <h3 className="font-display text-sm text-white">The 402 challenge</h3>
+          <p className="text-white/45 text-sm leading-relaxed">
+            An unpaid request returns <span className="text-white/60">402</span> with an <em>empty JSON body</em>.
+            The challenge itself is base64-encoded in the{' '}
+            <code className="font-mono text-xs text-white/60">PAYMENT-REQUIRED</code> response header, which is
+            listed in <code className="font-mono text-xs text-white/60">Access-Control-Expose-Headers</code> so
+            browser clients can read it cross-origin. Decode it, sign{' '}
+            <code className="font-mono text-xs text-white/60">accepts[0]</code>, and retry with the payload on{' '}
+            <code className="font-mono text-xs text-white/60">PAYMENT-SIGNATURE</code>. The settlement receipt
+            comes back on <code className="font-mono text-xs text-white/60">X-PAYMENT-RESPONSE</code> and is
+            echoed into the body as <code className="font-mono text-xs text-white/60">txHash</code>.
+          </p>
+          <pre className="py-2.5 px-3 rounded-lg bg-black/30 border border-white/5 overflow-x-auto">
+            <code className="font-mono text-xs whitespace-pre" style={{ color: 'rgba(255,184,0,0.65)' }}>
+{`{
+  "x402Version": 2,
+  "error": "Payment required",
+  "accepts": [{
+    "scheme": "exact",
+    "network": "${STELLAR_NETWORK}",
+    "amount": "${AMOUNT_STROOPS}",
+    "asset": "${USDC_CONTRACT}",
+    "payTo": "G...",
+    "maxTimeoutSeconds": 300
+  }]
+}`}
+            </code>
+          </pre>
+          <p className="text-white/35 text-xs leading-relaxed">
+            Each signed payload is single-use — replaying one inside its validity window returns 402{' '}
+            <code className="font-mono">Payment payload already consumed</code>. The{' '}
+            <code className="font-mono">asset</code> is always a Soroban <code className="font-mono">C…</code>{' '}
+            contract address, never <code className="font-mono">USDC:ISSUER</code>, and{' '}
+            <code className="font-mono">amount</code> is always in stroops.
+          </p>
         </div>
       </section>
 

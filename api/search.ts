@@ -4,6 +4,12 @@ import {
   USDC_CONTRACT_TESTNET,
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import {
+  validateCount,
+  validateFreshness,
+  FRESHNESS_TBS,
+  SEARCH_COUNT,
+} from '../src/lib/paramValidation'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 
 // ─── Config ───────────────────────────────────────────────────────────────
@@ -45,12 +51,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json(errorBody)
   }
 
-  const { q, count = '5', freshness } = req.query as Record<string, string>
+  const { q } = req.query as Record<string, string>
 
   if (!q?.trim()) {
     const errorBody: ApiErrorResponse = { error: 'Missing required parameter: q' }
     return res.status(400).json(errorBody)
   }
+
+  // ─── Parameter validation (#188) ─────────────────────────────────────────
+  // Runs BEFORE the 402 challenge and the replay check, matching Express:
+  // a request the server would refuse anyway never reaches the payment
+  // adapter, so the caller is neither charged nor handed a payment challenge.
+  const validatedCount = validateCount(req.query.count, SEARCH_COUNT)
+  if (!validatedCount.ok) {
+    const errorBody: ApiErrorResponse = { error: validatedCount.error }
+    return res.status(400).json(errorBody)
+  }
+  const validatedFreshness = validateFreshness(req.query.freshness)
+  if (!validatedFreshness.ok) {
+    const errorBody: ApiErrorResponse = { error: validatedFreshness.error }
+    return res.status(400).json(errorBody)
+  }
+  const count = validatedCount.value
+  const tbs = validatedFreshness.value ? FRESHNESS_TBS[validatedFreshness.value] : undefined
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -115,17 +138,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ─── Serper.dev ──────────────────────────────────────────────────────────
     const requestBody: Record<string, unknown> = {
       q:   q.trim(),
-      num: Math.min(parseInt(count) || 5, 20),
+      num: count,
     }
-
-    if (freshness) {
-      const dateFilters: Record<string, string> = {
-        pd: 'qdr:d',  // past day
-        pw: 'qdr:w',  // past week
-        pm: 'qdr:m',  // past month
-      }
-      if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
-    }
+    if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetch('https://google.serper.dev/search', {
       method:  'POST',
