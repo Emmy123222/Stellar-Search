@@ -54,7 +54,12 @@ try {
 const SERVER_URL = config.searchApiUrl
 const GROQ_API_KEY = config.groqApiKey
 
-const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
+let groq: Groq | undefined
+function getGroq(): Groq | undefined {
+  if (!GROQ_API_KEY) return undefined
+  groq ??= new Groq({ apiKey: GROQ_API_KEY })
+  return groq
+}
 
 /** Clamp a search count to [min, max], falling back to defaultValue on NaN/fractional/negative. */
 export function clampCount(
@@ -677,12 +682,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // ── ai_summarize ──────────────────────────────────────────────────────
   if (name === 'ai_summarize') {
     const { text, instruction = 'summarise' } = args as { text: string; instruction?: string }
-    if (!groq) {
+    const aiClient = getGroq()
+    if (!aiClient) {
       return { content: [{ type: 'text', text: 'AI summarization is not configured.' }], isError: true }
     }
 
     try {
-      const completion = await groq.chat.completions.create({
+      const completion = await aiClient.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'system', content: 'You are a concise research assistant. Be brief and accurate.' },
