@@ -326,3 +326,4 @@ export interface SavedResearchItem {
   notes: string
   tags: string[]
 }
+export type SearchMode = 'web' | 'images' | 'news'

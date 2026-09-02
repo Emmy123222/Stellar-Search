@@ -4,7 +4,7 @@
  * Fetches live balances from Stellar Horizon
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
 import i18n from '../i18n'
 import type { WalletState, StellarTransaction, WalletAccountStatus } from '../types'
@@ -335,6 +335,66 @@ export function useFreighterWallet() {
       await fetchTransactions(wallet.publicKey)
     }
   }, [wallet.publicKey, fetchBalances, fetchTransactions])
+
+  // Track latest wallet state for watcher callback without recreating the watcher
+  const walletRef = useRef(wallet)
+  useEffect(() => {
+    walletRef.current = wallet
+  }, [wallet])
+
+  // Watch for Freighter account or network changes (v3.1.0+)
+  useEffect(() => {
+    let watcher: any = null
+
+    if (wallet.connected) {
+      loadFreighterApi().then((api) => {
+        if (!api.WatchWalletChanges) return
+
+        watcher = new api.WatchWalletChanges()
+        watcher.watch((params: any) => {
+          if (params.error) {
+            disconnect()
+            return
+          }
+
+          const prev = walletRef.current
+          const addressChanged = params.address && params.address !== prev.publicKey
+          const networkChanged = params.network && params.network !== prev.network
+
+          if (addressChanged || networkChanged) {
+            const newAddress = params.address || prev.publicKey || ''
+            
+            // Atomically reset dependent state
+            setWallet((p) => ({
+              ...p,
+              publicKey: newAddress,
+              network: params.network || p.network,
+              xlmBalance: '0',
+              usdcBalance: '0',
+              hasUsdcTrustline: false,
+              loading: true,
+            }))
+            setTransactions([])
+
+            if (newAddress) {
+              Promise.all([
+                fetchBalances(newAddress),
+                fetchTransactions(newAddress)
+              ]).finally(() => {
+                setWallet((p) => ({ ...p, loading: false }))
+              })
+            }
+          }
+        })
+      })
+    }
+
+    return () => {
+      if (watcher) {
+        watcher.stop()
+      }
+    }
+  }, [wallet.connected, fetchBalances, fetchTransactions, disconnect])
 
   // Auto-check if already connected on mount
   useEffect(() => {

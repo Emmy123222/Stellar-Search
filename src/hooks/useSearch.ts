@@ -11,7 +11,7 @@ import { readBrowserConfig } from '../lib/config'
  * Fix: convert Buffer → base64 string using Buffer.from(result).toString('base64')
  */
 
-import { useState, useCallback }              from 'react'
+import { useState, useCallback, useRef }       from 'react'
 import { toast }                               from 'sonner'
 import { Buffer }                              from 'buffer'
 import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
@@ -23,9 +23,70 @@ const SOROBAN_RPC_TESTNET = 'https://soroban-testnet.stellar.org'
 const SOROBAN_RPC_MAINNET = 'https://soroban-rpc.mainnet.stellar.org' // Or another public RPC
 const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET
 
-import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSession } from '../types'
+import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSession, SearchMode } from '../types'
 
 export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
+
+// Cross-tab / cross-event-race search mutex.
+//
+// Component-local `isSearching` state is not enough to block duplicate paid
+// retries: it is set asynchronously (a double Enter/double click can both
+// fire before React re-renders), and it is scoped to a single tab/window, so
+// two tabs of the same app can independently pass the same wallet through the
+// x402 payment flow at once. This lock is a synchronous, cross-tab guard on
+// top of that state.
+const SEARCH_LOCK_KEY = 'stellarsearch_search_lock'
+// Generous upper bound on a full 402 → sign → paid-retry round trip. If a
+// lock is older than this it is treated as abandoned (e.g. tab crashed
+// mid-flow) so a stuck lock can never permanently block searching.
+const SEARCH_LOCK_TTL_MS = 20_000
+
+interface SearchLock {
+  id: string
+  ts: number
+}
+
+function readSearchLock(): SearchLock | null {
+  try {
+    const raw = localStorage.getItem(SEARCH_LOCK_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed.id === 'string' && typeof parsed.ts === 'number') {
+      return parsed as SearchLock
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** Attempts to acquire the search mutex. Returns false if another search (in this tab or another) already holds it. */
+function acquireSearchLock(id: string): boolean {
+  try {
+    const existing = readSearchLock()
+    if (existing && Date.now() - existing.ts < SEARCH_LOCK_TTL_MS) {
+      return false
+    }
+    localStorage.setItem(SEARCH_LOCK_KEY, JSON.stringify({ id, ts: Date.now() } satisfies SearchLock))
+    return true
+  } catch {
+    // localStorage unavailable (e.g. private mode) — fail open rather than
+    // block the user from ever searching.
+    return true
+  }
+}
+
+/** Releases the search mutex, but only if it is still held by `id` (avoids releasing a lock acquired by another tab after this one's TTL expired). */
+function releaseSearchLock(id: string): void {
+  try {
+    const existing = readSearchLock()
+    if (existing && existing.id === id) {
+      localStorage.removeItem(SEARCH_LOCK_KEY)
+    }
+  } catch {
+    // ignore
+  }
+}
 
 /**
  * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
@@ -38,13 +99,30 @@ export function useSearch(walletAddress: string | null = null) {
     query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
   })
 
+  // Synchronous same-tab guard. React state (`session.status`) updates are
+  // batched/async, so a double Enter or double click can both pass the
+  // `status === 'searching'` check before the first render flushes. This ref
+  // flips immediately, in the same tick as the first call.
+  const inFlightRef = useRef(false)
+
   const search = useCallback(
     async (
       query: string,
       freshnessOrCount?: string | number,
-      countOverride = 5
+      countOverride = 5,
+      mode: SearchMode = 'web'
     ) => {
       if (!query.trim()) return
+      if (inFlightRef.current) return
+
+      const lockId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      if (!acquireSearchLock(lockId)) {
+        toast.info('Search already in progress', {
+          description: 'A payment is being processed for a previous search — please wait for it to finish.',
+        })
+        return
+      }
+      inFlightRef.current = true
 
       let freshness = ''
       let count = countOverride
@@ -70,10 +148,12 @@ export function useSearch(walletAddress: string | null = null) {
       })
 
       const t0 = Date.now()
+      const endpoint = mode === 'web' ? '/search' : mode === 'images' ? '/images' : '/news'
+      const defaultCount = mode === 'web' ? count : 10
       const params = new URLSearchParams({
         q: query,
-        count: String(count),
-        suggestions: '1',
+        count: String(defaultCount),
+        suggestions: mode === 'web' ? '1' : '0',
       })
       if (freshness) {
         params.set('freshness', freshness)
@@ -141,7 +221,7 @@ export function useSearch(walletAddress: string | null = null) {
       // Flow step 1 — initial request, expect 402
       advance(1)
       console.log('🚀 Initial request:', `${SERVER_URL}/search?${params}`)
-      const firstRes = await fetch(`${SERVER_URL}/search?${params}`)
+      const firstRes = await fetch(`${SERVER_URL}${endpoint}?${params}`)
       console.log('📡 Status:', firstRes.status)
 
       if (firstRes.status !== 402) {
@@ -259,6 +339,9 @@ export function useSearch(walletAddress: string | null = null) {
         status: 'error',
         error:  msg,
       }))
+    } finally {
+      inFlightRef.current = false
+      releaseSearchLock(lockId)
     }
   }, [walletAddress])
 
