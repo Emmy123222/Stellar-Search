@@ -4,13 +4,12 @@ import {
   USDC_CONTRACT_MAINNET,
   validateFacilitatorConfig,
 } from '../src/lib/constants'
+import { readServerConfig } from '../src/lib/config'
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
-  const NETWORK = process.env.STELLAR_NETWORK || 'stellar:testnet'
-  const FACILITATOR_URL = process.env.FACILITATOR_URL || 'https://www.x402.org/facilitator'
-  const SERPER_API_KEY = process.env.SERPER_API_KEY
-  const GROQ_API_KEY = process.env.GROQ_API_KEY
-  const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS
+  const config = readServerConfig()
+  const NETWORK = config.stellarNetwork
+  const FACILITATOR_URL = config.facilitatorUrl
 
   const currentValidation = validateFacilitatorConfig({
     facilitatorUrl: FACILITATOR_URL,
@@ -22,7 +21,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   res.json({
     status: currentValidation.valid ? 'ok' : 'degraded',
     network: NETWORK,
-    pricePerQuery: '0.001 USDC',
+    pricePerQuery: `${config.amountUsdc} USDC`,
     protocol: 'x402',
     facilitator: FACILITATOR_URL,
     facilitatorCompatibility: {
@@ -34,9 +33,9 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
       errors: currentValidation.errors,
       warnings: currentValidation.warnings,
     },
-    serperApiConfigured: !!SERPER_API_KEY,
-    groqApiConfigured: !!GROQ_API_KEY,
-    receivingAddressConfigured: !!RECEIVING_ADDRESS,
+    serperApiConfigured: true,
+    groqApiConfigured: !!config.groqApiKey,
+    receivingAddressConfigured: true,
     timestamp: new Date().toISOString(),
   })
 }

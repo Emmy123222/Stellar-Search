@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
-import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
+import { normalizeOrganicResults, normalizeQueryMetadata } from '../src/lib/serperNormalizer'
 import crypto from 'crypto'
 
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -83,7 +83,9 @@ async function deliverWebhookWithRetry(job: any, maxAttempts = MAX_JOB_WEBHOOK_A
       clearTimeout(timeout)
       if (res.ok) return
       if (res.status >= 400 && res.status < 500 && res.status !== 429) return
-    } catch {}
+    } catch {
+      // ignore webhook attempt error
+    }
     if (attempt < maxAttempts) {
       const backoff = WEBHOOK_RETRY_BASE_MS * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200)
       await new Promise((r) => setTimeout(r, backoff))
@@ -156,7 +158,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const decoded = Buffer.from(paymentHeader as string, 'base64').toString('utf8')
     const parsed = JSON.parse(decoded)
     txHash = parsed.transactionHash || parsed.txHash || null
-  } catch {}
+  } catch {
+    // ignore header parse error
+  }
 
   const jobId = crypto.randomUUID()
   const now = new Date().toISOString()
@@ -207,7 +211,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const data: unknown = await serperRes.json()
       const latencyMs = Date.now() - t0
       const results = normalizeOrganicResults(data)
-      const responseBody = { query: cleanQ, results, count: results.length, network: NETWORK, paidAmount: AMOUNT_USDC, currency: 'USDC', txHash, latencyMs }
+      const queryMeta = normalizeQueryMetadata(data, cleanQ)
+      const responseBody = {
+        query: queryMeta.executedQuery,
+        originalQuery: queryMeta.originalQuery,
+        executedQuery: queryMeta.executedQuery,
+        suggestedQuery: queryMeta.suggestedQuery,
+        isCorrected: queryMeta.isCorrected,
+        results,
+        count: results.length,
+        network: NETWORK,
+        paidAmount: AMOUNT_USDC,
+        currency: 'USDC',
+        txHash,
+        latencyMs,
+      }
       job.result = responseBody
       job.status = 'completed'
       job.updatedAt = new Date().toISOString()

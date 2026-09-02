@@ -272,5 +272,60 @@ describe('api/search — Vercel x402 settlement (aligned with Express)', () => {
     expect(res._json.results[0].title).toBe('Valid Vercel Result')
     expect(res._json.results[0].url).toBe('https://vercel.com/docs')
   })
+
+  it('distinguishes original, executed, and suggested query text when spelling is corrected', async () => {
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_spelling_test' })).toString('base64')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        searchParameters: { q: 'stellar blockchain' },
+        searchInformation: { originalQuery: 'stelarr blockchan' },
+        organic: [
+          { title: 'Stellar', link: 'https://stellar.org', snippet: 'Blockchain' },
+        ],
+      }),
+    } as any)
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stelarr blockchan' },
+      headers: { 'x-payment': fakeTx },
+    })
+
+    await handler(req, res)
+    expect(res._json.originalQuery).toBe('stelarr blockchan')
+    expect(res._json.executedQuery).toBe('stellar blockchain')
+    expect(res._json.suggestedQuery).toBe('stellar blockchain')
+    expect(res._json.isCorrected).toBe(true)
+    expect(res._json.query).toBe('stellar blockchain')
+  })
+
+  it('provides suggestedQuery when didYouMean is present without auto-correction', async () => {
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_did_you_mean_test' })).toString('base64')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        searchParameters: { q: 'stelarr blockchan' },
+        spelling: { didYouMean: 'stellar blockchain' },
+        organic: [
+          { title: 'Stelarr Results', link: 'https://stellar.org/alt', snippet: 'Alt snippet' },
+        ],
+      }),
+    } as any)
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stelarr blockchan' },
+      headers: { 'x-payment': fakeTx },
+    })
+
+    await handler(req, res)
+    expect(res._json.originalQuery).toBe('stelarr blockchan')
+    expect(res._json.executedQuery).toBe('stelarr blockchan')
+    expect(res._json.suggestedQuery).toBe('stellar blockchain')
+    expect(res._json.isCorrected).toBe(false)
+    expect(res._json.query).toBe('stelarr blockchan')
+  })
 })
+
 
