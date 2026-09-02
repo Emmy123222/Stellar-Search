@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { Search, Zap, AlertCircle } from 'lucide-react'
@@ -10,9 +10,13 @@ import {
   StatsGrid,
   ZeroBalanceBanner,
   SpellingCorrectionBanner,
+  ModeSelector,
+  ImageResults,
+  NewsResults,
 } from '../components'
 import type { SearchSession } from '../hooks/useSearch'
 import type { WalletState } from '../hooks/useFreighterWallet'
+import type { SearchMode } from '../types'
 import { AMOUNT_USDC } from '../lib/stellar'
 import { useReducedMotion } from '../hooks/useReducedMotion'
 
@@ -20,7 +24,7 @@ interface Props {
   wallet: WalletState
   onConnectWallet: () => void
   session: SearchSession
-  search: (query: string, freshnessOrCount?: string | number, count?: number) => Promise<void>
+  search: (query: string, freshnessOrCount?: string | number, count?: number, mode?: SearchMode) => Promise<void>
   reset: () => void
 }
 
@@ -28,10 +32,26 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
   const reducedMotion = useReducedMotion()
   const { t } = useTranslation('search')
   const [dismissedSuggestion, setDismissedSuggestion] = useState(false)
+  const [searchMode, setSearchMode] = useState<SearchMode>('web')
+
+  // #150 — after an async search settles, move keyboard/screen-reader focus to
+  // the error alert (SearchResults moves focus to the results heading on
+  // success). Focus only moves on the transition into `error`; it is never
+  // stolen while typing, signing, or during manual navigation.
+  const errorRef       = useRef<HTMLDivElement>(null)
+  const prevStatusRef  = useRef(session.status)
+
+  useEffect(() => {
+    const prevStatus = prevStatusRef.current
+    prevStatusRef.current = session.status
+    if (prevStatus !== 'error' && session.status === 'error' && errorRef.current) {
+      errorRef.current.focus()
+    }
+  }, [session.status])
   const handleSearch = (query: string, freshness?: string) => {
     setDismissedSuggestion(false)
     if (!wallet.connected) { onConnectWallet(); return }
-    search(query, freshness)
+    search(query, freshness, searchMode === 'web' ? 5 : 10, searchMode)
   }
 
   const handleReset = () => {
@@ -43,7 +63,6 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
-
       <StatsGrid />
 
       <AnimatePresence>
@@ -112,6 +131,12 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         accountStatus={wallet.accountStatus}
       />
 
+      <ModeSelector
+        mode={searchMode}
+        onChange={setSearchMode}
+        disabled={isSearching}
+      />
+
       <SearchBar
         onSearch={handleSearch}
         isSearching={isSearching}
@@ -120,12 +145,6 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         walletNetwork={wallet.network}
         defaultQuery={session.query}
       />
-
-      <AnimatePresence>
-        {session.status === 'idle' && (
-          <SearchResults results={[]} query="" />
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {session.status !== 'idle' && (
@@ -139,13 +158,18 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
             <PaymentFlowVisualizer session={session} />
 
             {session.status === 'error' && (
-              <div className="flex items-center gap-3 p-4 rounded-xl border border-red-500/25 bg-red-500/5">
+              <div
+                ref={errorRef}
+                role="alert"
+                tabIndex={-1}
+                className="flex items-center gap-3 p-4 rounded-xl border border-red-500/25 bg-red-500/5 focus:outline-none"
+              >
                 <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                 <p className="text-sm text-red-300">{session.error}</p>
               </div>
             )}
 
-            {session.status === 'complete' && (
+            {session.status === 'complete' && searchMode === 'web' && (
               <SpellingCorrectionBanner
                 originalQuery={session.originalQuery}
                 executedQuery={session.executedQuery || session.query}
@@ -157,13 +181,25 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
               />
             )}
 
-            {(session.status === 'complete' || session.status === 'searching') && (
+            {searchMode === 'web' && (session.status === 'complete' || session.status === 'searching') && (
               <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}>
-                <SearchResults results={session.results} query={session.query} isLoading={session.status === 'searching'} txHash={session.txHash} />
+                <SearchResults results={session.results as any} query={session.query} isLoading={session.status === 'searching'} txHash={session.txHash} />
               </motion.div>
             )}
 
-            {session.status === 'complete' && session.suggestions && session.suggestions.length > 0 && (
+            {searchMode === 'images' && (session.status === 'complete' || session.status === 'searching') && (
+              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}>
+                <ImageResults results={session.results as any} isLoading={session.status === 'searching'} />
+              </motion.div>
+            )}
+
+            {searchMode === 'news' && (session.status === 'complete' || session.status === 'searching') && (
+              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}>
+                <NewsResults results={session.results as any} isLoading={session.status === 'searching'} />
+              </motion.div>
+            )}
+
+            {session.status === 'complete' && session.suggestions && session.suggestions.length > 0 && searchMode === 'web' && (
               <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.3 }}>
                 <SearchSuggestions onSelect={handleSearch} aiSuggestions={session.suggestions} />
               </motion.div>

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
-  AVAILABLE_MODELS,
   DEFAULT_MODEL,
   DEFAULT_SYSTEM_PROMPT,
   DEFAULT_MAX_TOKENS,
