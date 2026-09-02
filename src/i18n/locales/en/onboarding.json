@@ -1,0 +1,29 @@
+{
+  "title": "GET STARTED",
+  "subtitle": "Three steps to your first paid search.",
+  "close": "Close setup guide",
+  "skip": "SKIP FOR NOW",
+  "banner": {
+    "mainnet": "MAINNET — funding here uses real USDC.",
+    "testnet": "TESTNET — funds here have no real value."
+  },
+  "steps": {
+    "wallet": {
+      "title": "Connect your wallet",
+      "description": "Stellar Search pays for each result with a small USDC micropayment (x402) — connect Freighter to get started.",
+      "cta": "CONNECT FREIGHTER",
+      "connecting": "CONNECTING…"
+    },
+    "trustline": {
+      "title": "Add a USDC trustline",
+      "description": "Stellar accounts need an explicit trustline before they can hold an issued asset like USDC. Open Freighter → Manage Assets → Add Asset with the issuer below.",
+      "issuerLabel": "Issuer: {{issuer}}"
+    },
+    "payment": {
+      "title": "Fund your balance",
+      "description": "Each search settles {{amount}} USDC on completion — fund your trustline with at least that much to run your first paid query.",
+      "fundTestnet": "FUND ON TESTNET",
+      "buyUsdc": "BUY USDC"
+    }
+  }
+}

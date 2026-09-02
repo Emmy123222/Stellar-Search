@@ -229,6 +229,12 @@ describe('settle — successful search after payment', () => {
     expect(res.status).toBe(200)
     expect(capturedBody.tbs).toBe('qdr:w')
   })
+
+  it('handles suggestions query param when suggestions=1 is requested', async () => {
+    const res = await request(app).get('/search?q=stellar&suggestions=1').set('x-payment', makeReceipt('tx_settle_sugg'))
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body.suggestions)).toBe(true)
+  })
 })
 
 // ─── Reject ───────────────────────────────────────────────────────────────────

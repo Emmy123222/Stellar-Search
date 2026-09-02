@@ -17,6 +17,8 @@ import {
   USDC_CONTRACT_MAINNET,
   AMOUNT_STROOPS,
   AMOUNT_USDC,
+  getServerUrl,
+  SERVER_URL,
 } from './constants'
 
 describe('constants — Express, Vercel, browser, MCP alignment', () => {
@@ -77,5 +79,43 @@ describe('constants — Express, Vercel, browser, MCP alignment', () => {
     expect(isNaN(parseFloat(AMOUNT_USDC))).toBe(false)
     expect(isNaN(parseInt(AMOUNT_STROOPS))).toBe(false)
     expect(parseFloat(AMOUNT_USDC)).toBeGreaterThan(0)
+  })
+
+  it('getServerUrl returns default backend url or resolved origin api', () => {
+    const url = getServerUrl()
+    expect(typeof url).toBe('string')
+    expect(url.length).toBeGreaterThan(0)
+    expect(typeof SERVER_URL).toBe('string')
+  })
+
+  it('getServerUrl respects SERVER_URL environment override', () => {
+    const original = process.env.SERVER_URL
+    try {
+      process.env.SERVER_URL = 'https://api.stellarsearch.org'
+      expect(getServerUrl()).toBe('https://api.stellarsearch.org')
+    } finally {
+      if (original !== undefined) {
+        process.env.SERVER_URL = original
+      } else {
+        delete process.env.SERVER_URL
+      }
+    }
+  })
+
+  it('getServerUrl resolves origin /api on non-localhost domains without vercel.app heuristic', () => {
+    const originalLocation = window.location
+    try {
+      // @ts-ignore
+      delete window.location
+      // @ts-ignore
+      window.location = {
+        hostname: 'search.stellar-community.org',
+        origin: 'https://search.stellar-community.org',
+      }
+      expect(getServerUrl()).toBe('https://search.stellar-community.org/api')
+    } finally {
+      // @ts-ignore
+      window.location = originalLocation
+    }
   })
 })

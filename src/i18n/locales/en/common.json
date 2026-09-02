@@ -1,0 +1,17 @@
+{
+  "nav": {
+    "search": "SEARCH",
+    "docs": "HOW IT WORKS",
+    "dashboard": "DASHBOARD",
+    "setupGuide": "Open setup guide"
+  },
+  "footer": {
+    "tagline": "STELLARSEARCH · Stellar Hackathon 2026",
+    "links": {
+      "x402": "x402.org",
+      "stellarDocs": "Stellar Docs",
+      "explorer": "{{network}} Explorer",
+      "freighter": "Freighter"
+    }
+  }
+}

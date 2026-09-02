@@ -1,3 +1,4 @@
+import { readBrowserConfig } from '../lib/config'
 /**
  * useSearch.ts
  * Fixed x402 + Freighter payment flow.
@@ -47,11 +48,7 @@ function loadPaymentDeps() {
   return paymentDepsPromise
 }
 
-const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
-  typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
-    ? `${window.location.origin}/api`
-    : 'http://localhost:3001'
-)
+const SERVER_URL = readBrowserConfig().apiBaseUrl
 
 // Soroban RPC URLs
 const SOROBAN_RPC_TESTNET = 'https://soroban-testnet.stellar.org'
@@ -202,7 +199,7 @@ export function useSearch(walletAddress: string | null = null) {
       advance(2)
       console.log('💰 402 received, parsing payment requirements...')
       const paymentRequired = httpClient.getPaymentRequiredResponse(
-        (name) => firstRes.headers.get(name)
+        (name: string) => firstRes.headers.get(name)
       )
       console.log('💰 Payment requirements:', paymentRequired)
 
