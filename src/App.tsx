@@ -1,8 +1,10 @@
-import { lazy, Suspense, useState, useMemo }  from 'react'
+import { lazy, Suspense, useEffect, useState, useMemo } from 'react'
 import { motion, AnimatePresence }             from 'framer-motion'
 import { AnimatedBackground, Navbar, LiveTicker, Footer } from './components/layout'
+import { OnboardingFlow, shouldAutoOpenOnboarding } from './components/onboarding'
 import { SearchPage, DocsPage, DashboardPage } from './pages'
 import { useFreighterWallet, useSearch }       from './hooks'
+import { clearOnboardingDismissed }            from './lib/onboarding'
 import { Toaster }                             from 'sonner'
 
 const GroqAssistant = lazy(() =>
@@ -18,6 +20,22 @@ export default function App() {
     wallet, transactions, txLoading,
     connect, disconnect, refresh,
   } = useFreighterWallet()
+
+  // First-run onboarding (#342): auto-opens once per browser (unless
+  // already dismissed or already fully set up), and can always be reopened
+  // via Navbar's "Setup Guide" button.
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  useEffect(() => {
+    if (shouldAutoOpenOnboarding(wallet)) setShowOnboarding(true)
+    // Intentionally checked once on mount only — re-running this on every
+    // wallet change would re-open the guide the instant a step regresses
+    // (e.g. disconnecting), which isn't the "first run" behavior we want.
+  }, [])
+
+  const reopenOnboarding = () => {
+    clearOnboardingDismissed()
+    setShowOnboarding(true)
+  }
 
   // Lifted so the floating GroqAssistant can read the last completed search
   // and pre-populate context (issue #57).
@@ -49,6 +67,7 @@ export default function App() {
           onConnect={connect}
           onDisconnect={disconnect}
           onRefresh={refresh}
+          onOpenOnboarding={reopenOnboarding}
         />
 
         {/* Scrolling stats ticker */}
@@ -105,6 +124,13 @@ export default function App() {
       </Suspense>
 
       <Toaster position="bottom-right" theme="dark" duration={4000} richColors />
+
+      <OnboardingFlow
+        wallet={wallet}
+        onConnectWallet={connect}
+        open={showOnboarding}
+        onOpenChange={setShowOnboarding}
+      />
     </div>
   )
 }

@@ -15,9 +15,20 @@ vi.mock('@modelcontextprotocol/sdk/server/stdio.js', () => ({
   StdioServerTransport: class {},
 }))
 
+const CallToolRequestSchemaMock = { name: 'CallToolRequestSchema' }
+const ListToolsRequestSchemaMock = { name: 'ListToolsRequestSchema' }
+const ListResourcesRequestSchemaMock = { name: 'ListResourcesRequestSchema' }
+const ReadResourceRequestSchemaMock = { name: 'ReadResourceRequestSchema' }
+const ListPromptsRequestSchemaMock = { name: 'ListPromptsRequestSchema' }
+const GetPromptRequestSchemaMock = { name: 'GetPromptRequestSchema' }
+
 vi.mock('@modelcontextprotocol/sdk/types.js', () => ({
-  CallToolRequestSchema: {},
-  ListToolsRequestSchema: {},
+  CallToolRequestSchema: CallToolRequestSchemaMock,
+  ListToolsRequestSchema: ListToolsRequestSchemaMock,
+  ListResourcesRequestSchema: ListResourcesRequestSchemaMock,
+  ReadResourceRequestSchema: ReadResourceRequestSchemaMock,
+  ListPromptsRequestSchema: ListPromptsRequestSchemaMock,
+  GetPromptRequestSchema: GetPromptRequestSchemaMock,
 }))
 
 vi.mock('groq-sdk', () => ({
@@ -39,7 +50,7 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
     await import('./index.js')
     // Verify that ListTools handler was registered
     expect(mockSetRequestHandler).toHaveBeenCalled()
-    const listToolsCall = mockSetRequestHandler.mock.calls[0]
+    const listToolsCall = mockSetRequestHandler.mock.calls.find(c => c[0] === ListToolsRequestSchemaMock)
     expect(listToolsCall).toBeDefined()
   })
 
@@ -51,12 +62,9 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
   })
 
   it('MCP server registers web_search, image_search, news_search, ai_summarize, check_balance, get_search_stats', async () => {
-    const calls = mockSetRequestHandler.mock.calls
-    // At least one call for ListTools (from previous import)
-    expect(calls.length).toBeGreaterThanOrEqual(1)
-    // The handler for ListTools should return tools array when invoked
-    // Extract the ListTools handler (first call's second arg)
-    const listHandler = calls[0][1] as Function
+    const listToolsCall = mockSetRequestHandler.mock.calls.find(c => c[0] === ListToolsRequestSchemaMock)
+    expect(listToolsCall).toBeDefined()
+    const listHandler = listToolsCall![1] as Function
     const result: any = await listHandler()
     expect(result.tools).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'web_search' }),
@@ -73,10 +81,8 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
   })
 
   it('MCP check_balance handler uses Horizon and USDC issuer', async () => {
-    const calls = mockSetRequestHandler.mock.calls
-    const callToolHandler = calls.find(c => c[1] && typeof c[1] === 'function' && c[0] !== calls[0][0])?.[1] as Function
-    // The second handler is CallTool (if present)
-    // If not found, we can at least verify constants alignment
+    const callToolCall = mockSetRequestHandler.mock.calls.find(c => c[0] === CallToolRequestSchemaMock)
+    const callToolHandler = callToolCall?.[1] as Function
     if (callToolHandler) {
       // Mock fetch for Horizon
       const mockFetch = vi.fn().mockResolvedValue({
