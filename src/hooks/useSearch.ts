@@ -1,3 +1,4 @@
+import { readBrowserConfig } from '../lib/config'
 /**
  * useSearch.ts
  * Fixed x402 + Freighter payment flow.
@@ -15,50 +16,14 @@ import { toast }                               from 'sonner'
 import { Buffer }                              from 'buffer'
 import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
 
-// The x402/Freighter/Stellar payment stack is loaded on demand, on the first
-// call to `search()`, rather than imported statically — every page load
-// previously pulled all of it into the main bundle even for a user who never
-// runs a paid search (#336). Memoized so a second search in the same session
-// doesn't re-import.
-let paymentDepsPromise: Promise<{
-  x402Client: typeof import('@x402/fetch').x402Client
-  x402HTTPClient: typeof import('@x402/fetch').x402HTTPClient
-  ExactStellarScheme: typeof import('@x402/stellar/exact/client').ExactStellarScheme
-  signAuthEntry: typeof import('@stellar/freighter-api').signAuthEntry
-  getNetworkDetails: typeof import('@stellar/freighter-api').getNetworkDetails
-  Networks: typeof import('@stellar/stellar-sdk').Networks
-}> | null = null
-function loadPaymentDeps() {
-  if (!paymentDepsPromise) {
-    paymentDepsPromise = Promise.all([
-      import('@x402/fetch'),
-      import('@x402/stellar/exact/client'),
-      import('@stellar/freighter-api'),
-      import('@stellar/stellar-sdk'),
-    ]).then(([fetchMod, schemeMod, freighterMod, stellarMod]) => ({
-      x402Client: fetchMod.x402Client,
-      x402HTTPClient: fetchMod.x402HTTPClient,
-      ExactStellarScheme: schemeMod.ExactStellarScheme,
-      signAuthEntry: freighterMod.signAuthEntry,
-      getNetworkDetails: freighterMod.getNetworkDetails,
-      Networks: stellarMod.Networks,
-    }))
-  }
-  return paymentDepsPromise
-}
-
-const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
-  typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
-    ? `${window.location.origin}/api`
-    : 'http://localhost:3001'
-)
+const SERVER_URL = readBrowserConfig().apiBaseUrl
 
 // Soroban RPC URLs
 const SOROBAN_RPC_TESTNET = 'https://soroban-testnet.stellar.org'
 const SOROBAN_RPC_MAINNET = 'https://soroban-rpc.mainnet.stellar.org' // Or another public RPC
 const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET
 
-import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSession } from '../types'
+import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSession, SearchMode } from '../types'
 
 export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
 
@@ -77,7 +42,8 @@ export function useSearch(walletAddress: string | null = null) {
     async (
       query: string,
       freshnessOrCount?: string | number,
-      countOverride = 5
+      countOverride = 5,
+      mode: SearchMode = 'web'
     ) => {
       if (!query.trim()) return
 
@@ -105,10 +71,12 @@ export function useSearch(walletAddress: string | null = null) {
       })
 
       const t0 = Date.now()
+      const endpoint = mode === 'web' ? '/search' : mode === 'images' ? '/images' : '/news'
+      const defaultCount = mode === 'web' ? count : 10
       const params = new URLSearchParams({
         q: query,
-        count: String(count),
-        suggestions: '1',
+        count: String(defaultCount),
+        suggestions: mode === 'web' ? '1' : '0',
       })
       if (freshness) {
         params.set('freshness', freshness)
@@ -176,7 +144,7 @@ export function useSearch(walletAddress: string | null = null) {
       // Flow step 1 — initial request, expect 402
       advance(1)
       console.log('🚀 Initial request:', `${SERVER_URL}/search?${params}`)
-      const firstRes = await fetch(`${SERVER_URL}/search?${params}`)
+      const firstRes = await fetch(`${SERVER_URL}${endpoint}?${params}`)
       console.log('📡 Status:', firstRes.status)
 
       if (firstRes.status !== 402) {

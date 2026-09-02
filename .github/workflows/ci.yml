@@ -130,5 +130,87 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+<<<<<<< HEAD
       - name: Verify coverage thresholds
         run: echo "Coverage thresholds 100% satisfied"
+=======
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify coverage thresholds (statements, branches, functions, lines)
+        run: npm run test:coverage -- --run
+        # thresholds defined in vite.config.ts: global 25/23/20/26 + per-file ratchets for
+        # src/lib/constants, src/lib/stellar, server/corsConfig, api/search, etc.
+        # CI fails if any threshold drops — ratchet upward as payment/wallet/API/MCP/UI tests land.
+
+  supply-chain:
+    name: Supply chain (SBOM & vulnerabilities)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate CycloneDX SBOM
+        run: npm run sbom
+
+      - name: Verify SBOM artifact
+        run: node scripts/verify-sbom.mjs
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyclonedx-sbom
+          path: sbom.cyclonedx.json
+          if-no-files-found: error
+
+      - name: Install osv-scanner (pinned v1.9.2)
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL -o "$HOME/.local/bin/osv-scanner" \
+            "https://github.com/google/osv-scanner/releases/download/v1.9.2/osv-scanner_linux_amd64"
+          chmod +x "$HOME/.local/bin/osv-scanner"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Scan dependencies (OSV)
+        run: |
+          osv-scanner --recursive \
+            --config=osv-scanner.toml \
+            --format json \
+            --output=osv-results.json ./
+          osv-scanner --recursive \
+            --config=osv-scanner.toml \
+            --format sarif \
+            --output=osv-results.sarif ./
+
+      - name: Enforce dependency fail/exception policy (fail on unexcused HIGH/CRITICAL)
+        run: node scripts/check-vulnerabilities.mjs osv-results.json
+        # Policy: HIGH/CRITICAL findings not covered by a documented, time-boxed
+        # exception in osv-scanner.toml fail the build. LOW/MODERATE are reported
+        # only. See CONTRIBUTING.md > Supply-chain security.
+
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: osv-results.sarif
+>>>>>>> 7804e9c (feat(ci): generate CycloneDX SBOM and gate dependency vulnerabilities)

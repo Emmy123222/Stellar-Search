@@ -1,10 +1,12 @@
 import { motion } from 'framer-motion'
 import { useState, useEffect, useMemo } from 'react'
-import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search } from 'lucide-react'
+import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search, Download } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, truncateHash, formatTimeAgo, explorerTxUrl, explorerAccountUrl } from '../lib/stellar'
+import { SavedResearchPanel } from '../components/search'
 import type { StellarTransaction } from '../hooks/useFreighterWallet'
 import type { SearchReceipt } from '../types'
+import { createReceiptBundle, downloadBundle } from '../lib/receiptBundle'
 
 interface Props {
   transactions: StellarTransaction[]
@@ -281,8 +283,23 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
             <span className="font-display text-xs text-white/30 tracking-widest">SEARCH AUDIT LOG</span>
             <span className="font-display text-white/15" style={{ fontSize: '10px' }}>· PERSISTED LOCALLY</span>
           </div>
-          <div className="font-display text-[10px] text-white/20 uppercase tracking-wider">
-            {receipts.length} RECEIPTS
+          <div className="flex items-center gap-3">
+            {receipts.length > 0 && (
+              <button
+                onClick={async () => {
+                  const network = IS_MAINNET ? 'stellar:mainnet' : 'stellar:testnet'
+                  const bundle = await createReceiptBundle(receipts, network)
+                  downloadBundle(bundle)
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neon-cyan/20 text-neon-cyan/60 hover:text-neon-cyan hover:border-neon-cyan/40 transition-colors font-display text-[10px] tracking-wider"
+              >
+                <Download className="w-3 h-3" />
+                DOWNLOAD BUNDLE
+              </button>
+            )}
+            <div className="font-display text-[10px] text-white/20 uppercase tracking-wider">
+              {receipts.length} RECEIPTS
+            </div>
           </div>
         </div>
 
@@ -329,6 +346,9 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
           )}
         </div>
       </motion.div>
+
+      {/* Saved Research — notes & tags (#305) */}
+      <SavedResearchPanel />
 
       {/* Network info */}
       <div className="grid sm:grid-cols-3 gap-3">

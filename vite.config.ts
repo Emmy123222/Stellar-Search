@@ -33,6 +33,8 @@ export default defineConfig({
         'src/lib/constants.ts': { statements: 90, branches: 60, functions: 100, lines: 90 },
         'src/lib/stellar.ts': { statements: 85, branches: 75, functions: 85, lines: 85 },
         'src/lib/paymentIntegrity.ts': { statements: 90, branches: 85, functions: 95, lines: 90 },
+        'src/lib/receiptBundle.ts': { statements: 90, branches: 85, functions: 95, lines: 90 },
+        'src/lib/hashing.ts': { statements: 95, branches: 95, functions: 100, lines: 95 },
         'src/lib/serperNormalizer.ts': { statements: 95, branches: 90, functions: 100, lines: 95 },
         'server/corsConfig.ts': { statements: 90, branches: 85, functions: 95, lines: 90 },
         'src/components/search/SearchBar.tsx': { statements: 80, branches: 80, functions: 90, lines: 80 },
@@ -71,6 +73,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api/, ''),
+      },
       // Proxy API calls to backend during dev (avoids CORS)
       '/search': {
         target: 'http://localhost:3001',
