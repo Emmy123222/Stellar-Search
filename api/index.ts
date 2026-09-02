@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
+  applyServerlessHeaders(res)
   res.json({
     name: 'StellarSearch',
     version: '1.0.0',

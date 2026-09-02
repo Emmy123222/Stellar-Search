@@ -5,6 +5,7 @@ import {
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
+import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 let config
@@ -22,6 +23,7 @@ const AMOUNT_USDC       = config.amountUsdc
 const USDC_CONTRACT     = NETWORK === 'stellar:mainnet' ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_TESTNET
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  applyServerlessHeaders(res)
 
   // ─── CORS ─────────────────────────────────────────────────────────────────
   res.setHeader('Access-Control-Allow-Origin', '*')
