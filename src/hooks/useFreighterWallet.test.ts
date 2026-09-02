@@ -150,6 +150,16 @@ describe('useFreighterWallet — wallet payment readiness', () => {
     expect(result.current.wallet.error).toMatch(/Freighter extension not found/)
   })
 
+  it('surfaces a rejected wallet access request without fetching Horizon', async () => {
+    mockIsConnected.mockResolvedValue({ isConnected: true })
+    mockRequestAccess.mockRejectedValue(new Error('User rejected wallet access'))
+    const { result } = renderHook(() => useFreighterWallet())
+    await act(async () => { await result.current.connect() })
+    expect(result.current.wallet.connected).toBe(false)
+    expect(result.current.wallet.error).toMatch(/rejected|access/i)
+    expect(mockLoadAccount).not.toHaveBeenCalled()
+  })
+
   it('connect succeeds and fetches balances with funded account and trustline', async () => {
     mockIsConnected.mockResolvedValue({ isConnected: true })
     mockRequestAccess.mockResolvedValue({})
