@@ -14,7 +14,6 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import readline from 'node:readline'
 import dotenv from 'dotenv'
 
 dotenv.config()
@@ -175,20 +174,6 @@ export function parseCliArgs(argv: string[] = process.argv.slice(2)): ParsedCliA
   return args
 }
 
-async function readProtectedSecret(prompt: string): Promise<string | undefined> {
-  const envKey = process.env.STELLAR_PRIVATE_KEY || process.env.SEARCH_PRIVATE_KEY
-  if (envKey) return envKey
-
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr })
-  const answer = await new Promise<string>((resolve) => {
-    rl.question(`${prompt} `, (value) => {
-      rl.close()
-      resolve(value.trim())
-    })
-  })
-  return answer || undefined
-}
-
 async function resolvePrivateKey(args: ParsedCliArgs): Promise<string | undefined> {
   if (args.privateKey) return args.privateKey
   if (args.privateKeyFile) {
@@ -208,19 +193,6 @@ async function writeReceipt(pathname: string, payload: Record<string, unknown>):
   fs.writeFileSync(resolved, JSON.stringify(payload, null, 2) + '\n', 'utf8')
 }
 
-async function fetchJson<T>(url: string, timeoutMs: number, init?: RequestInit): Promise<T> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-
-  try {
-    const res = await fetch(url, { ...init, signal: controller.signal })
-    const body = await res.json().catch(() => ({}))
-    return { ...(body || {}), __status: res.status, __ok: res.ok } as T
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 async function runCli() {
   const args = parseCliArgs()
   const privateKey = await resolvePrivateKey(args)
@@ -233,7 +205,7 @@ async function runCli() {
       ok: res.ok,
       status: res.status,
       payload,
-      privateKeyConfigured: Boolean(privateKey),
+      privateKeyConfigured: !!privateKey,
       signingKeyRedacted: privateKey ? redactSecret(privateKey) : null,
     }
 
@@ -242,7 +214,7 @@ async function runCli() {
     } else {
       console.log(`Server: ${args.server}`)
       console.log(`Health: ${res.status} ${res.ok ? 'OK' : 'FAILED'}`)
-      console.log(`Private key configured: ${Boolean(privateKey) ? 'yes' : 'no'}`)
+      console.log(`Private key configured: ${privateKey ? 'yes' : 'no'}`)
       if (privateKey) console.log(`Signing key: ${redactSecret(privateKey)}`)
       console.log(JSON.stringify(payload, null, 2))
     }
@@ -260,7 +232,7 @@ async function runCli() {
       status: res.status,
       ok: res.ok,
       body,
-      privateKeyConfigured: Boolean(privateKey),
+      privateKeyConfigured: !!privateKey,
       signingKeyRedacted: privateKey ? redactSecret(privateKey) : null,
     }
 
