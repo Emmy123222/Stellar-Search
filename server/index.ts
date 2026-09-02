@@ -52,6 +52,7 @@ import type {
   BatchJsonlDoneEvent,
   SearchJob,
   JobStatus,
+  PricingInfo,
 } from '../src/types/index.js'
 import { buildReconciliationRecord, type ReconciliationRoute } from '../src/lib/reconciliation.js'
 import { appendReconciliationRecord } from './reconciliationStore.js'
@@ -1188,6 +1189,32 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
 
 
 
+// ─── GET /pricing — free pre-flight pricing info (no payment required) ─────
+app.get('/pricing', (_req: Request, res: Response) => {
+  const info: PricingInfo = {
+    version: '1.0.0',
+    endpoints: [
+      { method: 'GET',  path: '/search',        description: 'Web search' },
+      { method: 'GET',  path: '/images',        description: 'Image search' },
+      { method: 'GET',  path: '/news',          description: 'News search' },
+      { method: 'POST', path: '/search/batch',  description: 'Batch search (up to 10 queries, JSONL streaming)' },
+      { method: 'POST', path: '/jobs',          description: 'Async search job with webhook callback' },
+    ],
+    schemes: [{
+      network:        NETWORK,
+      scheme:         'exact',
+      assetContract:  USDC_CONTRACT,
+      amountStroops:  AMOUNT_STROOPS,
+      amountUsdc:     AMOUNT_USDC,
+      payTo:          RECEIVING_ADDRESS,
+      maxTimeoutSeconds: 300,
+    }],
+    facilitatorUrl: FACILITATOR_URL,
+    note: 'All paid endpoints require 0.001 USDC per query via x402 on Stellar. Batch requests scale linearly.',
+  }
+  res.json(info)
+})
+
 // ─── GET / ────────────────────────────────────────────────────────────────
 app.get('/', (_req: Request, res: Response) => {
   res.json({
@@ -1202,6 +1229,7 @@ app.get('/', (_req: Request, res: Response) => {
       'POST /jobs':            '0.001 USDC via x402 — async job, returns 202 + statusUrl + verified payment state',
       'GET /jobs/:id':         'Job status + verified payment state (webhook signed, replay/SSRF protected)',
       'GET /jobs':             'List recent jobs (capped at 50)',
+      'GET /pricing':          'Free — pricing info, scheme, and valid endpoints',
       'POST /ai/chat':         'Groq AI — free',
       'GET /health':           'Live server stats',
     },

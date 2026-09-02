@@ -327,3 +327,29 @@ export interface SavedResearchItem {
   tags: string[]
 }
 export type SearchMode = 'web' | 'images' | 'news'
+
+// ─── Pricing info endpoint (free, pre-flight) ─────────────────────────────
+
+export interface PricingEndpointInfo {
+  method: string
+  path: string
+  description: string
+}
+
+export interface PricingSchemeInfo {
+  network: string
+  scheme: string
+  assetContract: string
+  amountStroops: string
+  amountUsdc: string
+  payTo: string
+  maxTimeoutSeconds: number
+}
+
+export interface PricingInfo {
+  version: string
+  endpoints: PricingEndpointInfo[]
+  schemes: PricingSchemeInfo[]
+  facilitatorUrl: string
+  note: string
+}
