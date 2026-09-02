@@ -26,6 +26,12 @@ describe('corsConfig', () => {
     it('filters out blank entries from trailing comma', () => {
       expect(parseAllowedOrigins('https://a.com,')).toEqual(['https://a.com'])
     })
+    it('deduplicates origins while preserving order', () => {
+      expect(parseAllowedOrigins('https://a.com, https://a.com, https://b.com')).toEqual(['https://a.com', 'https://b.com'])
+    })
+    it('does not treat hostile lookalike origins as allowed', () => {
+      expect(parseAllowedOrigins('https://example.com')).not.toContain('https://example.com.evil.test')
+    })
   })
 
   describe('isProductionEnv', () => {
