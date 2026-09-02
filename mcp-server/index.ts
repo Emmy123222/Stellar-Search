@@ -41,6 +41,7 @@ import {
   AMOUNT_STROOPS,
 } from '../src/lib/constants'
 import { formatConfigurationError, readMcpConfig } from '../src/lib/config'
+import { resolveStat, statsUnavailableReason } from '../src/lib/serverHealth'
 
 dotenv.config()
 
@@ -295,7 +296,7 @@ Use for breaking stories, current events, and time-sensitive reporting.`,
     },
     {
       name: 'get_search_stats',
-      description: 'Get live statistics from the StellarSearch server (total queries, USDC settled, uptime, latencies).',
+      description: 'Get live statistics from the StellarSearch server (total queries, USDC settled, uptime, latencies). Counters come from the Express server; a stateless serverless deployment reports configuration only and these fields come back as "not reported" rather than zero.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -752,23 +753,39 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const stats = (await res.json()) as any
 
+      // Statistics are read through the shared health contract (#226) rather
+      // than off the payload: a serverless deployment declares that it does not
+      // measure them, so they must render as "not reported" instead of a zero —
+      // and reading `stats.totalQueries.toLocaleString()` directly would throw
+      // there, surfacing as a bogus "failed to fetch stats".
+      const uptime = resolveStat(stats, 'uptime')
+      const totalQueries = resolveStat(stats, 'totalQueries')
+      const totalUsdcSettled = resolveStat(stats, 'totalUsdcSettled')
+      const avgLatencyMs = resolveStat(stats, 'avgLatencyMs')
+      const unavailable = statsUnavailableReason(stats)
+
+      const lines = [
+        `📊 StellarSearch Server Stats`,
+        `   Status:           ${String(stats.status ?? 'unknown').toUpperCase()}`,
+        `   Network:          ${stats.network}`,
+        `   Uptime:           ${uptime.available ? uptime.value : 'not reported'}`,
+        `   Total Queries:    ${totalQueries.available ? Number(totalQueries.value).toLocaleString() : 'not reported'}`,
+        `   USDC Settled:     ${totalUsdcSettled.available ? `${totalUsdcSettled.value} USDC` : 'not reported'}`,
+        `   Avg Latency:      ${avgLatencyMs.available ? `${avgLatencyMs.value}ms` : 'not reported'}`,
+        `   Price per Query:  ${stats.pricePerQuery}`,
+        `   Facilitator:      ${stats.facilitator}`,
+        `   APIs Configured:  Serper: ${stats.serperApiConfigured ? '✅' : '❌'}, Groq: ${stats.groqApiConfigured ? '✅' : '❌'}`,
+      ]
+      if (unavailable) {
+        lines.push('', `⚠️  Activity counters are not available on this deployment. ${unavailable}`)
+      }
+
       cleanup()
       return {
         content: [
           {
             type: 'text',
-            text: [
-              `📊 StellarSearch Server Stats`,
-              `   Status:           ${stats.status.toUpperCase()}`,
-              `   Network:          ${stats.network}`,
-              `   Uptime:           ${stats.uptime}`,
-              `   Total Queries:    ${stats.totalQueries.toLocaleString()}`,
-              `   USDC Settled:     ${stats.totalUsdcSettled} USDC`,
-              `   Avg Latency:      ${stats.avgLatencyMs}ms`,
-              `   Price per Query:  ${stats.pricePerQuery}`,
-              `   Facilitator:      ${stats.facilitator}`,
-              `   APIs Configured:  Serper: ${stats.serperApiConfigured ? '✅' : '❌'}, Groq: ${stats.groqApiConfigured ? '✅' : '❌'}`,
-            ].join('\n'),
+            text: lines.join('\n'),
           },
         ],
       }

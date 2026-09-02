@@ -124,6 +124,58 @@ export function checkPaymentRequirements(challenge) {
   return failures
 }
 
+/** The activity statistics a `/health` response may report (see src/lib/serverHealth.ts). */
+const MEASURED_STAT_FIELDS = ['totalQueries', 'totalUsdcSettled', 'avgLatencyMs', 'uptime']
+
+/**
+ * Asserts that a health payload says what it measures.
+ *
+ * A serverless deployment cannot hold a durable counter, so it must declare the
+ * gap rather than omit the fields silently — a silent omission is what let the
+ * UI render "0 queries, $0.00 settled" as if it were a live measurement. Either
+ * declaration is acceptable here; an undeclared omission is not.
+ *
+ * @param {object} health Parsed `/health` body.
+ * @returns {string[]} Failure descriptions.
+ */
+export function checkStatsDeclaration(health) {
+  const failures = []
+  if (typeof health.statsSupported !== 'boolean') {
+    failures.push(
+      `health must declare \`statsSupported\` (true/false) so consumers can tell an unmeasured field from a real zero, got ${JSON.stringify(health.statsSupported)}`,
+    )
+    return failures
+  }
+  if (!Array.isArray(health.unsupportedFields)) {
+    failures.push(`health must declare \`unsupportedFields\` as an array, got ${JSON.stringify(health.unsupportedFields)}`)
+    return failures
+  }
+
+  if (health.statsSupported) {
+    if (health.unsupportedFields.length > 0) {
+      failures.push(`statsSupported is true but unsupportedFields is not empty: ${JSON.stringify(health.unsupportedFields)}`)
+    }
+    // A runtime claiming to measure must actually report the values.
+    for (const field of MEASURED_STAT_FIELDS) {
+      if (health[field] === undefined || health[field] === null) {
+        failures.push(`statsSupported is true but \`${field}\` is missing from the response`)
+      }
+    }
+    return failures
+  }
+
+  // Unsupported: the gap must be explained, and no fabricated value left behind.
+  if (typeof health.statsUnavailableReason !== 'string' || health.statsUnavailableReason.trim() === '') {
+    failures.push('statsSupported is false but no statsUnavailableReason was given')
+  }
+  for (const field of health.unsupportedFields) {
+    if (health[field] !== undefined) {
+      failures.push(`\`${field}\` is declared unsupported but a value was still reported: ${JSON.stringify(health[field])}`)
+    }
+  }
+  return failures
+}
+
 /** Builds a query string without hand-encoding anything. */
 function qs(params) {
   const sp = new URLSearchParams()
@@ -215,6 +267,7 @@ export const CHECKS = [
         failures.push(`network must be stellar:testnet|stellar:mainnet, got ${JSON.stringify(json.network)}`)
       }
       if (json.receivingAddressConfigured !== true) failures.push('receivingAddressConfigured is not true')
+      failures.push(...checkStatsDeclaration(json))
       return failures
     },
   },

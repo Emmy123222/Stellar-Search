@@ -42,6 +42,7 @@ import {
   type CountBounds,
   type Freshness,
 } from '../src/lib/paramValidation'
+import { declareStatsSupported, type ServerHealthResponse } from '../src/lib/serverHealth'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import {
   normalizeOrganicResults,
@@ -1128,7 +1129,11 @@ app.get('/health', (_req: Request, res: Response) => {
   const up = Math.floor((Date.now() - stats.startTime) / 1000)
   const uptime = up < 60 ? `${up}s` : up < 3600 ? `${Math.floor(up / 60)}m` : `${Math.floor(up / 3600)}h`
 
-  res.json({
+  // Express holds the counters in the same process that serves the paid
+  // routes, so it measures every statistic and says so (#226). The declaration
+  // is what lets a consumer tell a real `totalQueries: 0` on a freshly started
+  // server apart from a runtime that never measured it at all.
+  const body: ServerHealthResponse = {
     status:                    'ok',
     network:                   NETWORK,
     pricePerQuery:             '0.001 USDC',
@@ -1141,7 +1146,10 @@ app.get('/health', (_req: Request, res: Response) => {
     serperApiConfigured:       !!SERPER_API_KEY,
     groqApiConfigured:         !!GROQ_API_KEY,
     receivingAddressConfigured: !!RECEIVING_ADDRESS,
-  })
+    ...declareStatsSupported(),
+  }
+
+  res.json(body)
 })
 
 // ─── POST /ai/chat ────────────────────────────────────────────────────────

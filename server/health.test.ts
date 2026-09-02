@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import request from 'supertest'
+import { MEASURED_STAT_FIELDS, resolveStat, hasAnyStats } from '../src/lib/serverHealth'
 
 // Mock x402 and Groq before importing app
 vi.mock('@x402/express', () => ({
@@ -48,6 +49,35 @@ describe('GET /health and GET /', () => {
     expect(typeof res.body.serperApiConfigured).toBe('boolean')
     expect(typeof res.body.groqApiConfigured).toBe('boolean')
     expect(typeof res.body.receivingAddressConfigured).toBe('boolean')
+  })
+
+  // ─── Statistics declaration (#226) ──────────────────────────────────────
+  // Express keeps the counters in the process serving the paid routes, so it
+  // measures everything and says so. The declaration is what lets a consumer
+  // tell a real `totalQueries: 0` apart from a runtime that never measured it.
+
+  it('GET /health declares that it measures every activity statistic', async () => {
+    const res = await request(app).get('/health')
+    expect(res.body.statsSupported).toBe(true)
+    expect(res.body.unsupportedFields).toEqual([])
+    expect(res.body.statsUnavailableReason).toBeUndefined()
+  })
+
+  it('GET /health resolves every statistic as available through the shared contract', async () => {
+    const res = await request(app).get('/health')
+    expect(hasAnyStats(res.body)).toBe(true)
+    for (const field of MEASURED_STAT_FIELDS) {
+      expect(resolveStat(res.body, field).available).toBe(true)
+    }
+  })
+
+  it('GET /health reports a zero counter as a real measurement, not an absence', async () => {
+    // Nothing has been searched in this suite, so the counters are genuinely
+    // zero — and must resolve as available zeros rather than "unavailable".
+    const res = await request(app).get('/health')
+    const queries = resolveStat(res.body, 'totalQueries')
+    expect(queries).toEqual({ available: true, value: res.body.totalQueries })
+    expect(typeof res.body.totalQueries).toBe('number')
   })
 
   it('GET / returns service metadata with paid routes', async () => {

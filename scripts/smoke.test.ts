@@ -21,6 +21,7 @@ import {
   runSmoke,
   decodePaymentRequired,
   checkPaymentRequirements,
+  checkStatsDeclaration,
   normalizeBaseUrl,
   formatMarkdown,
   parseArgs,
@@ -90,6 +91,10 @@ function deployment(overrides: Record<string, ReturnType<typeof response>> = {})
           protocol: 'x402',
           receivingAddressConfigured: true,
           serperApiConfigured: true,
+          // Serverless declares that it measures no activity counters (#226).
+          statsSupported: false,
+          unsupportedFields: ['totalQueries', 'totalUsdcSettled', 'avgLatencyMs', 'uptime'],
+          statsUnavailableReason: 'Serverless functions are stateless.',
         }),
         { headers: { 'content-type': 'application/json' } },
       )
@@ -539,5 +544,92 @@ describe('runCheck', () => {
     const [, init] = fetchImpl.mock.calls[0]
     expect((init as any).headers['User-Agent']).toBe('stellar-search-smoke/1')
     expect((init as any).redirect).toBe('manual')
+  })
+})
+
+// ─── Health statistics declaration (#226) ────────────────────────────────────
+
+describe('checkStatsDeclaration — health must say what it measures', () => {
+  const CONFIG = { status: 'ok', network: 'stellar:testnet', protocol: 'x402' }
+  const COUNTERS = { totalQueries: 3, totalUsdcSettled: '0.0030', avgLatencyMs: 210, uptime: '4m' }
+  const FIELDS = ['totalQueries', 'totalUsdcSettled', 'avgLatencyMs', 'uptime']
+
+  it('accepts an Express deployment that measures and reports everything', () => {
+    expect(checkStatsDeclaration({ ...CONFIG, ...COUNTERS, statsSupported: true, unsupportedFields: [] })).toEqual([])
+  })
+
+  it('accepts a serverless deployment that declares the gap with a reason', () => {
+    expect(
+      checkStatsDeclaration({
+        ...CONFIG,
+        statsSupported: false,
+        unsupportedFields: FIELDS,
+        statsUnavailableReason: 'Serverless functions are stateless.',
+      }),
+    ).toEqual([])
+  })
+
+  it('rejects the original bug: counters silently omitted with no declaration', () => {
+    expect(checkStatsDeclaration({ ...CONFIG })).toEqual([
+      expect.stringMatching(/must declare `statsSupported`/),
+    ])
+  })
+
+  it('rejects a runtime that claims to measure but omits the values', () => {
+    const failures = checkStatsDeclaration({ ...CONFIG, statsSupported: true, unsupportedFields: [] })
+    expect(failures).toHaveLength(FIELDS.length)
+    for (const field of FIELDS) {
+      expect(failures.join(' ')).toContain(field)
+    }
+  })
+
+  it('rejects an unsupported declaration with no explanation', () => {
+    expect(
+      checkStatsDeclaration({ ...CONFIG, statsSupported: false, unsupportedFields: FIELDS }),
+    ).toEqual([expect.stringMatching(/no statsUnavailableReason/)])
+  })
+
+  it('rejects a stale value left behind on a field declared unsupported', () => {
+    const failures = checkStatsDeclaration({
+      ...CONFIG,
+      totalQueries: 0,
+      statsSupported: false,
+      unsupportedFields: FIELDS,
+      statsUnavailableReason: 'Stateless.',
+    })
+    expect(failures).toEqual([expect.stringMatching(/`totalQueries` is declared unsupported but a value was still reported/)])
+  })
+
+  it('rejects contradictory declarations and malformed field lists', () => {
+    expect(
+      checkStatsDeclaration({ ...CONFIG, ...COUNTERS, statsSupported: true, unsupportedFields: ['uptime'] }),
+    ).toEqual([expect.stringMatching(/statsSupported is true but unsupportedFields is not empty/)])
+
+    expect(checkStatsDeclaration({ ...CONFIG, statsSupported: false, unsupportedFields: 'uptime' })).toEqual([
+      expect.stringMatching(/must declare `unsupportedFields` as an array/),
+    ])
+  })
+})
+
+describe('smoke suite — health declaration failures', () => {
+  it('fails the health check when a deployment omits counters without declaring them', async () => {
+    const fetchImpl = deploymentWithMethods({
+      '/api/health': response(
+        JSON.stringify({
+          status: 'ok',
+          network: 'stellar:testnet',
+          protocol: 'x402',
+          receivingAddressConfigured: true,
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      ),
+    })
+    const summary = await runSmoke(BASE, { fetchImpl })
+
+    const failed = summary.results.find((r: any) => r.id === 'api-health-env-wiring')
+    expect(failed.ok).toBe(false)
+    expect(failed.status).toBe(200)
+    expect(failed.failures.join(' ')).toMatch(/must declare `statsSupported`/)
+    expect(failed.failures.join(' ')).toMatch(/real zero/)
   })
 })

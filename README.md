@@ -732,9 +732,11 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 | `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
 | `src/lib/serperNormalizer.ts` | 95% | 90% | 100% | 95% |
 | `src/lib/paramValidation.ts` | 95% | 90% | 100% | 95% |
+| `src/lib/serverHealth.ts` | 95% | 90% | 100% | 95% |
 | `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
 | `src/components/search/SpellingCorrectionBanner.tsx` | 85% | 90% | 70% | 85% |
+| `src/components/ui/StatsGrid.tsx` | 90% | 90% | 100% | 95% |
 | `src/pages/SearchPage.tsx` | 65% | 65% | 70% | 75% |
 | `server/index.ts` | 30% | 24% | 25% | 35% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
@@ -749,6 +751,129 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 > **Ratchet policy:** When a module's real coverage exceeds its threshold, bump the threshold in `vite.config.ts` in the same PR. Global thresholds ratchet `15 → 25 → 35` as payment, wallet, API, MCP, and UI behavior moves from untested to tested. Keep Express (`server/`), Vercel (`api/`), browser (`src/`), and MCP (`mcp-server/`) constants aligned (`STELLAR_NETWORK`, `USDC_CONTRACT`, `AMOUNT_STROOPS=10000` → `0.001 USDC`).
 
 Coverage verifies the **x402 settlement semantics** for paid routes (`/search`, `/images`, `/news`): `scheme=exact`, `network=stellar:testnet|mainnet`, `amount=10000 stroops`, `asset=C...` (Soroban USDC contract, not `USDC:ISSUER`), `payTo=G...`. See `server/index.ts:104`, `api/search.ts:48`, and `mcp-server/index.ts:19`.
+
+---
+
+## Health and statistics (`/health`)
+
+`/health` reports two different kinds of thing, and they must not be confused:
+
+- **Configuration facts** — network, price, facilitator, which keys are set.
+  Every runtime knows these and reports them.
+- **Activity statistics** — `totalQueries`, `totalUsdcSettled`, `avgLatencyMs`,
+  `uptime`. Only a runtime that actually measures them can report them.
+
+Express keeps those counters in the same process that serves the paid routes,
+so it measures all four. A Vercel function cannot: it is stateless, scales to
+zero, and each request may land on a fresh instance, so an in-memory counter
+there would describe one warm instance rather than the deployment.
+
+Previously the serverless handler simply omitted the four fields, the browser
+coalesced them (`data.totalQueries ?? 0`), and a Vercel deployment rendered
+**"0 queries · $0.00 settled · 0ms"** beside a live green **SERVER ONLINE**
+pulse. Those were not measurements — they were missing data presented as fact.
+The MCP `get_search_stats` tool had it worse: `stats.totalQueries.toLocaleString()`
+threw a `TypeError` on the absent field and surfaced as a misleading
+`Failed to fetch server stats`.
+
+### Every runtime declares what it measures
+
+`src/lib/serverHealth.ts` holds the shared contract. Each `/health` response
+now carries a declaration:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `statsSupported` | `boolean` | Whether this runtime measures the activity statistics |
+| `unsupportedFields` | `string[]` | Which of `totalQueries`, `totalUsdcSettled`, `avgLatencyMs`, `uptime` it does not measure — empty when `statsSupported` is `true` |
+| `statsUnavailableReason` | `string?` | Human-readable explanation; present only when something is unsupported |
+
+**Express** (`GET /health`) — measures everything:
+
+```jsonc
+{
+  "status": "ok",
+  "network": "stellar:testnet",
+  "pricePerQuery": "0.001 USDC",
+  "protocol": "x402",
+  "totalQueries": 12,
+  "totalUsdcSettled": "0.0120",
+  "avgLatencyMs": 384,
+  "uptime": "7m",
+  "statsSupported": true,
+  "unsupportedFields": []
+}
+```
+
+**Vercel** (`GET /api/health`) — configuration only, gap declared:
+
+```jsonc
+{
+  "status": "ok",
+  "network": "stellar:testnet",
+  "pricePerQuery": "0.001 USDC",
+  "protocol": "x402",
+  "timestamp": "2026-09-02T12:00:00.000Z",
+  "statsSupported": false,
+  "unsupportedFields": ["totalQueries", "totalUsdcSettled", "avgLatencyMs", "uptime"],
+  "statsUnavailableReason": "Serverless functions are stateless and scale to zero, so per-instance counters would reset on every cold start instead of reporting deployment activity. Run the Express server (npm run server) for live counters."
+}
+```
+
+The counters are **omitted, not zeroed**. A field declared unsupported must
+carry no value at all — the preview smoke suite fails a deployment that leaves
+a stale one behind.
+
+### Reading the statistics
+
+Consumers call `resolveStat(health, field)` instead of reading the field
+directly. It returns either `{ available: true, value }` or
+`{ available: false, reason }`, which keeps the three states apart:
+
+| State | `resolveStat` | UI |
+|---|---|---|
+| Measured, non-zero | `{ available: true, value: 1234 }` | `1,234` with the live pulse |
+| **Measured, genuinely zero** | `{ available: true, value: 0 }` | `0` with the live pulse |
+| **Not measured** | `{ available: false, reason }` | `n/a`, dimmed, no pulse, reason on hover |
+| Server unreachable | `{ available: false, reason }` | `n/a`, `SERVER OFFLINE` |
+
+The second and third rows are the distinction that matters: a freshly started
+Express server that has served no queries **really has** served no queries, and
+that is worth showing. A serverless deployment that never counted anything is
+not the same claim.
+
+`resolveStat` also tolerates a deployment predating this contract: present
+values are trusted, absent ones are reported as undeclared rather than assumed
+to be zero. An explicit declaration always wins over a stale value in the
+payload.
+
+### Behavior per consumer
+
+- **Browser** (`src/components/ui/StatsGrid.tsx`) — unmeasured cards render
+  `n/a`, dimmed, without the pulsing "live" dot, with the reason as a `title`
+  and as screen-reader text. One panel-level note explains the whole grid when
+  nothing is measured. The server still reads **ONLINE**, because it is.
+- **MCP** (`get_search_stats`) — unmeasured values print as `not reported`
+  followed by a single `⚠️` line with the reason, instead of throwing.
+- **Preview smoke** (`scripts/smoke.mjs`) — the `/api/health` check fails a
+  deployment that omits the counters without declaring them, that declares
+  support but omits the values, or that declares a field unsupported while
+  still reporting it.
+
+### Migration notes
+
+- **Additive and backward-compatible.** No existing field changed type or
+  meaning; `statsSupported`, `unsupportedFields`, and `statsUnavailableReason`
+  are new. Older clients that read `totalQueries` directly still work against
+  Express and see the same behavior as before against Vercel.
+- **If you add a runtime**, spread `declareStatsSupported()` or
+  `declareStatsUnsupported(reason)` into its `/health` body. The smoke suite
+  fails an undeclared deployment, so the gap cannot ship silently.
+- **If you add durable serverless counters** (Vercel KV, Redis, or similar),
+  switch `api/health.ts` to `declareStatsSupported()` and report the real
+  values. Nothing downstream needs to change — the UI and MCP already render
+  whatever is declared available.
+- **No effect on paid routes.** This contract covers reporting only; the x402
+  settlement path and its verified semantics are untouched.
 
 ---
 
@@ -771,7 +896,7 @@ before it can merge.
 | 2 | Static asset | `GET /favicon.svg` | `200` `image/svg+xml` | assets not published |
 | 3 | SPA rewrite | `GET /docs` | `200` `text/html` | missing `rewrites` in `vercel.json` |
 | 4 | Service descriptor | `GET /api` | `200` JSON, `name: StellarSearch` | serverless routing not wired |
-| 5 | Environment wiring | `GET /api/health` | `200`, `status: ok`, `protocol: x402` | missing `STELLAR_RECEIVING_ADDRESS` / `SERPER_API_KEY` |
+| 5 | Environment wiring + stats declaration | `GET /api/health` | `200`, `status: ok`, `protocol: x402`, and a valid `statsSupported` declaration | missing `STELLAR_RECEIVING_ADDRESS` / `SERPER_API_KEY`; counters omitted without being declared (see [Health and statistics](#health-and-statistics-health)) |
 | 6 | CORS preflight | `OPTIONS /api/search` | `200`/`204` allowing `payment-signature` + `x-payment` | browser clients unable to send the signed payload |
 | 7 | Method guard | `POST /api/search` | `405` | handler-level regressions |
 | 8 | Missing `q` | `GET /api/search` | `400` | validation not reached |
