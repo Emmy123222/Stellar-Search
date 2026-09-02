@@ -1,40 +1,48 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import Groq from 'groq-sdk'
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! })
+import { readServerConfig } from '../../src/lib/config'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { messages } = req.body as {
-    messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+  const { messages, model: requestedModel } = (req.body || {}) as {
+    messages?: any[]
+    model?: string
   }
 
-  if (!messages?.length) {
-    return res.status(400).json({ error: 'messages array required' })
+  const validationError = validateChatMessages(messages)
+  if (validationError) {
+    return res.status(400).json({ error: validationError })
   }
+
+  // Groq is an optional feature: keep paid search deployable without its key.
+  const groqApiKey = readServerConfig().groqApiKey
+  if (!groqApiKey) return res.status(503).json({ error: 'AI assistant is not configured.' })
+  const groq = new Groq({ apiKey: groqApiKey })
 
   try {
-    const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are StellarSearch AI, a concise research assistant. Help users craft better search queries and understand results. Keep responses under 200 words.',
-        },
-        ...messages,
-      ],
-      max_tokens: 512,
-      temperature: 0.7,
-    })
+    const stream = await streamChatCompletion(
+      groq,
+      {
+        messages: messages!,
+        model,
+      },
+      controller.signal
+    )
 
-    const content = completion.choices[0]?.message?.content || 'No response.'
-    return res.json({ content, model: completion.model })
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content
+      if (delta) sendEvent('delta', { content: delta })
+    }
+    sendEvent('done', { model })
+    res.end()
   } catch (err: any) {
-    console.error('[groq error]', err.message)
-    return res.status(500).json({ error: `Groq AI error: ${err.message}` })
+    if (controller.signal.aborted) return res.end()
+    console.error('[groq stream error]', err?.message)
+    const formatted = formatAiError(err)
+    sendEvent('error', { error: formatted.message })
+    res.end()
   }
 }

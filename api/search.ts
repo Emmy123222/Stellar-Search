@@ -1,16 +1,25 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { 
-  STELLAR_NETWORK, 
-  USDC_CONTRACT, 
-  AMOUNT_STROOPS,
-  AMOUNT_USDC
+  USDC_CONTRACT_MAINNET,
+  USDC_CONTRACT_TESTNET,
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 
 // ─── Config ───────────────────────────────────────────────────────────────
-const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
-const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
-const SERPER_API_KEY    = process.env.SERPER_API_KEY!
+let config
+try {
+  config = readServerConfig()
+} catch (error) {
+  console.error(formatConfigurationError(error))
+  throw error
+}
+const RECEIVING_ADDRESS = config.receivingAddress
+const NETWORK           = config.stellarNetwork
+const SERPER_API_KEY    = config.serperApiKey
+const AMOUNT_STROOPS    = config.amountStroops
+const AMOUNT_USDC       = config.amountUsdc
+const USDC_CONTRACT     = NETWORK === 'stellar:mainnet' ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_TESTNET
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 
@@ -31,11 +40,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   ].join(', '))
 
   if (req.method === 'OPTIONS') return res.status(200).end()
-  if (req.method !== 'GET')    return res.status(405).json({ error: 'Method not allowed' })
+  if (req.method !== 'GET') {
+    const errorBody: ApiErrorResponse = { error: 'Method not allowed' }
+    return res.status(405).json(errorBody)
+  }
 
   const { q, count = '5', freshness } = req.query as Record<string, string>
 
-  if (!q?.trim()) return res.status(400).json({ error: 'Missing required parameter: q' })
+  if (!q?.trim()) {
+    const errorBody: ApiErrorResponse = { error: 'Missing required parameter: q' }
+    return res.status(400).json(errorBody)
+  }
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -71,13 +86,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'PAYMENT-REQUIRED',
       Buffer.from(JSON.stringify(paymentRequired)).toString('base64')
     )
-    return res.status(402).json({ error: 'Payment required' })
+    const errorBody: ApiErrorResponse = { error: 'Payment required' }
+    return res.status(402).json(errorBody)
   }
 
   // ─── Payment Replay Protection ───────────────────────────────────────────
   const consumption = consumePaymentPayload(paymentHeader)
   if (!consumption.ok) {
-    return res.status(402).json({ error: consumption.error })
+    const errorBody: ApiErrorResponse = { error: consumption.error }
+    return res.status(402).json(errorBody)
   }
 
   // ─── Payment present — proceed with search ────────────────────────────────
@@ -122,38 +139,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!serperRes.ok) {
       const errText = await serperRes.text()
       console.error('[serper]', serperRes.status, errText)
-      return res.status(502).json({ error: `Serper.dev API error: ${serperRes.status}` })
+      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
+      return res.status(502).json(errorBody)
     }
 
-    const data      = await serperRes.json() as any
-    const latencyMs = Date.now() - t0
+    const data: unknown = await serperRes.json()
+    const latencyMs    = Date.now() - t0
 
-    const results = (data.organic || []).map((r: any, i: number) => ({
-      id:             String(i + 1),
-      title:          r.title   || 'No title',
-      url:            r.link,
-      description:    r.snippet || '',
-      source:         (() => {
-        try { return new URL(r.link).hostname.replace('www.', '') }
-        catch { return r.link }
-      })(),
-      relevanceScore: Math.max(0.5, 1 - i * 0.06),
-      publishedAt:    r.date || undefined,
-    }))
+    const results = normalizeOrganicResults(data)
+    const queryMeta = normalizeQueryMetadata(data, q.trim())
 
-    return res.json({
-      query:      q.trim(),
+    const responseBody: SearchResponse = {
+      query:          queryMeta.executedQuery,
+      originalQuery:  queryMeta.originalQuery,
+      executedQuery:  queryMeta.executedQuery,
+      suggestedQuery: queryMeta.suggestedQuery,
+      isCorrected:    queryMeta.isCorrected,
       results,
-      count:      results.length,
-      network:    NETWORK,
-      paidAmount: AMOUNT_USDC,
-      currency:   'USDC',
+      count:          results.length,
+      network:        NETWORK,
+      paidAmount:     AMOUNT_USDC,
+      currency:       'USDC',
       txHash,
       latencyMs,
-    })
+    }
+
+    return res.json(responseBody)
 
   } catch (err: any) {
     console.error('[search error]', err.message)
-    return res.status(500).json({ error: 'Search failed.' })
+    const errorBody: ApiErrorResponse = { error: 'Search failed.' }
+    return res.status(500).json(errorBody)
   }
 }

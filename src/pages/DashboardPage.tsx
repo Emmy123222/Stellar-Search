@@ -1,10 +1,12 @@
 import { motion } from 'framer-motion'
 import { useState, useEffect, useMemo } from 'react'
-import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search } from 'lucide-react'
+import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search, Download } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, truncateHash, formatTimeAgo, explorerTxUrl, explorerAccountUrl } from '../lib/stellar'
+import { SavedResearchPanel } from '../components/search'
 import type { StellarTransaction } from '../hooks/useFreighterWallet'
-import type { SearchReceipt } from '../hooks/useSearch'
+import type { SearchReceipt } from '../types'
+import { createReceiptBundle, downloadBundle } from '../lib/receiptBundle'
 
 interface Props {
   transactions: StellarTransaction[]
@@ -42,7 +44,7 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
       return acc
     }, {} as Record<string, number>)
 
-    return Object.entries(grouped).map(([date, amount]) => ({
+    return Object.entries(grouped).map(([date, amount]: [string, number]) => ({
       date,
       amount: parseFloat(amount.toFixed(2))
     }))
@@ -233,7 +235,17 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
               >
                 <div className="w-1.5 h-1.5 rounded-full bg-neon-green flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white/60 capitalize truncate">{tx.type.replace('_', ' ')}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-white/60 capitalize truncate">{tx.type.replace('_', ' ')}</p>
+                    {tx.memo && (
+                      <span
+                        className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-neon-cyan/10 text-neon-cyan/70 border border-neon-cyan/20 truncate max-w-[180px]"
+                        title={`Memo: ${tx.memo}`}
+                      >
+                        Memo: {tx.memo}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-3 mt-0.5">
                     <a
                       href={explorerTxUrl(tx.hash)}
@@ -271,8 +283,23 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
             <span className="font-display text-xs text-white/30 tracking-widest">SEARCH AUDIT LOG</span>
             <span className="font-display text-white/15" style={{ fontSize: '10px' }}>· PERSISTED LOCALLY</span>
           </div>
-          <div className="font-display text-[10px] text-white/20 uppercase tracking-wider">
-            {receipts.length} RECEIPTS
+          <div className="flex items-center gap-3">
+            {receipts.length > 0 && (
+              <button
+                onClick={async () => {
+                  const network = IS_MAINNET ? 'stellar:mainnet' : 'stellar:testnet'
+                  const bundle = await createReceiptBundle(receipts, network)
+                  downloadBundle(bundle)
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neon-cyan/20 text-neon-cyan/60 hover:text-neon-cyan hover:border-neon-cyan/40 transition-colors font-display text-[10px] tracking-wider"
+              >
+                <Download className="w-3 h-3" />
+                DOWNLOAD BUNDLE
+              </button>
+            )}
+            <div className="font-display text-[10px] text-white/20 uppercase tracking-wider">
+              {receipts.length} RECEIPTS
+            </div>
           </div>
         </div>
 
@@ -319,6 +346,9 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
           )}
         </div>
       </motion.div>
+
+      {/* Saved Research — notes & tags (#305) */}
+      <SavedResearchPanel />
 
       {/* Network info */}
       <div className="grid sm:grid-cols-3 gap-3">
