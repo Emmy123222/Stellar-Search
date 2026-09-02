@@ -23,7 +23,7 @@ import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
-import logger from './logger'
+import logger, { privacySafeIp, privacySafeQuery } from './logger'
 import crypto, { randomUUID } from 'crypto'
 import {
   STELLAR_NETWORK,
@@ -329,8 +329,8 @@ app.use((req, res, next) => {
 
       logger.info('Payment attempt', {
         timestamp: new Date().toISOString(),
-        ip: req.ip,
-        query: truncatedQ,
+        ip: privacySafeIp(req.ip),
+        query: privacySafeQuery(truncatedQ),
         paymentStatus: paymentStatus,
       });
     });
