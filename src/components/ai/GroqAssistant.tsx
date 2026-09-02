@@ -135,16 +135,18 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
 
   const handleDropdownKeyDown = (e: React.KeyboardEvent, index: number) => {
     switch (e.key) {
-      case 'ArrowDown':
+      case 'ArrowDown': {
         e.preventDefault()
         const next = (index + 1) % AVAILABLE_MODELS.length
         optionRefs.current[next]?.focus()
         break
-      case 'ArrowUp':
+      }
+      case 'ArrowUp': {
         e.preventDefault()
         const prev = (index - 1 + AVAILABLE_MODELS.length) % AVAILABLE_MODELS.length
         optionRefs.current[prev]?.focus()
         break
+      }
       case 'Enter':
       case ' ':
         e.preventDefault()
