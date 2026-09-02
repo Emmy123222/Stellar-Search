@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { Search, Zap, AlertCircle } from 'lucide-react'
@@ -31,6 +31,21 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
   const { t } = useTranslation('search')
   const [dismissedSuggestion, setDismissedSuggestion] = useState(false)
   const [searchMode, setSearchMode] = useState<SearchMode>('web')
+
+  // #150 — after an async search settles, move keyboard/screen-reader focus to
+  // the error alert (SearchResults moves focus to the results heading on
+  // success). Focus only moves on the transition into `error`; it is never
+  // stolen while typing, signing, or during manual navigation.
+  const errorRef       = useRef<HTMLDivElement>(null)
+  const prevStatusRef  = useRef(session.status)
+
+  useEffect(() => {
+    const prevStatus = prevStatusRef.current
+    prevStatusRef.current = session.status
+    if (prevStatus !== 'error' && session.status === 'error' && errorRef.current) {
+      errorRef.current.focus()
+    }
+  }, [session.status])
 
   const handleSearch = (query: string, freshness?: string) => {
     setDismissedSuggestion(false)
@@ -140,7 +155,12 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
             <PaymentFlowVisualizer session={session} />
 
             {session.status === 'error' && (
-              <div className="flex items-center gap-3 p-4 rounded-xl border border-red-500/25 bg-red-500/5">
+              <div
+                ref={errorRef}
+                role="alert"
+                tabIndex={-1}
+                className="flex items-center gap-3 p-4 rounded-xl border border-red-500/25 bg-red-500/5 focus:outline-none"
+              >
                 <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
                 <p className="text-sm text-red-300">{session.error}</p>
               </div>
