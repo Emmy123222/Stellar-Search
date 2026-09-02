@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, truncateHash, formatTimeAgo, explorerTxUrl, explorerAccountUrl } from '../lib/stellar'
+import { SavedResearchPanel } from '../components/search'
 import type { StellarTransaction } from '../hooks/useFreighterWallet'
 import type { SearchReceipt } from '../types'
 
@@ -329,6 +330,9 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
           )}
         </div>
       </motion.div>
+
+      {/* Saved Research — notes & tags (#305) */}
+      <SavedResearchPanel />
 
       {/* Network info */}
       <div className="grid sm:grid-cols-3 gap-3">

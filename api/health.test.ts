@@ -15,6 +15,8 @@ describe('api/health — Vercel health aligned with server /health', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv }
+    process.env.SERPER_API_KEY = 'test-serper'
+    process.env.STELLAR_RECEIVING_ADDRESS = 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3'
   })
 
   it('returns ok with x402 payment config', async () => {
@@ -22,7 +24,7 @@ describe('api/health — Vercel health aligned with server /health', () => {
     process.env.FACILITATOR_URL = 'https://www.x402.org/facilitator'
     process.env.SERPER_API_KEY = 'test-serper'
     process.env.GROQ_API_KEY = 'gsk_test'
-    process.env.STELLAR_RECEIVING_ADDRESS = 'GTEST'
+    process.env.STELLAR_RECEIVING_ADDRESS = 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3'
 
     const req: any = { method: 'GET', headers: {} }
     const res = mockRes()
@@ -43,7 +45,7 @@ describe('api/health — Vercel health aligned with server /health', () => {
     )
   })
 
-  it('uses defaults when env missing and preserves settlement semantics', async () => {
+  it('fails fast when required core variables are missing', async () => {
     delete process.env.STELLAR_NETWORK
     delete process.env.FACILITATOR_URL
     delete process.env.SERPER_API_KEY
@@ -53,15 +55,7 @@ describe('api/health — Vercel health aligned with server /health', () => {
     const req: any = { method: 'GET', headers: {} }
     const res = mockRes()
 
-    await handler(req, res)
-
-    const payload = res.json.mock.calls[0][0]
-    expect(payload.network).toBe('stellar:testnet')
-    expect(payload.pricePerQuery).toBe('0.001 USDC')
-    expect(payload.protocol).toBe('x402')
-    expect(payload.serperApiConfigured).toBe(false)
-    expect(payload.facilitator).toBe('https://www.x402.org/facilitator')
-    expect(new Date(payload.timestamp).toString()).not.toBe('Invalid Date')
+    expect(() => handler(req, res)).toThrow('STELLAR_RECEIVING_ADDRESS')
   })
 
   it('exposes timestamp as ISO string', async () => {

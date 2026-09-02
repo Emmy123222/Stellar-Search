@@ -1,3 +1,4 @@
+import { readBrowserConfig } from '../lib/config'
 /**
  * useSearch.ts
  * Fixed x402 + Freighter payment flow.
@@ -10,25 +11,12 @@
  * Fix: convert Buffer → base64 string using Buffer.from(result).toString('base64')
  */
 
-import { useState, useCallback } from "react";
-import { toast } from "sonner";
-import { x402Client, x402HTTPClient } from "@x402/fetch";
-import { ExactStellarScheme } from "@x402/stellar/exact/client";
-import { signAuthEntry, getNetworkDetails } from "@stellar/freighter-api";
-import { Networks } from "@stellar/stellar-sdk";
-import { Buffer } from "buffer";
-import {
-  IS_MAINNET,
-  EXPECTED_WALLET_NETWORK,
-  explorerTxUrl,
-} from "../lib/stellar";
+import { useState, useCallback }              from 'react'
+import { toast }                               from 'sonner'
+import { Buffer }                              from 'buffer'
+import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
 
-const SERVER_URL =
-  (import.meta as any).env?.VITE_SERVER_URL ??
-  (typeof window !== "undefined" &&
-  window.location.origin.includes("vercel.app")
-    ? `${window.location.origin}/api`
-    : "http://localhost:3001");
+const SERVER_URL = readBrowserConfig().apiBaseUrl
 
 // Soroban RPC URLs
 const SOROBAN_RPC_TESTNET = "https://soroban-testnet.stellar.org";
@@ -92,6 +80,10 @@ export function useSearch(walletAddress: string | null = null) {
 
       setSession({
         query,
+        originalQuery: query,
+        executedQuery: query,
+        suggestedQuery: undefined,
+        isCorrected: false,
         results: [],
         txHash: null,
         paidAmount: null,
@@ -110,7 +102,27 @@ export function useSearch(walletAddress: string | null = null) {
         language,
       });
       if (freshness) {
-        params.set("freshness", freshness);
+        params.set('freshness', freshness)
+      }
+
+    const advance = (step: PaymentStep) =>
+      setSession((prev: SearchSession) => ({ ...prev, step }))
+
+    try {
+      if (!walletAddress) throw new Error('Connect your Freighter wallet first.')
+
+      console.log('🔍 Starting search with wallet:', walletAddress)
+
+      const {
+        x402Client, x402HTTPClient, ExactStellarScheme,
+        signAuthEntry, getNetworkDetails, Networks,
+      } = await loadPaymentDeps()
+
+      // Step 1 — verify Freighter is on correct network
+      const net = await getNetworkDetails()
+      if (net.error)              throw new Error(net.error.message)
+      if (net.network !== EXPECTED_WALLET_NETWORK) {
+        throw new Error(`Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`)
       }
 
       const advance = (step: PaymentStep) =>
@@ -122,82 +134,76 @@ export function useSearch(walletAddress: string | null = null) {
 
         console.log("🔍 Starting search with wallet:", walletAddress);
 
-        // Step 1 — verify Freighter is on correct network
-        const net = await getNetworkDetails();
-        if (net.error) throw new Error(net.error.message);
-        if (net.network !== EXPECTED_WALLET_NETWORK) {
-          throw new Error(
-            `Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`,
-          );
-        }
-        console.log("✅ Network verified:", net.network);
+          return { signedAuthEntry, signerAddress: walletAddress }
+        },
+      }
 
-        // Step 2 — build the signer
-        const passphrase = IS_MAINNET ? Networks.PUBLIC : Networks.TESTNET;
-        const signer = {
-          address: walletAddress,
-          signAuthEntry: async (
-            xdr: string,
-            opts?: { networkPassphrase?: string },
-          ): Promise<{ signedAuthEntry: string; signerAddress: string }> => {
-            console.log("🔑 Calling Freighter signAuthEntry...");
+      // Step 3 — build the x402 client with correct .register() chain
+      const client     = new x402Client().register(
+        'stellar:*',
+        new ExactStellarScheme(signer, { url: SOROBAN_RPC_URL })
+      )
+      const httpClient = new x402HTTPClient(client)
+      console.log('✅ x402 client built')
 
-            const result = await signAuthEntry(xdr, {
-              networkPassphrase: opts?.networkPassphrase ?? passphrase,
-            });
+      // Flow step 1 — initial request, expect 402
+      advance(1)
+      console.log('🚀 Initial request:', `${SERVER_URL}/search?${params}`)
+      const firstRes = await fetch(`${SERVER_URL}/search?${params}`)
+      console.log('📡 Status:', firstRes.status)
 
-            if (result.error) throw new Error(result.error.message);
-            if (!result.signedAuthEntry)
-              throw new Error("Freighter returned no signedAuthEntry");
+      if (firstRes.status !== 402) {
+        if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`)
+        const data = (await firstRes.json()) as SearchResponse
+        return setSession({
+          query: data.executedQuery ?? data.query ?? query,
+          originalQuery: data.originalQuery ?? query,
+          executedQuery: data.executedQuery ?? data.query ?? query,
+          suggestedQuery: data.suggestedQuery,
+          isCorrected: data.isCorrected ?? false,
+          results: data.results ?? [],
+          txHash: null,
+          paidAmount: null,
+          status: 'complete',
+          step: 6,
+          durationMs: Date.now() - t0,
+          suggestions: data.suggestions ?? [],
+        })
+      }
 
-            console.log(
-              "✅ Freighter signed. Type:",
-              typeof result.signedAuthEntry,
-            );
+      // Flow step 2 — parse the PAYMENT-REQUIRED header
+      advance(2)
+      console.log('💰 402 received, parsing payment requirements...')
+      const paymentRequired = httpClient.getPaymentRequiredResponse(
+        (name) => firstRes.headers.get(name)
+      )
+      console.log('💰 Payment requirements:', paymentRequired)
 
-            const raw = result.signedAuthEntry;
-            const signedAuthEntry =
-              typeof raw === "string"
-                ? raw
-                : Buffer.from(raw as unknown as Uint8Array).toString("base64");
+      // Flow step 3 — createPaymentPayload() triggers the Freighter popup (signs auth entry)
+      advance(3)
+      console.log('🔐 Triggering Freighter popup via createPaymentPayload...')
+      const paymentPayload = await client.createPaymentPayload(paymentRequired)
+      console.log('✅ Freighter approved, payload created')
 
-            console.log(
-              "✅ signedAuthEntry base64 length:",
-              signedAuthEntry.length,
-            );
+      const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload)
+      console.log('✅ Payment headers encoded')
 
-            return { signedAuthEntry, signerAddress: walletAddress };
-          },
-        };
+      // Flow step 4 — retry with X-PAYMENT header
+      advance(4)
+      console.log('🔄 Retrying with payment...')
+      const paidResPromise = fetch(`${SERVER_URL}/search?${params}`, {
+        headers: paymentHeaders,
+      })
 
-        // Step 3 — build the x402 client with correct .register() chain
-        const client = new x402Client().register(
-          "stellar:*",
-          new ExactStellarScheme(signer, { url: SOROBAN_RPC_URL }),
-        );
-        const httpClient = new x402HTTPClient(client);
-        console.log("✅ x402 client built");
+      // Flow step 5 — facilitator settles on Stellar while the retry is in flight
+      advance(5)
+      const paidRes = await paidResPromise
+      console.log('📡 Paid response status:', paidRes.status)
 
-        // Flow step 1 — initial request, expect 402
-        advance(1);
-        console.log("🚀 Initial request:", `${SERVER_URL}/search?${params}`);
-        const firstRes = await fetch(`${SERVER_URL}/search?${params}`);
-        console.log("📡 Status:", firstRes.status);
-
-        if (firstRes.status !== 402) {
-          if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`);
-          const data = (await firstRes.json()) as SearchResponse;
-          return setSession({
-            query,
-            results: data.results ?? [],
-            txHash: null,
-            paidAmount: null,
-            status: "complete",
-            step: 6,
-            durationMs: Date.now() - t0,
-            suggestions: data.suggestions ?? [],
-          });
-        }
+      if (!paidRes.ok) {
+        const text = await paidRes.text()
+        throw new Error(`Payment failed: server returned ${paidRes.status} — ${text}`)
+      }
 
         // Flow step 2 — parse the PAYMENT-REQUIRED header
         advance(2);
@@ -239,32 +245,32 @@ export function useSearch(walletAddress: string | null = null) {
           );
         }
 
-        const data = (await paidRes.json()) as SearchResponse;
-        console.log("✅ Search complete!");
+      // Flow step 6 — result received and rendered
+      setSession({
+        query:        data.executedQuery ?? data.query ?? query,
+        originalQuery: data.originalQuery ?? query,
+        executedQuery: data.executedQuery ?? data.query ?? query,
+        suggestedQuery: data.suggestedQuery,
+        isCorrected:  data.isCorrected ?? false,
+        results:      data.results    ?? [],
+        txHash:       data.txHash     ?? null,
+        paidAmount:   data.paidAmount ?? null,
+        status:       'complete',
+        step:         6,
+        durationMs:   Date.now() - t0,
+        suggestions:  data.suggestions ?? [],
+      })
 
-        // Flow step 6 — result received and rendered
-        setSession({
-          query,
-          results: data.results ?? [],
-          txHash: data.txHash ?? null,
-          paidAmount: data.paidAmount ?? null,
-          status: "complete",
-          step: 6,
-          durationMs: Date.now() - t0,
-          suggestions: data.suggestions ?? [],
-        });
-
-        if (data.txHash) {
-          const settledTxHash = data.txHash;
-          toast.success(`Payment settled: ${data.paidAmount || "0.001"} USDC`, {
-            description: "View transaction on Stellar network",
-            action: {
-              label: "Explorer",
-              onClick: () =>
-                window.open(explorerTxUrl(settledTxHash), "_blank"),
-            },
-          });
-        }
+      if (data.txHash) {
+        const settledTxHash = data.txHash
+        toast.success(`Payment settled: ${data.paidAmount || '0.001'} USDC`, {
+          description: 'View transaction on Stellar network',
+          action: {
+            label: 'Explorer',
+            onClick: () => window.open(explorerTxUrl(settledTxHash), '_blank')
+          }
+        })
+      }
 
         // Persist receipt
         if (data.txHash) {
@@ -309,14 +315,18 @@ export function useSearch(walletAddress: string | null = null) {
 
   const reset = useCallback(() => {
     setSession({
-      query: "",
+      query: '',
+      originalQuery: '',
+      executedQuery: '',
+      suggestedQuery: undefined,
+      isCorrected: false,
       results: [],
       txHash: null,
       paidAmount: null,
-      status: "idle",
+      status: 'idle',
       suggestions: [],
-    });
-  }, []);
+    })
+  }, [])
 
-  return { session, search, reset };
+  return { session, search, reset }
 }

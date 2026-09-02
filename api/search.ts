@@ -1,37 +1,25 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import {
-  STELLAR_NETWORK,
-  USDC_CONTRACT,
-  AMOUNT_STROOPS,
-  AMOUNT_USDC,
-} from "../src/lib/constants";
-import { consumePaymentPayload } from "../src/lib/paymentIntegrity";
-import { normalizeOrganicResults } from "../src/lib/serperNormalizer";
-import type { SearchResponse, ApiErrorResponse } from "../src/types/index.js";
-
-function validateLocalization(
-  input: Record<string, string | undefined>,
-):
-  | { ok: true; values: { locale: string; country: string; language: string } }
-  | { ok: false; error: string } {
-  const locale = (input.locale ?? "en-US").trim() || "en-US";
-  const country = (input.country ?? "us").trim().toLowerCase() || "us";
-  const language = (input.language ?? "en").trim().toLowerCase() || "en";
-
-  if (!/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/.test(locale))
-    return { ok: false, error: "Invalid locale parameter" };
-  if (!/^[a-z]{2}$/.test(country))
-    return { ok: false, error: "Invalid country parameter" };
-  if (!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/.test(language))
-    return { ok: false, error: "Invalid language parameter" };
-
-  return { ok: true, values: { locale, country, language } };
-}
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { 
+  USDC_CONTRACT_MAINNET,
+  USDC_CONTRACT_TESTNET,
+} from '../src/lib/constants'
+import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 
 // ─── Config ───────────────────────────────────────────────────────────────
-const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!;
-const NETWORK = STELLAR_NETWORK as "stellar:testnet" | "stellar:mainnet";
-const SERPER_API_KEY = process.env.SERPER_API_KEY!;
+let config
+try {
+  config = readServerConfig()
+} catch (error) {
+  console.error(formatConfigurationError(error))
+  throw error
+}
+const RECEIVING_ADDRESS = config.receivingAddress
+const NETWORK           = config.stellarNetwork
+const SERPER_API_KEY    = config.serperApiKey
+const AMOUNT_STROOPS    = config.amountStroops
+const AMOUNT_USDC       = config.amountUsdc
+const USDC_CONTRACT     = NETWORK === 'stellar:mainnet' ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_TESTNET
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ─── CORS ─────────────────────────────────────────────────────────────────
@@ -188,15 +176,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const data: unknown = await serperRes.json();
     const latencyMs = Date.now() - t0;
 
-    const results = normalizeOrganicResults(data);
+    const results = normalizeOrganicResults(data)
+    const queryMeta = normalizeQueryMetadata(data, q.trim())
 
     const responseBody: SearchResponse = {
-      query: q.trim(),
+      query:          queryMeta.executedQuery,
+      originalQuery:  queryMeta.originalQuery,
+      executedQuery:  queryMeta.executedQuery,
+      suggestedQuery: queryMeta.suggestedQuery,
+      isCorrected:    queryMeta.isCorrected,
       results,
-      count: results.length,
-      network: NETWORK,
-      paidAmount: AMOUNT_USDC,
-      currency: "USDC",
+      count:          results.length,
+      network:        NETWORK,
+      paidAmount:     AMOUNT_USDC,
+      currency:       'USDC',
       txHash,
       latencyMs,
       locale: normalizedLocale,

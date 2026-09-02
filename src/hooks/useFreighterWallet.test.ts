@@ -1,5 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
+import { initI18n, loadNamespace } from '../i18n'
+
+// The hook's error messages route through i18next (#345) — in the real app
+// main.tsx initializes it and loads `errors` before anything renders;
+// mirror that here so those messages resolve instead of coming back
+// undefined.
+beforeAll(async () => {
+  await initI18n()
+  await loadNamespace('errors')
+})
 
 const { mockIsConnected, mockRequestAccess, mockGetAddress, mockGetNetwork } = vi.hoisted(() => ({
   mockIsConnected: vi.fn(),
@@ -112,6 +122,9 @@ describe('useFreighterWallet — wallet payment readiness', () => {
     expect(result.current.wallet.publicKey).toBeNull()
     expect(result.current.wallet.xlmBalance).toBe('0')
     expect(result.current.wallet.usdcBalance).toBe('0')
+    expect(result.current.wallet.accountExists).toBe(false)
+    expect(result.current.wallet.hasUsdcTrustline).toBe(false)
+    expect(result.current.wallet.accountStatus).toBe('unfunded')
     expect(result.current.transactions).toEqual([])
   })
 
@@ -125,7 +138,7 @@ describe('useFreighterWallet — wallet payment readiness', () => {
     expect(result.current.wallet.error).toMatch(/Freighter extension not found/)
   })
 
-  it('connect succeeds and fetches balances', async () => {
+  it('connect succeeds and fetches balances with funded account and trustline', async () => {
     mockIsConnected.mockResolvedValue({ isConnected: true })
     mockRequestAccess.mockResolvedValue({})
     mockGetAddress.mockResolvedValue({ address: TEST_ADDRESS, error: undefined })
@@ -149,6 +162,97 @@ describe('useFreighterWallet — wallet payment readiness', () => {
     expect(mockLoadAccount).toHaveBeenCalledWith(TEST_ADDRESS)
     await waitFor(() => expect(result.current.wallet.xlmBalance).toBe('42.1234'))
     await waitFor(() => expect(result.current.wallet.usdcBalance).toBe('1.500000'))
+    expect(result.current.wallet.accountExists).toBe(true)
+    expect(result.current.wallet.hasUsdcTrustline).toBe(true)
+    expect(result.current.wallet.accountStatus).toBe('funded')
+  })
+
+  it('handles unfunded account (404 / NotFoundError) cleanly as unfunded state', async () => {
+    mockIsConnected.mockResolvedValue({ isConnected: true })
+    mockRequestAccess.mockResolvedValue({})
+    mockGetAddress.mockResolvedValue({ address: TEST_ADDRESS })
+    mockGetNetwork.mockResolvedValue({ network: 'TESTNET' })
+    const notFoundErr = new Error('Resource Missing')
+    ;(notFoundErr as any).response = { status: 404 }
+    ;(notFoundErr as any).name = 'NotFoundError'
+    mockLoadAccount.mockRejectedValue(notFoundErr)
+
+    const { result } = renderHook(() => useFreighterWallet())
+    await act(async () => {
+      await result.current.connect()
+    })
+
+    await waitFor(() => expect(result.current.wallet.connected).toBe(true))
+    expect(result.current.wallet.accountExists).toBe(false)
+    expect(result.current.wallet.hasUsdcTrustline).toBe(false)
+    expect(result.current.wallet.accountStatus).toBe('unfunded')
+    expect(result.current.wallet.xlmBalance).toBe('0')
+    expect(result.current.wallet.usdcBalance).toBe('0')
+    expect(result.current.wallet.error).toBeNull()
+  })
+
+  it('detects funded account without USDC trustline (no_trustline state)', async () => {
+    mockIsConnected.mockResolvedValue({ isConnected: true })
+    mockRequestAccess.mockResolvedValue({})
+    mockGetAddress.mockResolvedValue({ address: TEST_ADDRESS })
+    mockGetNetwork.mockResolvedValue({ network: 'TESTNET' })
+    mockLoadAccount.mockResolvedValue({
+      balances: [
+        { asset_type: 'native', balance: '50.0000' },
+      ],
+    })
+
+    const { result } = renderHook(() => useFreighterWallet())
+    await act(async () => {
+      await result.current.connect()
+    })
+
+    await waitFor(() => expect(result.current.wallet.connected).toBe(true))
+    expect(result.current.wallet.accountExists).toBe(true)
+    expect(result.current.wallet.hasUsdcTrustline).toBe(false)
+    expect(result.current.wallet.accountStatus).toBe('no_trustline')
+    expect(result.current.wallet.xlmBalance).toBe('50.0000')
+    expect(result.current.wallet.usdcBalance).toBe('0')
+  })
+
+  it('detects funded account with USDC trustline but zero balance (zero_balance state)', async () => {
+    mockIsConnected.mockResolvedValue({ isConnected: true })
+    mockRequestAccess.mockResolvedValue({})
+    mockGetAddress.mockResolvedValue({ address: TEST_ADDRESS })
+    mockGetNetwork.mockResolvedValue({ network: 'TESTNET' })
+    mockLoadAccount.mockResolvedValue({
+      balances: [
+        { asset_type: 'native', balance: '25.0000' },
+        { asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5', balance: '0.0000000' },
+      ],
+    })
+
+    const { result } = renderHook(() => useFreighterWallet())
+    await act(async () => {
+      await result.current.connect()
+    })
+
+    await waitFor(() => expect(result.current.wallet.connected).toBe(true))
+    expect(result.current.wallet.accountExists).toBe(true)
+    expect(result.current.wallet.hasUsdcTrustline).toBe(true)
+    expect(result.current.wallet.accountStatus).toBe('zero_balance')
+    expect(result.current.wallet.xlmBalance).toBe('25.0000')
+    expect(result.current.wallet.usdcBalance).toBe('0.000000')
+  })
+
+  it('handles generic non-404 error during loadAccount', async () => {
+    mockIsConnected.mockResolvedValue({ isConnected: true })
+    mockRequestAccess.mockResolvedValue({})
+    mockGetAddress.mockResolvedValue({ address: TEST_ADDRESS })
+    mockGetNetwork.mockResolvedValue({ network: 'TESTNET' })
+    mockLoadAccount.mockRejectedValue(new Error('Internal Horizon 500 error'))
+
+    const { result } = renderHook(() => useFreighterWallet())
+    await act(async () => {
+      await result.current.connect()
+    })
+
+    await waitFor(() => expect(result.current.wallet.error).toBe('Internal Horizon 500 error'))
   })
 
   it('disconnect resets wallet state', async () => {
@@ -166,6 +270,9 @@ describe('useFreighterWallet — wallet payment readiness', () => {
     })
     expect(result.current.wallet.connected).toBe(false)
     expect(result.current.wallet.publicKey).toBeNull()
+    expect(result.current.wallet.accountExists).toBe(false)
+    expect(result.current.wallet.hasUsdcTrustline).toBe(false)
+    expect(result.current.wallet.accountStatus).toBe('unfunded')
     expect(result.current.transactions).toEqual([])
   })
 
