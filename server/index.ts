@@ -212,6 +212,25 @@ const validateFeatureFlag = (feature: keyof typeof featureFlags) => {
   }
 }
 
+// ─── Metrics Middleware ─────────────────────────────────────────────────────
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const t0 = Date.now()
+  metrics.setInFlight(1)
+
+  res.on('finish', () => {
+    const duration = Date.now() - t0
+    const route = req.route?.path || req.path
+    let errorType: string | undefined
+    if (res.statusCode >= 500) errorType = 'internal_error'
+    else if (res.statusCode === 400) errorType = 'validation'
+    else if (res.statusCode === 402) errorType = 'payment_error'
+    metrics.recordRequest(route, req.method, res.statusCode, duration, errorType)
+    metrics.setInFlight(-1)
+  })
+
+  next()
+})
+
 // ─── In-memory stats ──────────────────────────────────────────────────────
 const stats = {
   totalQueries: 0,
@@ -1565,6 +1584,37 @@ app.get('/ai/models', (_req: Request, res: Response) => {
     models: AVAILABLE_MODELS,
     default: DEFAULT_MODEL,
   })
+})
+
+// ─── GET /metrics ──────────────────────────────────────────────────────────
+const METRICS_TOKEN = process.env.METRICS_TOKEN
+
+function metricsAuth(req: Request, res: Response, next: NextFunction): void {
+  if (!METRICS_TOKEN) {
+    res.status(503).json({ error: 'Metrics endpoint not configured: METRICS_TOKEN not set' })
+    return
+  }
+  const authHeader = req.headers.authorization
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authorization required' })
+    return
+  }
+  const token = authHeader.slice(7)
+  if (token !== METRICS_TOKEN) {
+    res.status(403).json({ error: 'Invalid token' })
+    return
+  }
+  next()
+}
+
+app.get('/metrics', metricsAuth, (req: Request, res: Response) => {
+  const accept = req.headers.accept || ''
+  if (accept.includes('application/json')) {
+    res.json(metrics.toJSON())
+    return
+  }
+  res.setHeader('Content-Type', 'text/plain; version=0.0.4')
+  res.send(metrics.toPrometheus())
 })
 
 // ─── POST /ai/chat ────────────────────────────────────────────────────────
