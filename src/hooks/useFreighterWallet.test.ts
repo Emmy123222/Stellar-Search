@@ -44,7 +44,7 @@ const { mockLoadAccount, mockOperationsCall, mockTransactionsCall, mockSingleTra
   mockSingleTransactionCall: vi.fn(),
 }))
 
-vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
+vi.mock('@stellar/stellar-sdk', async (importOriginal: any) => {
   const orig: any = await importOriginal()
   class MockHorizonServer {
     loadAccount = mockLoadAccount
