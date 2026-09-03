@@ -466,8 +466,8 @@ export function useSearch(walletAddress: string | null = null) {
     const advance = (step: PaymentStep) =>
       setSession((prev: SearchSession) => ({ ...prev, step }))
 
-    try {
-      if (!walletAddress) throw new Error('Connect your Freighter wallet first.')
+      try {
+        if (!walletAddress) throw new Error('Connect your Freighter wallet first.')
 
       // Guard — run before any payment SDK loads or Freighter prompt opens.
       // A blocked search reserves nothing, so no release is needed.

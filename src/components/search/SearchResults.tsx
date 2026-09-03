@@ -294,8 +294,12 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
   if (isLoading) {
     return (
       <div className="space-y-3">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="animate-pulse rounded-xl p-4 space-y-3" style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        {[1, 2, 3].map(i => (
+          <div
+            key={i}
+            className="animate-pulse rounded-xl p-4 space-y-3"
+            style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}
+          >
             <div className="flex gap-2">
               <div className="w-16 h-4 bg-white/10 rounded-full"></div>
               <div className="w-12 h-4 bg-white/10 rounded-full"></div>
@@ -329,9 +333,10 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
     setSummaryError(null)
     setSummary('')
 
-    const snippets = results.slice(0, 5).map((r, i) =>
-      `${i + 1}. ${r.title} — ${r.url}\n   ${r.description}`
-    ).join('\n')
+    const snippets = results
+      .slice(0, 5)
+      .map((r, i) => `${i + 1}. ${r.title} — ${r.url}\n   ${r.description}`)
+      .join('\n')
 
     const prompt =
       `Here are search results for "${query}". ` +
@@ -531,7 +536,9 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
           >
             <div className="flex items-center gap-2">
               <Sparkles className="w-3 h-3 text-neon-cyan" />
-              <span className="font-display text-xs text-neon-cyan tracking-wider">AI SUMMARY · GROQ</span>
+              <span className="font-display text-xs text-neon-cyan tracking-wider">
+                AI SUMMARY · GROQ
+              </span>
               {summarizing && (
                 <span className="flex items-center gap-1 ml-auto">
                   {reducedMotion ? (
@@ -641,7 +648,9 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
                 </span>
                 <div className="flex items-center gap-1 text-neon-amber/60">
                   <Star className="w-3 h-3 fill-current" />
-                  <span className="font-display text-xs">{(r.relevanceScore * 100).toFixed(0)}%</span>
+                  <span className="font-display text-xs">
+                    {(r.relevanceScore * 100).toFixed(0)}%
+                  </span>
                 </div>
                 {r.publishedAt && (
                   <div className="flex items-center gap-1 text-white/50">

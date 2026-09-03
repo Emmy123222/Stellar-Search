@@ -7,13 +7,13 @@ interface Props {
 }
 
 const getTickerItems = () => [
-  ['NETWORK',    IS_MAINNET ? 'STELLAR MAINNET' : 'STELLAR TESTNET'],
-  ['PROTOCOL',   'x402'],
-  ['PRICE',      `${AMOUNT_USDC} USDC / QUERY`],
+  ['NETWORK', IS_MAINNET ? 'STELLAR MAINNET' : 'STELLAR TESTNET'],
+  ['PROTOCOL', 'x402'],
+  ['PRICE', `${AMOUNT_USDC} USDC / QUERY`],
   ['SETTLEMENT', '~5 SECONDS'],
-  ['SEARCH',     'SERPER.DEV'],
-  ['AI',         'GROQ LLAMA 3'],
-  ['WALLET',     'FREIGHTER'],
+  ['SEARCH', 'SERPER.DEV'],
+  ['AI', 'GROQ LLAMA 3'],
+  ['WALLET', 'FREIGHTER'],
 ]
 
 function TickerItem({ item: [k, v] }: { item: string[] }) {

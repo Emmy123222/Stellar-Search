@@ -228,10 +228,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const responseBody: SearchResponse = {
       query:      cleanQ,
       results,
-      count:      results.length,
-      network:    NETWORK,
+      count: results.length,
+      network: NETWORK,
       paidAmount: AMOUNT_USDC,
-      currency:   'USDC',
+      currency: 'USDC',
       txHash,
       latencyMs,
     };

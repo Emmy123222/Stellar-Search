@@ -2,14 +2,25 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Wallet, ChevronDown, ExternalLink,
-  Copy, CheckCheck, RefreshCw, LogOut, AlertCircle,
+  Wallet,
+  ChevronDown,
+  ExternalLink,
+  Copy,
+  CheckCheck,
+  RefreshCw,
+  LogOut,
+  AlertCircle,
 } from 'lucide-react'
 import type { WalletState, StellarTransaction, ResourceState } from '../../hooks/useFreighterWallet'
 import {
-  truncateAddress, truncateHash,
-  explorerAccountUrl, explorerTxUrl, formatTimeAgo,
-  IS_MAINNET, EXPECTED_WALLET_NETWORK, AMOUNT_USDC
+  truncateAddress,
+  truncateHash,
+  explorerAccountUrl,
+  explorerTxUrl,
+  formatTimeAgo,
+  IS_MAINNET,
+  EXPECTED_WALLET_NETWORK,
+  AMOUNT_USDC,
 } from '../../lib/stellar'
 import { useReducedMotion } from '../../hooks/useReducedMotion'
 
@@ -104,8 +115,8 @@ export function WalletPanel({
         aria-haspopup="dialog"
         aria-label={t('menuLabel')}
         className={`flex items-center gap-2 px-4 py-2 rounded-lg border font-display text-xs tracking-wider transition-all ${
-          isWrongNetwork 
-            ? 'border-red-500/50 bg-red-500/5 text-red-400' 
+          isWrongNetwork
+            ? 'border-red-500/50 bg-red-500/5 text-red-400'
             : 'border-neon-cyan/30 bg-neon-cyan/5 text-neon-cyan'
         }`}
         whileHover={{ scale: reducedMotion ? 1 : 1.02 }}
@@ -295,8 +306,10 @@ export function WalletPanel({
                 <div className="space-y-1.5 max-h-40 overflow-y-auto">
                   {transactions.map(tx => (
                     <div
-                      key={tx.id}
-                      className="flex items-center justify-between py-1.5 px-2 rounded bg-white/3 hover:bg-white/5 transition-colors"
+                      className={`w-1.5 h-1.5 rounded-full animate-pulse ${isWrongNetwork ? 'bg-red-500' : 'bg-neon-green'}`}
+                    />
+                    <span
+                      className={`font-display text-[10px] tracking-widest uppercase ${isWrongNetwork ? 'text-red-400' : 'text-neon-green/70'}`}
                     >
                       <div className="flex-1 min-w-0">
                         <p className="font-display text-xs text-white/65 capitalize">
@@ -323,8 +336,6 @@ export function WalletPanel({
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
 
             {/* Actions */}
             <div className="p-3 pt-0 flex gap-2">

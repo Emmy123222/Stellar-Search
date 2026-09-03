@@ -117,7 +117,7 @@ function buildSearchContextMessage(s: LastSearch): Message {
 }
 
 export function GroqAssistant({ lastSearch }: Props = {}) {
-  const [open, setOpen]         = useState(false)
+  const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([SYSTEM_INTRO])
   const [input, setInput]       = useState('')
   const [loading, setLoading]   = useState(false)

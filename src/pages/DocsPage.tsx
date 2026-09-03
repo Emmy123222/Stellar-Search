@@ -7,25 +7,33 @@ import { loadNamespace } from '../i18n'
 
 const getSteps = () => [
   {
-    num: '01', icon: Globe, color: '#00f5ff',
+    num: '01',
+    icon: Globe,
+    color: '#00f5ff',
     title: 'Agent hits /search endpoint',
-    desc:  'Any HTTP client sends GET /search?q=query. No API key needed — just a Stellar wallet with USDC.',
-    code:  'GET /search?q=AI+agent+payments',
+    desc: 'Any HTTP client sends GET /search?q=query. No API key needed — just a Stellar wallet with USDC.',
+    code: 'GET /search?q=AI+agent+payments',
   },
   {
-    num: '02', icon: Zap, color: '#ffb800',
+    num: '02',
+    icon: Zap,
+    color: '#ffb800',
     title: 'Server returns HTTP 402',
     desc:  'The @x402/express middleware responds with 402 and an empty JSON body — the payment specification travels base64-encoded in the PAYMENT-REQUIRED response header.',
     code:  `HTTP 402 · PAYMENT-REQUIRED: base64({"x402Version":2,"accepts":[{"amount":"${AMOUNT_STROOPS}","network":"${STELLAR_NETWORK}"}]})`,
   },
   {
-    num: '03', icon: Shield, color: '#7dd3fc',
+    num: '03',
+    icon: Shield,
+    color: '#7dd3fc',
     title: 'Sign Soroban auth entry',
     desc:  'The x402 client signs a Soroban authorization entry via Freighter — no private key exposure. The signed payload goes back on PAYMENT-SIGNATURE (x402 v2); X-PAYMENT is accepted for v1 clients.',
     code:  'signAuthEntry(authEntry) → PAYMENT-SIGNATURE: <base64-payload>',
   },
   {
-    num: '04', icon: Server, color: '#39ff14',
+    num: '04',
+    icon: Server,
+    color: '#39ff14',
     title: 'Settle on Stellar + get results',
     desc:  `OpenZeppelin facilitator verifies the signature, settles ${AMOUNT_USDC} USDC on-chain, and the server returns search results.`,
     code:  'GET /search + PAYMENT-SIGNATURE → 200 OK + results + X-PAYMENT-RESPONSE',
@@ -98,22 +106,31 @@ export function DocsPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 space-y-16">
-
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-        <span className="font-display text-xs text-neon-cyan/50 tracking-widest">DOCUMENTATION</span>
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="space-y-4"
+      >
+        <span className="font-display text-xs text-neon-cyan/50 tracking-widest">
+          DOCUMENTATION
+        </span>
         <h1 className="font-display text-3xl sm:text-4xl text-white">HOW IT WORKS</h1>
         <p className="text-white/55 text-lg max-w-2xl leading-relaxed">
         <span className="font-display text-xs text-neon-cyan/50 tracking-widest">{t('kicker', 'DOCUMENTATION')}</span>
         <h1 className="font-display text-3xl sm:text-4xl text-white">{t('title', 'HOW IT WORKS')}</h1>
         <p className="text-white/45 text-lg max-w-2xl leading-relaxed">
-          StellarSearch is a pay-per-query search API for autonomous AI agents. It uses the real x402 protocol
-          on Stellar — no mock data, no fake payments. Every search costs {AMOUNT_USDC} USDC settled on-chain.
+          StellarSearch is a pay-per-query search API for autonomous AI agents. It uses the real
+          x402 protocol on Stellar — no mock data, no fake payments. Every search costs{' '}
+          {AMOUNT_USDC} USDC settled on-chain.
         </p>
         <div className="flex flex-wrap gap-3 pt-1">
           {[
-            { label: 'x402 Docs',        href: 'https://developers.stellar.org/docs/build/agentic-payments/x402' },
-            { label: 'GitHub Repo',      href: 'https://github.com/stellar/x402-stellar' },
+            {
+              label: 'x402 Docs',
+              href: 'https://developers.stellar.org/docs/build/agentic-payments/x402',
+            },
+            { label: 'GitHub Repo', href: 'https://github.com/stellar/x402-stellar' },
             { label: `${networkLabel} Explorer`, href: STELLAR_EXPERT_URL },
           ].map(({ label, href }) => (
             <a
@@ -259,7 +276,10 @@ export function DocsPage() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={reducedMotion ? { duration: 0 } : { delay: i * 0.08 }}
                 className="flex gap-5 rounded-xl p-5"
-                style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}
+                style={{
+                  background: 'rgba(6,13,20,0.6)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}
               >
                 <div className="flex-shrink-0 flex flex-col items-center gap-2">
                   <div
@@ -277,7 +297,10 @@ export function DocsPage() {
                   </div>
                   <p className="text-white/55 text-sm leading-relaxed mb-3">{step.desc}</p>
                   <div className="py-2 px-3 rounded-lg bg-black/30 border border-white/5">
-                    <code className="font-mono text-xs break-all" style={{ color: 'rgba(0,245,255,0.6)' }}>
+                    <code
+                      className="font-mono text-xs break-all"
+                      style={{ color: 'rgba(0,245,255,0.6)' }}
+                    >
                       {step.code}
                     </code>
                   </div>
@@ -410,7 +433,10 @@ export function DocsPage() {
           <span className="font-display text-xs text-neon-cyan/55 tracking-widest">REAL STACK — NO MOCKS</span>
           <h2 className="font-display text-2xl text-white mt-1">Technology used</h2>
         </div>
-        <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{ border: '1px solid rgba(255,255,255,0.07)' }}
+        >
           {STACK.map(({ label, value, href }, i) => (
             <motion.div
               key={label}
@@ -462,11 +488,24 @@ export function DocsPage() {
               real Stellar testnet transactions, real search results, and real Groq AI — zero mock data.
             </p>
             <div className="flex flex-wrap gap-2 pt-1">
-              {['x402 Protocol', 'Soroban Auth', 'USDC Micropayments', 'Freighter Wallet', 'Serper.dev', 'Groq AI', 'MCP Server'].map(tag => (
+              {[
+                'x402 Protocol',
+                'Soroban Auth',
+                'USDC Micropayments',
+                'Freighter Wallet',
+                'Serper.dev',
+                'Groq AI',
+                'MCP Server',
+              ].map(tag => (
                 <span
                   key={tag}
                   className="px-2 py-0.5 rounded-full font-display"
-                  style={{ background: 'rgba(0,245,255,0.08)', color: 'rgba(0,245,255,0.6)', border: '1px solid rgba(0,245,255,0.15)', fontSize: '10px' }}
+                  style={{
+                    background: 'rgba(0,245,255,0.08)',
+                    color: 'rgba(0,245,255,0.6)',
+                    border: '1px solid rgba(0,245,255,0.15)',
+                    fontSize: '10px',
+                  }}
                 >
                   {tag}
                 </span>

@@ -50,15 +50,15 @@ Serper.dev  ──── real Google results ────►  Browser
 
 **Core packages:**
 
-| Package | Role |
-|---|---|
-| `@x402/express` | HTTP 402 payment middleware |
-| `@x402/stellar` | Stellar-specific x402 scheme |
-| `@x402/fetch` | Client-side x402 fetch wrapper |
-| `@stellar/freighter-api` | Browser wallet signing |
-| `@stellar/stellar-sdk` | Horizon API client |
-| `groq-sdk` | Groq AI (Llama 3.3 70B) |
-| `serper.dev` | Real-time Google search results |
+| Package                  | Role                            |
+| ------------------------ | ------------------------------- |
+| `@x402/express`          | HTTP 402 payment middleware     |
+| `@x402/stellar`          | Stellar-specific x402 scheme    |
+| `@x402/fetch`            | Client-side x402 fetch wrapper  |
+| `@stellar/freighter-api` | Browser wallet signing          |
+| `@stellar/stellar-sdk`   | Horizon API client              |
+| `groq-sdk`               | Groq AI (Llama 3.3 70B)         |
+| `serper.dev`             | Real-time Google search results |
 
 ---
 
@@ -203,6 +203,7 @@ Dependabot is configured in `.github/dependabot.yml` to automatically propose we
 ## Submitting a Pull Request
 
 1. Push your branch:
+
    ```bash
    git push origin fix/freighter-rejection-loop
    ```
@@ -364,12 +365,12 @@ Please keep reviews constructive and update the PR when feedback is addressed.
 
 ### PR size guidelines
 
-| Change type | Ideal PR size |
-|---|---|
-| Bug fix | < 100 lines changed |
-| Small feature | < 300 lines changed |
-| Large feature | Break into logical sub-PRs |
-| Refactor | One file / one abstraction at a time |
+| Change type   | Ideal PR size                        |
+| ------------- | ------------------------------------ |
+| Bug fix       | < 100 lines changed                  |
+| Small feature | < 300 lines changed                  |
+| Large feature | Break into logical sub-PRs           |
+| Refactor      | One file / one abstraction at a time |
 
 ---
 
@@ -562,13 +563,13 @@ node scripts/check-vulnerabilities.mjs osv-results.json  # enforce the gate
 
 ### x402 / Freighter
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| "expected 64 got 9" | `Buffer.toString()` used instead of base64 | Use `Buffer.from(raw).toString('base64')` |
-| 402 loop never resolves | Freighter on wrong network | Switch to Testnet in Freighter settings |
-| "Failed to parse payment requirements" | Server returning malformed header | Check server logs; decode the `PAYMENT-REQUIRED` header with `base64 -d \| jq .` |
-| Freighter popup never appears | `createPaymentPayload()` not awaited | Ensure `await` before the call |
-| Balance not updating after payment | `refresh()` not called post-search | Call `refresh()` in the `useSearch` success path |
+| Symptom                                | Likely cause                               | Fix                                                                              |
+| -------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------- |
+| "expected 64 got 9"                    | `Buffer.toString()` used instead of base64 | Use `Buffer.from(raw).toString('base64')`                                        |
+| 402 loop never resolves                | Freighter on wrong network                 | Switch to Testnet in Freighter settings                                          |
+| "Failed to parse payment requirements" | Server returning malformed header          | Check server logs; decode the `PAYMENT-REQUIRED` header with `base64 -d \| jq .` |
+| Freighter popup never appears          | `createPaymentPayload()` not awaited       | Ensure `await` before the call                                                   |
+| Balance not updating after payment     | `refresh()` not called post-search         | Call `refresh()` in the `useSearch` success path                                 |
 
 ### Vite / Build
 
@@ -581,11 +582,11 @@ node scripts/check-vulnerabilities.mjs osv-results.json  # enforce the gate
 
 ### Stellar / Horizon
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Account not found | Account not funded on testnet | Fund it at Stellar Lab |
-| USDC balance always 0 | Wrong USDC issuer address | Use `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` for testnet |
-| Transactions not loading | Horizon rate-limit | Add a 500ms delay between calls; use pagination |
+| Symptom                  | Likely cause                  | Fix                                                                        |
+| ------------------------ | ----------------------------- | -------------------------------------------------------------------------- |
+| Account not found        | Account not funded on testnet | Fund it at Stellar Lab                                                     |
+| USDC balance always 0    | Wrong USDC issuer address     | Use `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` for testnet |
+| Transactions not loading | Horizon rate-limit            | Add a 500ms delay between calls; use pagination                            |
 
 ---
 
@@ -604,4 +605,4 @@ All contributors are welcome to add themselves to a `CONTRIBUTORS` list. When yo
 
 ---
 
-*StellarSearch — Stellar Hackathon 2026 · Agents on Stellar*
+_StellarSearch — Stellar Hackathon 2026 · Agents on Stellar_

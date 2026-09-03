@@ -89,19 +89,23 @@ echo "eyJ4NDAyVmVyc2lvbiI6Miw..." | base64 -d | jq .
 ```
 
 3. **Verify required fields:**
-The decoded JSON must have:
+   The decoded JSON must have:
+
 ```json
 {
-  "accepts": [{
-    "scheme": "exact",
-    "network": "stellar:testnet", 
-    "amount": "10000",
-    "payTo": "GXXX..."
-  }]
+  "accepts": [
+    {
+      "scheme": "exact",
+      "network": "stellar:testnet",
+      "amount": "10000",
+      "payTo": "GXXX..."
+    }
+  ]
 }
 ```
 
 **Common Fixes:**
+
 - Server not base64 encoding the header
 - Missing `scheme` or `network` fields
 - Malformed JSON in payment requirements
@@ -122,6 +126,7 @@ await window.freighter.getNetworkDetails()
 ```
 
 **Fix**: Switch Freighter to Testnet:
+
 1. Open Freighter extension
 2. Click Settings (gear icon)
 3. Select "Testnet" network
@@ -136,6 +141,7 @@ await window.freighter.isConnected()
 ```
 
 **Fix**: Connect wallet:
+
 1. Click "CONNECT FREIGHTER TO SEARCH" button
 2. Approve connection in Freighter popup
 3. Ensure wallet is unlocked
@@ -143,6 +149,7 @@ await window.freighter.isConnected()
 ### 3. ✅ USDC Balance
 
 Check you have testnet USDC:
+
 ```javascript
 // Get your address:
 const addr = await window.freighter.getAddress()
@@ -152,6 +159,7 @@ console.log('Address:', addr.address)
 ```
 
 **Fix**: Get testnet USDC:
+
 1. Go to [Stellar Laboratory](https://laboratory.stellar.org/#account-creator?network=test)
 2. Create/fund testnet account
 3. Add USDC trustline
@@ -160,11 +168,13 @@ console.log('Address:', addr.address)
 ### 4. ✅ API Keys Configuration
 
 Check server health:
+
 ```bash
 curl http://localhost:3001/health
 ```
 
 Should show:
+
 ```json
 {
   "serperApiConfigured": true,
@@ -174,6 +184,7 @@ Should show:
 ```
 
 **Fix**: Add missing API keys to `.env`:
+
 ```bash
 SERPER_API_KEY=your_serper_api_key_here
 OPENZEPPELIN_API_KEY=your_openzeppelin_api_key_here
@@ -183,18 +194,22 @@ GROQ_API_KEY=your_groq_api_key_here
 ## Error Messages & Solutions
 
 ### "Freighter must be on Testnet"
+
 - **Cause**: Wallet is on wrong network
 - **Fix**: Switch Freighter to Testnet in extension settings
 
 ### "Payment failed: [error]. Please ensure Freighter is unlocked"
+
 - **Cause**: Wallet locked or user rejected transaction
 - **Fix**: Unlock Freighter and approve the payment
 
 ### "Wallet not connected"
+
 - **Cause**: Freighter not connected to the site
 - **Fix**: Click connect button and approve in Freighter
 
 ### "Failed to get network details"
+
 - **Cause**: Freighter extension not installed or not working
 - **Fix**: Install Freighter from [freighter.app](https://freighter.app)
 
@@ -208,11 +223,11 @@ async function debugFreighter() {
   const network = await window.freighter.getNetworkDetails()
   const connected = await window.freighter.isConnected()
   const address = await window.freighter.getAddress()
-  
+
   console.log('Network:', network.network)
   console.log('Connected:', connected.isConnected)
   console.log('Address:', address.address)
-  
+
   return { network: network.network, connected: connected.isConnected }
 }
 
@@ -256,10 +271,12 @@ Save as `test-x402.html` and open in browser:
 ```html
 <!DOCTYPE html>
 <html>
-<head><title>x402 Test</title></head>
-<body>
-<button onclick="testX402()">Test x402 Flow</button>
-<div id="result"></div>
+  <head>
+    <title>x402 Test</title>
+  </head>
+  <body>
+    <button onclick="testX402()">Test x402 Flow</button>
+    <div id="result"></div>
 
 <script>
 async function testX402() {

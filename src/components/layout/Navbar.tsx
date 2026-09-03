@@ -47,7 +47,6 @@ export function Navbar({
       style={{ background: 'rgba(2,4,8,0.85)', backdropFilter: 'blur(16px)' }}
     >
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-5">
-
         {/* Logo */}
         <button
           onClick={() => onNavigate('search')}
@@ -65,10 +64,10 @@ export function Navbar({
         </button>
 
         {/* Network Badge */}
-        <div 
+        <div
           className={`hidden md:flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-display tracking-widest ${
-            IS_MAINNET 
-              ? 'bg-neon-amber/10 border-neon-amber/30 text-neon-amber' 
+            IS_MAINNET
+              ? 'bg-neon-amber/10 border-neon-amber/30 text-neon-amber'
               : 'bg-neon-cyan/10 border-neon-cyan/30 text-neon-cyan'
           }`}
         >
@@ -82,7 +81,7 @@ export function Navbar({
             <button
               key={id}
               onClick={() => onNavigate(id)}
-              aria-current={page === id ? "page" : undefined}
+              aria-current={page === id ? 'page' : undefined}
               className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-display text-xs tracking-wider transition-colors"
               style={{ color: page === id ? '#00f5ff' : 'rgba(255,255,255,0.5)' }}
             >

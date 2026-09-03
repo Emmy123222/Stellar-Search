@@ -31,7 +31,7 @@ const logger = winston.createLogger({
       ),
     }),
   ],
-});
+})
 
 /**
  * Enhanced logger with request ID support

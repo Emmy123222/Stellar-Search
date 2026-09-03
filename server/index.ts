@@ -562,11 +562,11 @@ app.use((req, res, next) => {
         ip: privacySafeIp(req.ip),
         query: privacySafeQuery(truncatedQ),
         paymentStatus: paymentStatus,
-      });
-    });
+      })
+    })
   }
-  next();
-});
+  next()
+})
 
 // ─── Shared parameter validation for paid routes (#188) ──────────────────
 // Registered BEFORE the x402 middleware on purpose: a malformed `count` or
