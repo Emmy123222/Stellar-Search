@@ -226,6 +226,18 @@ describe('useFreighterWallet — wallet payment readiness', () => {
     expect(result.current.wallet.accountStatus).toBe('funded')
   })
 
+  it('updates the connected wallet network when Freighter reports a change', async () => {
+    mockIsConnected.mockResolvedValue({ isConnected: true })
+    mockRequestAccess.mockResolvedValue({})
+    const { result } = renderHook(() => useFreighterWallet())
+    await act(async () => { await result.current.connect() })
+
+    expect(mockWatch).toHaveBeenCalledTimes(1)
+    act(() => { triggerWatcher({ address: TEST_ADDRESS, network: 'PUBLIC' }) })
+
+    await waitFor(() => expect(result.current.wallet.network).toBe('PUBLIC'))
+  })
+
   it('handles unfunded account (404 / NotFoundError) cleanly as unfunded state', async () => {
     mockIsConnected.mockResolvedValue({ isConnected: true })
     mockRequestAccess.mockResolvedValue({})

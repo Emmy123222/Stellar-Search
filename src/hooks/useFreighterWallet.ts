@@ -10,6 +10,7 @@ import {
   requestAccess,
   getAddress,
   getNetwork,
+  WatchWalletChanges,
 } from '@stellar/freighter-api'
 import { Horizon } from '@stellar/stellar-sdk'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
@@ -235,6 +236,28 @@ export function useFreighterWallet() {
     }
     check()
   }, [fetchBalances, fetchTransactions])
+
+  // Freighter only reports the selected network during a request unless we
+  // explicitly watch for changes. Keep the UI in sync so callers can stop a
+  // payment flow before a signature from the old network is submitted.
+  useEffect(() => {
+    if (typeof window === 'undefined' || window.__STELLAR_SEARCH_E2E_WALLET__) {
+      return
+    }
+
+    const watcher = new WatchWalletChanges()
+    watcher.watch(({ network }) => {
+      if (!network) return
+
+      setWallet(prev => (
+        prev.connected && prev.network !== network
+          ? { ...prev, network, error: null }
+          : prev
+      ))
+    })
+
+    return () => watcher.stop()
+  }, [])
 
   return {
     wallet,
