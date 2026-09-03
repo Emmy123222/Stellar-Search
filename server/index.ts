@@ -55,6 +55,7 @@ import type {
 } from '../src/types/index.js'
 import { buildReconciliationRecord, type ReconciliationRoute } from '../src/lib/reconciliation.js'
 import { appendReconciliationRecord } from './reconciliationStore.js'
+import { ConcurrencyGate } from './concurrency.js'
 
 dotenv.config()
 
@@ -67,6 +68,7 @@ try {
 }
 
 const app  = express()
+const providerGate = new ConcurrencyGate(Number(process.env.PROVIDER_CONCURRENCY_LIMIT ?? 16))
 const PORT = config.port
 const RATE_LIMIT_PER_MINUTE = config.rateLimitPerMinute
 
@@ -82,6 +84,18 @@ const limiter = rateLimit({
 })
 
 // ─── Security Headers & Middleware ────────────────────────────────────────
+app.use(async (_req, res, next) => {
+  try {
+    const release = await providerGate.acquire(Number(process.env.PROVIDER_QUEUE_TIMEOUT_MS ?? 10000))
+    let released = false
+    const releaseOnce = () => { if (!released) { released = true; release() } }
+    res.on('finish', releaseOnce)
+    res.on('close', releaseOnce)
+    next()
+  } catch {
+    res.status(503).json({ error: 'Provider capacity is temporarily full; please retry shortly.' })
+  }
+})
 app.use(
   helmet({
     contentSecurityPolicy: {
