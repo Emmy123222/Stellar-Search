@@ -9,6 +9,8 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     description: 'Pay-per-query web search for AI agents via x402 on Stellar',
     endpoints: {
       'GET /api/search?q=<query>': '0.001 USDC via x402',
+      'GET /api/images?q=<query>': '0.001 USDC via x402',
+      'GET /api/news?q=<query>': '0.001 USDC via x402',
       'POST /api/ai/chat': 'Groq AI — free',
       'GET /api/health': 'Live server stats',
       'GET /.well-known/x402': 'Machine-readable x402 resource and pricing discovery metadata',
