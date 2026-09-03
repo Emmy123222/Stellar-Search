@@ -223,16 +223,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const queryMeta = normalizeQueryMetadata(data, cleanQ)
 
     const responseBody: SearchResponse = {
-      query:          queryMeta.executedQuery,
-      originalQuery:  queryMeta.originalQuery,
-      executedQuery:  queryMeta.executedQuery,
-      suggestedQuery: queryMeta.suggestedQuery,
-      isCorrected:    queryMeta.isCorrected,
+      query:      q.trim(),
       results,
-      count:          results.length,
-      network:        NETWORK,
-      paidAmount:     AMOUNT_USDC,
-      currency:       'USDC',
+      count:      results.length,
+      network:    NETWORK,
+      paidAmount: AMOUNT_USDC,
+      currency:   'USDC',
       txHash,
       latencyMs,
     };

@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 
+// Use vi.hoisted to ensure env is set before vi.mock hoisting triggers module loads
+vi.hoisted(() => {
+  process.env.STELLAR_RECEIVING_ADDRESS = 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3'
+  process.env.SERPER_API_KEY = 'test-serper-key'
+  process.env.GROQ_API_KEY = 'gsk_test'
+})
+
 vi.mock('@x402/express', () => ({
   paymentMiddlewareFromConfig: () => (_req: any, _res: any, next: any) => next(),
 }))
@@ -15,10 +22,6 @@ vi.mock('groq-sdk', () => ({
 vi.mock('./logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
-
-process.env.STELLAR_RECEIVING_ADDRESS = 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3'
-process.env.SERPER_API_KEY = 'test-serper-key'
-process.env.GROQ_API_KEY = 'gsk_test'
 
 import { validateQuery, MAX_QUERY_LENGTH } from './index'
 

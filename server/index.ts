@@ -40,7 +40,6 @@ import {
   normalizeOrganicResults,
   normalizeImageResults,
   normalizeNewsResults,
-  normalizeQueryMetadata,
 } from '../src/lib/serperNormalizer.js'
 import type {
   SearchResponse,
@@ -62,14 +61,6 @@ import { appendReconciliationRecord } from './reconciliationStore.js'
 import { ConcurrencyGate } from './concurrency.js'
 
 dotenv.config();
-
-let config
-try {
-  config = readServerConfig()
-} catch (error) {
-  console.error(formatConfigurationError(error))
-  throw error
-}
 
 const app  = express()
 const providerGate = new ConcurrencyGate(Number(process.env.PROVIDER_CONCURRENCY_LIMIT ?? 16))
@@ -387,7 +378,7 @@ if (!SERPER_API_KEY)    console.warn('⚠  SERPER_API_KEY not set')
 if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
-const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
+const groq = new Groq({ apiKey: GROQ_API_KEY })
 
 // ─── x402 payment guard on /search ───────────────────────────────────────
 // paymentMiddlewareFromConfig is the recommended API per official Stellar docs.
@@ -546,9 +537,6 @@ app.use((req, res, next) => {
       if (!consumption.ok) {
         return res.status(402).json({ error: consumption.error });
       }
-      // Captured for reconciliation — links this request to the settled
-      // payment identifier without ever touching query content.
-      ;(req as any).paymentId = consumption.paymentId
     }
   }
   next();
@@ -588,10 +576,16 @@ export { validateQuery, MAX_QUERY_LENGTH }
 
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {
-  const requestId = randomUUID()
-  let providerDelivered = false
-  let resultCount = 0
-  let txHash: string | null = null
+  const { q, count = '5', freshness } = req.query as Record<string, string>
+
+  const v = validateQuery(q)
+  if (!v.ok) {
+    const errorBody: ApiErrorResponse = { error: v.error }
+    return res.status(400).json(errorBody)
+  }
+  const cleanQ = v.cleanQ
+
+  const t0 = Date.now()
 
   try {
     const { q } = req.query as Record<string, string>
@@ -642,10 +636,9 @@ app.get('/search', async (req: Request, res: Response) => {
     if (stats.latencies.length > 200) stats.latencies.shift();
 
     const results = normalizeOrganicResults(data)
-    const queryMeta = normalizeQueryMetadata(data, cleanQ)
 
     // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
-    txHash = (req.headers['x-payment-response'] as string) || null
+    const txHash = (req.headers['x-payment-response'] as string) || null
 
     // ── Optional AI suggestions via Groq ──────────────────────────────────
     let suggestions: string[] = [];
@@ -665,7 +658,7 @@ app.get('/search', async (req: Request, res: Response) => {
             },
             {
               role: 'user',
-              content: `Query: "${queryMeta.executedQuery}"\nTop results: ${topSnippets}`,
+              content: `Query: "${cleanQ}"\nTop results: ${topSnippets}`,
             },
           ],
           max_tokens: 120,
@@ -691,11 +684,7 @@ app.get('/search', async (req: Request, res: Response) => {
     }
 
     const responseBody: SearchResponse = {
-      query: queryMeta.executedQuery,
-      originalQuery: queryMeta.originalQuery,
-      executedQuery: queryMeta.executedQuery,
-      suggestedQuery: queryMeta.suggestedQuery,
-      isCorrected: queryMeta.isCorrected,
+      query: cleanQ,
       results,
       count: results.length,
       network: NETWORK,
@@ -709,15 +698,6 @@ app.get('/search', async (req: Request, res: Response) => {
       suggestions,
     };
 
-    // Record opted-in receipt (cap 50, in-memory)
-    try {
-      addRecentReceipt({ id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
-    } catch {
-      // ignore receipt recording failure
-    }
-
-    providerDelivered = true
-    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     if (err instanceof CircuitOpenError) {
@@ -729,17 +709,21 @@ app.get('/search', async (req: Request, res: Response) => {
     console.error('[search error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.' }
     return res.status(500).json(errorBody)
-  } finally {
-    recordReconciliation({ req, route: '/search', requestId, providerDelivered, resultCount, txHash })
   }
 });
 
 // ─── GET /images ──────────────────────────────────────────────────────────
 app.get('/images', async (req: Request, res: Response) => {
-  const requestId = randomUUID()
-  let providerDelivered = false
-  let resultCount = 0
-  let txHash: string | null = null
+  const { q, count = '10' } = req.query as Record<string, string>
+
+  const v = validateQuery(q)
+  if (!v.ok) {
+    const errorBody: ApiErrorResponse = { error: v.error }
+    return res.status(400).json(errorBody)
+  }
+  const cleanQ = v.cleanQ
+
+  const t0 = Date.now()
 
   try {
     const { q } = req.query as Record<string, string>
@@ -787,7 +771,7 @@ app.get('/images', async (req: Request, res: Response) => {
 
     const results = normalizeImageResults(data);
 
-    txHash = (req.headers['x-payment-response'] as string) || null
+    const txHash = (req.headers['x-payment-response'] as string) || null
 
     const responseBody: ImageSearchResponse = {
       query: cleanQ,
@@ -800,8 +784,6 @@ app.get('/images', async (req: Request, res: Response) => {
       latencyMs,
     };
 
-    providerDelivered = true
-    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     if (err instanceof CircuitOpenError) {
@@ -813,17 +795,21 @@ app.get('/images', async (req: Request, res: Response) => {
     console.error('[images error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.' }
     return res.status(500).json(errorBody)
-  } finally {
-    recordReconciliation({ req, route: '/images', requestId, providerDelivered, resultCount, txHash })
   }
 });
 
 // ─── GET /news ────────────────────────────────────────────────────────────
 app.get('/news', async (req: Request, res: Response) => {
-  const requestId = randomUUID()
-  let providerDelivered = false
-  let resultCount = 0
-  let txHash: string | null = null
+  const { q, count = '10', freshness } = req.query as Record<string, string>
+
+  const v = validateQuery(q)
+  if (!v.ok) {
+    const errorBody: ApiErrorResponse = { error: v.error }
+    return res.status(400).json(errorBody)
+  }
+  const cleanQ = v.cleanQ
+
+  const t0 = Date.now()
 
   try {
     const { q } = req.query as Record<string, string>
@@ -873,7 +859,7 @@ app.get('/news', async (req: Request, res: Response) => {
 
     const results = normalizeNewsResults(data);
 
-    txHash = (req.headers['x-payment-response'] as string) || null
+    const txHash = (req.headers['x-payment-response'] as string) || null
 
     const responseBody: NewsSearchResponse = {
       query: cleanQ,
@@ -886,8 +872,6 @@ app.get('/news', async (req: Request, res: Response) => {
       latencyMs,
     };
 
-    providerDelivered = true
-    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     if (err instanceof CircuitOpenError) {
@@ -899,8 +883,6 @@ app.get('/news', async (req: Request, res: Response) => {
     console.error('[news error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.' }
     return res.status(500).json(errorBody)
-  } finally {
-    recordReconciliation({ req, route: '/news', requestId, providerDelivered, resultCount, txHash })
   }
 });
 
@@ -1455,9 +1437,6 @@ app.get("/health", (_req: Request, res: Response) => {
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
 // (back-compat fallback for callers that don't support SSE).
 app.post('/ai/chat', async (req: Request, res: Response) => {
-  if (!groq) {
-    return res.status(503).json({ error: 'AI assistant is not configured.' })
-  }
   const { messages, model: requestedModel } = req.body as {
     messages: { role: "system" | "user" | "assistant"; content: string }[];
     model?: string;
