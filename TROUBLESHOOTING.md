@@ -198,6 +198,13 @@ When wallet is connected, the app shows a "Network Debugger" panel with real-tim
 7. **Server verifies payment** → OpenZeppelin facilitator settles USDC
 8. **Search results returned** → Serper.dev results displayed
 
+## Link Security & Safe Diagnostics
+
+### Result shows `[Blocked Link]` in UI or MCP response
+- **Why it occurs**: The upstream search result returned a URL with a non-http(s) scheme (e.g. `javascript:`, `data:`), a credential-bearing authority (e.g. `http://user:pass@host`), or a malformed format.
+- **Safety handling**: Blocked rows render as non-interactive `<div>` containers in the UI without `href` attributes, preventing malicious clicks while keeping title and snippet readable.
+- **Safe Diagnostics**: The UI header displays `SAFE DIAGNOSTICS: X SAFE, Y BLOCKED` reflecting the total count of safe vs blocked URLs.
+
 ## Still Having Issues?
 
 1. **Check browser console** for detailed error messages

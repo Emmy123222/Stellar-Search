@@ -1,7 +1,7 @@
 import { readBrowserConfig } from '../../lib/config'
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy, Bookmark } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy, ShieldAlert } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 import { useSavedResearch } from '../../hooks/useSavedResearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
@@ -395,6 +395,16 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
     }
   }
 
+  const safeDiagnostics = results.reduce(
+    (acc, r) => {
+      const v = validateAndNormalizeUrl(r.url)
+      if (!r.isBlocked && v.isValid) acc.safe++
+      else acc.blocked++
+      return acc
+    },
+    { safe: 0, blocked: 0 }
+  )
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
       {/* Quota error banner */}
@@ -663,29 +673,9 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
                 )}
               </div>
 
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <h3 className="text-white font-medium text-sm leading-snug group-hover:text-neon-cyan transition-colors">
-                  {r.title}
-                </h3>
-                {/* Save to research button — bookmarks this result with editable notes/tags (#305) */}
-                <button
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    toggleSaved(r, query)
-                  }}
-                  className="relative flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center transition-all hover:bg-white/10"
-                  style={{
-                    border: isSaved(query, r.id) ? '1px solid rgba(255,184,0,0.4)' : '1px solid rgba(255,255,255,0.1)',
-                    color: isSaved(query, r.id) ? '#ffb800' : 'rgba(255,255,255,0.4)',
-                  }}
-                  aria-label={isSaved(query, r.id) ? 'Remove from saved research' : 'Save to research'}
-                  aria-pressed={isSaved(query, r.id)}
-                  title={isSaved(query, r.id) ? 'Saved — click to remove' : 'Save to research'}
-                >
-                  <Bookmark className="w-3 h-3" fill={isSaved(query, r.id) ? 'currentColor' : 'none'} />
-                </button>
-              </div>
+              <h3 className={`font-medium text-sm leading-snug mb-1 transition-colors ${isRowBlocked ? 'text-white/60' : 'text-white group-hover:text-neon-cyan'}`}>
+                {r.title}
+              </h3>
 
               <div className="flex items-center gap-2 mb-2">
                 <p className="font-mono text-xs truncate" style={{ color: 'rgba(0,245,255,0.35)' }}>
@@ -775,18 +765,67 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
               </div>
             </div>
           </div>
+        )
 
-          <div className="mt-3 h-px bg-white/5 rounded-full overflow-hidden">
+        const cardStyle = {
+          background: isRowBlocked ? 'rgba(15,8,12,0.6)' : 'rgba(6,13,20,0.6)',
+          border: isRowBlocked ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(255,255,255,0.06)',
+          backdropFilter: 'blur(8px)',
+        }
+
+        if (isRowBlocked) {
+          return (
             <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${r.relevanceScore * 100}%` }}
-              transition={{ delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
-              className="h-full rounded-full"
-              style={{ background: 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))' }}
-            />
-          </div>
-        </motion.a>
-      ))}
+              key={r.id}
+              role="article"
+              aria-label={r.title}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.06 }}
+              className="block rounded-xl p-4 relative"
+              style={cardStyle}
+            >
+              {content}
+              <div className="mt-3 h-px bg-white/5 rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${r.relevanceScore * 100}%` }}
+                  transition={{ delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
+                  className="h-full rounded-full"
+                  style={{ background: 'linear-gradient(90deg, rgba(239,68,68,0.5), rgba(239,68,68,0.1))' }}
+                />
+              </div>
+            </motion.div>
+          )
+        }
+
+        return (
+          <motion.a
+            key={r.id}
+            href={safeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            role="article"
+            aria-label={r.title}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.06 }}
+            className="block group rounded-xl p-4 hover:border-neon-cyan/25 transition-all relative"
+            style={cardStyle}
+          >
+            {content}
+            <div className="mt-3 h-px bg-white/5 rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${r.relevanceScore * 100}%` }}
+                transition={{ delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
+                className="h-full rounded-full"
+                style={{ background: 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))' }}
+              />
+            </div>
+          </motion.a>
+        )
+      })}
     </motion.div>
   )
 }

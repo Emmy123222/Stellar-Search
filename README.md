@@ -676,7 +676,17 @@ stellar-search/
 ├── .env.example                      # Placeholders only — never real secrets
 ├── claude_mcp.json                   # Claude Desktop / Claude Code MCP registration
 └── README.md
-```
+---
+
+## Security, Privacy & Link Normalization
+
+StellarSearch strictly normalizes and validates all upstream result links across Express, Vercel, MCP, and Browser runtimes to prevent open redirects, XSS, and credential leaks:
+
+- **HTTP(S) Protocol Enforcement**: Only `http:` and `https:` schemes are permitted. Schemes like `javascript:`, `data:`, `file:`, `ftp:`, and `vbscript:` are rejected.
+- **Credential Stripping & Rejection**: Credential-bearing URLs (e.g. `http://user:pass@domain.com`) are flagged and blocked.
+- **Malformed URL Rejection**: Invalid URL strings and missing hostnames are rejected.
+- **Safe Diagnostics**: Responses and UI headers compute safe diagnostics metadata (`total`, `safe`, `blocked` counts).
+- **Non-Interactive Blocked Anchor Safety**: In the UI (`SearchResults.tsx`), blocked rows do NOT render interactive `<a>` anchor tags or clickable `href` navigation; instead, they render as static containers displaying a `[Blocked Link]` indicator.
 
 Tests live beside the code they cover as `*.test.ts` / `*.test.tsx`, so each
 runtime's suite stays with that runtime:

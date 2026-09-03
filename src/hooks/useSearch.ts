@@ -531,18 +531,9 @@ export function useSearch(walletAddress: string | null = null) {
         const data = (await firstRes.json()) as SearchResponse
         setNetwork(data.network ?? null)
         return setSession({
-          query: data.executedQuery ?? data.query ?? query,
-          originalQuery: data.originalQuery ?? query,
-          executedQuery: data.executedQuery ?? data.query ?? query,
-          suggestedQuery: data.suggestedQuery,
-          isCorrected: data.isCorrected ?? false,
-          results: data.results ?? [],
-          txHash: null,
-          paidAmount: null,
-          status: 'complete',
-          step: 6,
-          durationMs: Date.now() - t0,
-          suggestions: data.suggestions ?? [],
+          query, results: data.results ?? [], txHash: null,
+          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
+          diagnostics: data.diagnostics,
         })
       }
 

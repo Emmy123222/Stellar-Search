@@ -146,6 +146,34 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
       expect(USDC_ISSUER).toBeDefined()
     }
   })
+
+  it('MCP web_search handler masks blocked URLs safely in tool output text', async () => {
+    const calls = mockSetRequestHandler.mock.calls
+    const callToolHandler = calls[1]?.[1] as Function
+    if (callToolHandler) {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          paidAmount: '0.001',
+          currency: 'USDC',
+          network: 'stellar:testnet',
+          latencyMs: 15,
+          count: 2,
+          results: [
+            { title: 'Good', url: 'https://example.com', description: 'Good site', isBlocked: false },
+            { title: 'Bad', url: 'javascript:alert(1)', description: 'Bad link', isBlocked: true },
+          ],
+        }),
+      })
+      const originalFetch = global.fetch
+      global.fetch = mockFetch as any
+      const result: any = await callToolHandler({ params: { name: 'web_search', arguments: { query: 'test' } } })
+      expect(result.content[0].text).toContain('https://example.com/')
+      expect(result.content[0].text).toContain('[Blocked Link: unsafe protocol or credentials]')
+      global.fetch = originalFetch
+    }
+  })
 })
 
 describe('MCP deadlines & cancellation propagation (#170)', () => {

@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["api/**/*", "src/lib/**/*", "src/types/**/*"],
+  "include": ["api/**/*", "src/lib/constants.ts", "src/lib/paymentIntegrity.ts", "src/lib/urlSanitizer.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

@@ -370,10 +370,9 @@ describe("api/search — Vercel x402 settlement (aligned with Express)", () => {
 
     const { req, res } = mockReqRes({
       method: 'GET',
-      query: { q: 'vercel' },
+      query: { q: 'stellar' },
       headers: { 'x-payment': fakeTx },
     })
-
     await handler(req, res)
     expect(res._json.results).toHaveLength(1)
     expect(res._json.results[0].title).toBe('Valid Vercel Result')

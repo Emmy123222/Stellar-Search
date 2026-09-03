@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["mcp-server/**/*", "src/lib/**/*", "src/types/**/*"],
+  "include": ["mcp-server/**/*", "src/lib/constants.ts", "src/lib/urlSanitizer.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
