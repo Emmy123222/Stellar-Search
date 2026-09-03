@@ -223,11 +223,13 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
     const metadata = buildExportMetadata()
     const blob = new Blob([JSON.stringify({ metadata, results: selectedResults }, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `search-results-${Date.now()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = getExportFilename('json')
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    setTimeout(() => URL.revokeObjectURL(url), 100)
     setShowExportMenu(false)
   }
 
@@ -253,11 +255,13 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
     const csvContent = [...metaLines, headers.join(','), ...rows.map(row => row.join(','))].join('\n')
     const blob = new Blob([csvContent], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `search-results-${Date.now()}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = getExportFilename('csv')
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    setTimeout(() => URL.revokeObjectURL(url), 100)
     setShowExportMenu(false)
   }
 

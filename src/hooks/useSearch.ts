@@ -447,8 +447,10 @@ export function useSearch(walletAddress: string | null = null) {
       });
 
       const t0 = Date.now()
-      const endpoint = mode === 'web' ? '/search' : mode === 'images' ? '/images' : '/news'
-      const defaultCount = mode === 'web' ? count : 10
+      const phaseTimings: Record<string, { durationMs: number; outcome: string }> = {}
+      const recordPhase = (phase: string, durationMs: number, outcome: string) => {
+        phaseTimings[phase] = { durationMs, outcome }
+      }
       const params = new URLSearchParams({
         q: query,
         count: String(defaultCount),

@@ -14,7 +14,11 @@ export function privacySafeIp(value: unknown): string {
 // Configure Winston to log structured JSON to stderr.
 const logger = winston.createLogger({
   level: 'info',
-  format: winston.format.json(),
+  format: winston.format.combine(
+    redactorFormat(),
+    winston.format.timestamp(),
+    winston.format.json(),
+  ),
   transports: [
     new winston.transports.Console({
       // By default, Winston writes to stdout. We redirect to stderr for all log levels.
@@ -39,3 +43,4 @@ export function logWithId(level: string, message: string, requestId?: string, me
 }
 
 export default logger;
+export { redact };

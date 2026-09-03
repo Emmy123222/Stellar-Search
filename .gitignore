@@ -8,6 +8,9 @@ coverage/
 .DS_Store
 *.log
 .vite/
+artifacts/
+smoke-report.json
+smoke-report.md
 
 # Local scripts
 create_issues.py

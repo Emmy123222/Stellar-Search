@@ -723,20 +723,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         )
         .join("\n\n");
 
-      const headerLines: string[] = []
-      if (data.isCorrected) {
-        headerLines.push(`🔍 Results for: "${data.executedQuery}" (auto-corrected from "${data.originalQuery || query}")`)
-      } else {
-        headerLines.push(`🔍 Results for: "${data.executedQuery || query}"`)
-      }
-      if (data.suggestedQuery && !data.isCorrected) {
-        headerLines.push(`💡 Did you mean: "${data.suggestedQuery}"?`)
-      }
-      headerLines.push(`💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`)
-      headerLines.push(`⚡ Latency: ${data.latencyMs}ms`)
-      headerLines.push(`📊 ${data.count} results\n`)
-
-      cleanup()
+      const timingsStr = data.timings ? ` (server: validation ${data.timings.validationMs ?? '?'}ms, serper ${data.timings.serperMs ?? '?'}ms)` : ''
       return {
         structuredContent: { query: data.executedQuery || query, results: data.results, count: data.count, payment: { amount: data.paidAmount, currency: data.currency, network: data.network }, latencyMs: data.latencyMs, txHash: data.txHash ?? null },
         content: [
@@ -1141,7 +1128,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         lines.push('', `⚠️  Activity counters are not available on this deployment. ${unavailable}`)
       }
 
-      cleanup()
       return {
         content: [
           {

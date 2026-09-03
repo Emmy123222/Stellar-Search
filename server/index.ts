@@ -234,10 +234,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 })
 
 // ─── In-memory stats ──────────────────────────────────────────────────────
+// Latencies are now tracked via bounded metrics (circular buffers) in server/metrics.ts
+// to avoid unbounded in-memory arrays and to expose p50/p95/p99 per phase.
 const stats = {
   totalQueries: 0,
   totalUsdcSettled: 0,
-  latencies: [] as number[],
   startTime: Date.now(),
 };
 
@@ -1682,7 +1683,7 @@ app.get('/metrics', metricsAuth, (req: Request, res: Response) => {
 // ─── POST /ai/chat ────────────────────────────────────────────────────────
 // Streams responses as Server-Sent Events when the client sends
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
-// (back-compat fallback for callers that don't support SSE).
+// Supports model selection via { model } whitelist. Records phase timings with shared vocabulary.
 app.post('/ai/chat', async (req: Request, res: Response) => {
   // Explicit method guard — unsupported methods receive 405 + Allow header
   if (req.method !== 'POST') return methodNotAllowed(res, allowHeader('POST'))
@@ -1730,6 +1731,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   const { truncatedMessages: groqMessages, wasTruncated } = enforceTokenBudget(rawGroqMessages)
 
   if (!wantsStream) {
+    const tGroq0 = Date.now()
     try {
       const completion = await groq.chat.completions.create({
         model,
@@ -1763,6 +1765,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   const controller = new AbortController();
   req.on("close", () => controller.abort());
 
+  const tGroq0 = Date.now()
   try {
     const stream = await groq.chat.completions.create(
       {

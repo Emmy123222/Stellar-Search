@@ -171,6 +171,15 @@ export function StatsGrid({ pollingIntervalMs = 10_000 }: StatsGridProps) {
           </p>
         )}
       </div>
+      {stats.checks && (
+        <div className="col-span-2 lg:col-span-4 flex flex-wrap gap-2 mt-1 justify-end">
+          {Object.entries(stats.checks).map(([k, v]: any) => (
+            <span key={k} className="text-[9px] tracking-wider uppercase px-2 py-1 rounded-full border" style={{ borderColor: v.status === 'ok' ? '#39ff1440' : v.status === 'degraded' ? '#ffb80040' : '#ff444440', color: v.status === 'ok' ? '#39ff14' : v.status === 'degraded' ? '#ffb800' : '#ff4444', background: 'rgba(255,255,255,0.03)' }}>
+              {k}: {v.status}{v.configured === false ? ' (not cfg)' : ''}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
