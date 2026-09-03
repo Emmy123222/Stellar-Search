@@ -64,6 +64,17 @@ Serper.dev  ──── real Google results ────►  Browser
 
 ## Prerequisites
 
+Before you begin, make sure you have:
+
+| Requirement | Version | Notes |
+|---|---|---|
+| **Node.js** | ≥ 20.19.0 | ESM support required; CI tests Node 20 and 22 |
+| **npm** | ≥ 9.0.0 | Comes with Node 18 |
+| **Git** | any recent | — |
+| **Freighter** | latest | [freighter.app](https://freighter.app) browser extension |
+| **Stellar testnet account** | — | Free — see setup below |
+
+### Free API keys you will need
 Install or prepare the following before you begin:
 
 - **Node.js** (an active LTS release is recommended) and npm.
@@ -181,6 +192,75 @@ You can work on the visual interface without Freighter, a funded account, or rea
 npm run dev
 ```
 
+### Dependency updates (Dependabot)
+
+Dependabot is configured in `.github/dependabot.yml` to automatically propose weekly updates with sensible open PR limits:
+- **Grouped updates:** Minor/patch dependencies for tooling, linting, testing, and UI are grouped into single PRs to reduce notification noise.
+- **Deliberate review for payment & runtime:** Major upgrades for `@x402/*`, `@stellar/*`, `@modelcontextprotocol/*`, AI SDKs (`groq-sdk`), and server runtime packages are kept as isolated PRs to ensure deliberate review, preventing regressions across runtime boundaries (Express, Vercel, browser, and MCP) and safeguarding x402 settlement semantics.
+
+---
+
+## Submitting a Pull Request
+
+1. Push your branch:
+   ```bash
+   git push origin fix/freighter-rejection-loop
+   ```
+
+2. Open a PR against `main` on GitHub.
+
+3. Fill in the PR template:
+   - **What does this PR do?** — one paragraph summary.
+   - **Which issue does it close?** — link with `Closes #N`.
+   - **How was it tested?** — steps you took to verify locally.
+   - **Screenshots** — required for any UI change.
+
+4. Make sure:
+   - [ ] `npx tsc --noEmit` passes with no errors.
+   - [ ] `node scripts/check-node-version.js` passes (validates Node version against engines).
+   - [ ] `npm run lint` passes with zero errors and zero warnings (`eslint . --max-warnings=0`).
+   - [ ] The app starts and the affected feature works manually.
+   - [ ] No new `console.log` / debug statements left in.
+   - [ ] No secrets or `.env` values committed.
+
+5. A maintainer will review your PR. Please respond to review comments within a reasonable time. If you need more time, just say so — the PR won't be closed.
+
+### PR size guidelines
+
+| Change type | Ideal PR size |
+|---|---|
+| Bug fix | < 100 lines changed |
+| Small feature | < 300 lines changed |
+| Large feature | Break into logical sub-PRs |
+| Refactor | One file / one abstraction at a time |
+
+---
+
+## Issue Guidelines
+
+### Reporting a bug
+
+Before opening a new issue:
+
+1. Search existing issues — it may already be reported.
+2. Try reproducing on the latest `main` branch.
+3. Check [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for known x402/Freighter issues.
+
+When you open a bug, include:
+
+- **Steps to reproduce** — numbered, minimal.
+- **Expected behaviour** vs **actual behaviour**.
+- **Environment:** OS, browser, Node version, Freighter version.
+- **Console output / error messages** — paste the full stack trace.
+- **Network tab screenshot** (for payment flow issues).
+
+### Requesting a feature
+
+- Explain the **problem** you are solving, not just the solution you have in mind.
+- If the feature involves the payment flow or blockchain state, describe how edge cases (network error, wallet rejection, insufficient balance) should behave.
+- Check the [open issues](https://github.com/Emmy123222/Stellar-Search/issues) first — the backlog already has 50+ scoped ideas waiting for contributors.
+
+---
 Visit [http://localhost:5173](http://localhost:5173) and work on components that do not require a completed wallet transaction. Wallet-dependent actions may show a connection or payment error until Freighter is installed and configured. Do not add mock payment or search data to make those flows appear successful; use the real testnet setup when testing them end to end.
 
 ## Getting free testnet USDC
@@ -216,12 +296,34 @@ chore/update-docs
 
 Use concise conventional-style commit subjects, for example:
 
+## Testing
+
+Vitest + @vitest/coverage-v8 enforces **coverage thresholds for statements, branches, functions, and lines**. Configuration lives in `vite.config.ts:6` and is documented in `README.md#testing--coverage`.
+
+```bash
+npm run test              # run tests without coverage
+npm run test:coverage     # run with coverage + thresholds (CI gate)
+node scripts/check-node-version.js  # validate Node version against engines
+# reports in coverage/ (text, json, html, lcov)
+open coverage/index.html  # view HTML report
 ```text
 fix: handle rejected Freighter signatures
 ```
 
 ### PR naming convention
 
+### CI Node version matrix
+
+CI runs typecheck, lint, and test jobs across a matrix of Node versions to ensure compatibility:
+
+| Node version | Role |
+|---|---|
+| **20** | Minimum supported (per `package.json` engines) |
+| **22** | Current LTS |
+
+Each job includes a `node scripts/check-node-version.js` step that validates the running version against the `engines` field before any build or test steps run. Unsupported versions fail early with a clear error message.
+
+### Running the TypeScript compiler
 Use the same conventional prefix in the pull request title:
 
 ```text

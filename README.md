@@ -920,10 +920,21 @@ Coverage is enforced via **Vitest + @vitest/coverage-v8** with thresholds for **
 ```bash
 npm run test              # unit tests without coverage
 npm run test:coverage     # run with coverage + thresholds (CI gate)
+node scripts/check-node-version.js  # validate Node version against engines
 ```
 
 Reports are generated to `coverage/` (`text`, `json`, `html`, `lcov`). CI uploads the `coverage/` artifact and fails if thresholds are not met.
 
+### CI Node version matrix
+
+CI runs typecheck, lint, and test jobs across a matrix of Node versions:
+
+| Node version | Role |
+|---|---|
+| **20** | Minimum supported (per `package.json` engines) |
+| **22** | Current LTS |
+
+Unsupported versions fail early via `node scripts/check-node-version.js` before any build or test steps run.
 ### Parameter validation on paid endpoints (#188)
 
 All paid routes (`GET /search`, `GET /images`, `GET /news`, `POST /search/batch`, `POST /jobs`, and `GET /api/search`) share one validation contract via `src/lib/paramValidation.ts`:

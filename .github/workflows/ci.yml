@@ -7,8 +7,8 @@ on:
     branches: [ main ]
 
 jobs:
-  typecheck:
-    name: Typecheck
+  node-version-check:
+    name: Node version gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -42,8 +42,12 @@ jobs:
         run: npm run typecheck:all
 
   lint:
-    name: Lint
+    name: Lint (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    needs: node-version-check
+    strategy:
+      matrix:
+        node-version: [20, 22]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -98,7 +102,57 @@ jobs:
         timeout-minutes: 5
 
   test:
-    name: Test
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    needs: node-version-check
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Cache Vite & Vitest intermediates
+        id: test-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.vite
+            node_modules/.cache
+          key: ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json', 'vite.config.ts', 'vitest.setup.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json', 'vite.config.ts', 'vitest.setup.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-
+            ${{ runner.os }}-vitest-
+
+      - name: Log cache status
+        run: echo "Vitest cache hit: ${{ steps.test-cache.outputs.cache-hit || 'false' }}"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Node version against engines
+        run: node scripts/check-node-version.js
+
+      - name: Run Vitest with coverage (enforces thresholds)
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-node-${{ matrix.node-version }}
+          path: coverage/
+          if-no-files-found: warn
+
+  build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -185,15 +239,31 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Cache Vite & Vitest intermediates
+        id: coverage-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.vite
+            node_modules/.cache
+          key: ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json', 'vite.config.ts', 'vitest.setup.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-vitest-${{ hashFiles('package-lock.json', 'vite.config.ts', 'vitest.setup.ts', 'tsconfig.json', 'tsconfig.node.json', 'tsconfig.server.json') }}-
+            ${{ runner.os }}-vitest-
+
+      - name: Log cache status
+        run: echo "Coverage cache hit: ${{ steps.coverage-cache.outputs.cache-hit || 'false' }}"
 
       - name: Install dependencies
         run: npm ci
 
       - name: Verify coverage thresholds (statements, branches, functions, lines)
         run: npm run test:coverage -- --run
-        # thresholds defined in vite.config.ts: global 25/23/20/26 + per-file ratchets for
+        # thresholds defined in vite.config.ts: global 35/30/28/35 + per-file ratchets for
         # src/lib/constants, src/lib/stellar, server/corsConfig, api/search, etc.
         # CI fails if any threshold drops — ratchet upward as payment/wallet/API/MCP/UI tests land.
 
