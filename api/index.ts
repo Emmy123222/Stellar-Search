@@ -11,6 +11,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
       'GET /api/search?q=<query>': '0.001 USDC via x402',
       'POST /api/ai/chat': 'Groq AI — free',
       'GET /api/health': 'Live server stats',
+      'GET /.well-known/x402': 'Machine-readable x402 resource and pricing discovery metadata',
     },
   })
 }

@@ -123,6 +123,14 @@ The typed schema checks required core variables separately from optional feature
 
 ---
 
+## x402 service discovery
+
+Autonomous clients can fetch [`/.well-known/x402`](http://localhost:3001/.well-known/x402) without payment to discover the paid resources before making a request. Express and Vercel serve the same runtime-generated document; Vercel rewrites the stable root path to its serverless handler.
+
+The document includes `resourceTemplates` for `/search`, `/images`, and `/news`, plus the active `networks`, Soroban USDC `assets`, supported payment `schemes`, and a `priceDiscoveryUrl`. Each template carries the exact x402 payment option, including the configured receiving address, network, asset, and `10000` stroop (`0.001 USDC`) price. The metadata is intentionally public and does not bypass payment, approval, signature verification, replay protection, or settlement on paid routes.
+
+The response is cacheable for five minutes. Set `PUBLIC_BASE_URL` to keep `priceDiscoveryUrl` canonical behind a reverse proxy.
+
 ## How the x402 payment flow works
 
 ```

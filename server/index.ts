@@ -126,6 +126,13 @@ app.use(cors(buildCorsOptions()))
 app.use(express.json())
 app.use(limiter)
 
+// Machine-readable x402 service discovery. Keep this before payment middleware:
+// discovery is public, while the resource templates it advertises are paid.
+app.get('/.well-known/x402', (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'public, max-age=300')
+  return res.json(getX402DiscoveryMetadata({ origin: requestOrigin(req) }))
+})
+
 // ─── In-memory stats ──────────────────────────────────────────────────────
 const stats = {
   totalQueries: 0,
