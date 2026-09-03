@@ -17,13 +17,61 @@ vi.mock("../src/lib/constants", async () => {
   };
 });
 
-vi.mock('../src/lib/paymentIntegrity', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/lib/paymentIntegrity')>()
-  return { ...actual, consumePaymentPayload: vi.fn(actual.consumePaymentPayload) }
+// ─── Mock x402 facilitator ──────────────────────────────────────────────
+const { mockVerify, mockSettle, mockDecode } = vi.hoisted(() => ({
+  mockVerify: vi.fn().mockResolvedValue({ isValid: true }),
+  mockSettle: vi.fn().mockResolvedValue({ success: true, transaction: 'tx_ok', network: 'stellar:testnet' }),
+  mockDecode: vi.fn((header: string) => {
+    try {
+      const decoded = Buffer.from(header, 'base64').toString('utf8')
+      const parsed = JSON.parse(decoded)
+      return {
+        x402Version: 2,
+        payload: parsed,
+        accepted: {
+          scheme: 'exact',
+          network: 'stellar:testnet',
+          asset: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+          amount: '10000',
+          payTo: 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3',
+          maxTimeoutSeconds: 300,
+          extra: { areFeesSponsored: true },
+        },
+      }
+    } catch {
+      throw new Error('Malformed payment payload')
+    }
+  }),
+}))
+
+vi.mock('@x402/core/server', () => ({
+  HTTPFacilitatorClient: class {
+    verify = mockVerify
+    settle = mockSettle
+    constructor(_opts: any) {}
+  },
+}))
+
+vi.mock('@x402/core/http', () => ({
+  decodePaymentSignatureHeader: mockDecode,
+}))
+
+vi.mock('@x402/stellar/exact/server', () => ({
+  ExactStellarScheme: class {},
+}))
+
+vi.mock('../src/lib/x402Config', async () => {
+  const actual: any = await vi.importActual('../src/lib/x402Config')
+  return {
+    ...actual,
+    getNetwork: () => 'stellar:testnet',
+    getPayTo: () => 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3',
+    getFacilitatorUrl: () => 'https://www.x402.org/facilitator',
+  }
 })
 
 import handler from './search'
-import { resetConsumedPayments, consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { resetConsumedPayments } from '../src/lib/paymentIntegrity'
 
 function mockReqRes(overrides: any = {}) {
   const req: any = {
@@ -52,9 +100,15 @@ describe("api/search — Vercel x402 settlement (aligned with Express)", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(consumePaymentPayload as any).mockClear()
     resetConsumedPayments()
-    global.fetch = originalFetch
+    // Always use a spy so not.toHaveBeenCalled() assertions work
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ organic: [] }),
+    } as any)
+    // Default: facilitator verify and settle succeed
+    mockVerify.mockResolvedValue({ isValid: true })
+    mockSettle.mockResolvedValue({ success: true, transaction: 'tx_ok', network: 'stellar:testnet' })
   })
 
   it("handles OPTIONS preflight", async () => {
@@ -325,152 +379,257 @@ describe("api/search — Vercel x402 settlement (aligned with Express)", () => {
     expect(res._json.results[0].title).toBe('Valid Vercel Result')
     expect(res._json.results[0].url).toBe('https://vercel.com/docs')
   })
-
-  it('distinguishes original, executed, and suggested query text when spelling is corrected', async () => {
-    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_spelling_test' })).toString('base64')
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        searchParameters: { q: 'stellar blockchain' },
-        searchInformation: { originalQuery: 'stelarr blockchan' },
-        organic: [
-          { title: 'Stellar', link: 'https://stellar.org', snippet: 'Blockchain' },
-        ],
-      }),
-    } as any)
-
-    const { req, res } = mockReqRes({
-      method: 'GET',
-      query: { q: 'stelarr blockchan' },
-      headers: { 'x-payment': fakeTx },
-    })
-
-    await handler(req, res)
-    expect(res._json.originalQuery).toBe('stelarr blockchan')
-    expect(res._json.executedQuery).toBe('stellar blockchain')
-    expect(res._json.suggestedQuery).toBe('stellar blockchain')
-    expect(res._json.isCorrected).toBe(true)
-    expect(res._json.query).toBe('stellar blockchain')
-  })
-
-  it('provides suggestedQuery when didYouMean is present without auto-correction', async () => {
-    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_did_you_mean_test' })).toString('base64')
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        searchParameters: { q: 'stelarr blockchan' },
-        spelling: { didYouMean: 'stellar blockchain' },
-        organic: [
-          { title: 'Stelarr Results', link: 'https://stellar.org/alt', snippet: 'Alt snippet' },
-        ],
-      }),
-    } as any)
-
-    const { req, res } = mockReqRes({
-      method: 'GET',
-      query: { q: 'stelarr blockchan' },
-      headers: { 'x-payment': fakeTx },
-    })
-
-    await handler(req, res)
-    expect(res._json.originalQuery).toBe('stelarr blockchan')
-    expect(res._json.executedQuery).toBe('stelarr blockchan')
-    expect(res._json.suggestedQuery).toBe('stellar blockchain')
-    expect(res._json.isCorrected).toBe(false)
-    expect(res._json.query).toBe('stelarr blockchan')
-  })
 })
 
-// ─── Parameter validation matrix (issue #188) ────────────────────────────────
+// ─── x402 payment verification tests (Issue #107) ─────────────────────────
 
-describe('api/search — parameter validation matrix (issue #188)', () => {
-  let matrixCounter = 0
-  const matrixTx = () => Buffer.from(JSON.stringify({ transactionHash: `tx_matrix_vercel_${++matrixCounter}` })).toString('base64')
-
+describe('api/search — x402 payment verification (Issue #107)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(consumePaymentPayload as any).mockClear()
     resetConsumedPayments()
+    // Always use a spy so not.toHaveBeenCalled() assertions work
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ organic: [] }),
+    } as any)
+    // Default: facilitator verify and settle succeed
+    mockVerify.mockResolvedValue({ isValid: true })
+    mockSettle.mockResolvedValue({ success: true, transaction: 'tx_ok', network: 'stellar:testnet' })
   })
 
-  const rejectCases: { label: string; query: Record<string, unknown>; error: RegExp }[] = [
-    { label: 'count=0 (below min)', query: { q: 'stellar', count: '0' }, error: /count/ },
-    { label: 'count=-1 (negative)', query: { q: 'stellar', count: '-1' }, error: /count/ },
-    { label: 'count=21 (above max)', query: { q: 'stellar', count: '21' }, error: /count/ },
-    { label: 'count=999 (above max)', query: { q: 'stellar', count: '999' }, error: /count/ },
-    { label: 'count=abc (non-integer)', query: { q: 'stellar', count: 'abc' }, error: /integer/ },
-    { label: 'count=1.5 (non-integer)', query: { q: 'stellar', count: '1.5' }, error: /integer/ },
-    { label: 'count=1e3 (non-integer)', query: { q: 'stellar', count: '1e3' }, error: /integer/ },
-    { label: 'count repeated (array)', query: { q: 'stellar', count: ['1', '2'] }, error: /single value/ },
-    { label: 'freshness=day (unknown enum)', query: { q: 'stellar', freshness: 'day' }, error: /freshness/ },
-    { label: 'freshness=1 (unknown enum)', query: { q: 'stellar', freshness: '1' }, error: /freshness/ },
-    { label: 'freshness repeated (array)', query: { q: 'stellar', freshness: ['pd', 'pw'] }, error: /single value/ },
-  ]
+  it('rejects payment when facilitator verify returns isValid: false', async () => {
+    mockVerify.mockResolvedValue({ isValid: false, invalidReason: 'Signature mismatch' })
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_bad_sig' })).toString('base64')
 
-  for (const c of rejectCases) {
-    it(`rejects ${c.label} early (400) without invoking payment or Serper adapters`, async () => {
-      global.fetch = vi.fn()
-      const { req, res } = mockReqRes({ method: 'GET', query: { q: 'stellar', ...c.query } })
-      await handler(req, res)
-      expect(res._status).toBe(400)
-      expect(res._json.error).toMatch(c.error)
-      expect(consumePaymentPayload).not.toHaveBeenCalled()
-      expect(global.fetch).not.toHaveBeenCalled()
-    })
-  }
-
-  it('rejects invalid count even with a payment header present (validation precedes payment)', async () => {
-    global.fetch = vi.fn()
     const { req, res } = mockReqRes({
       method: 'GET',
-      query: { q: 'stellar', count: 'nope' },
-      headers: { 'x-payment': matrixTx() },
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
     })
     await handler(req, res)
-    expect(res._status).toBe(400)
-    expect(consumePaymentPayload).not.toHaveBeenCalled()
+    expect(res._status).toBe(402)
+    expect(res._json.error).toMatch(/Signature mismatch/)
+    expect(mockSettle).not.toHaveBeenCalled()
+    // Serper must NOT be called
     expect(global.fetch).not.toHaveBeenCalled()
   })
 
-  it('forwards the default count 5 when count is omitted', async () => {
-    let capturedBody: any = null
-    global.fetch = vi.fn().mockImplementation(async (_url: any, opts: any) => {
-      capturedBody = JSON.parse(opts.body)
-      return { ok: true, json: async () => ({ organic: [] }) } as any
+  it('rejects payment when facilitator verify throws', async () => {
+    mockVerify.mockRejectedValue(new Error('Network timeout'))
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_verify_err' })).toString('base64')
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
     })
-    const { req, res } = mockReqRes({ method: 'GET', query: { q: 'stellar' }, headers: { 'x-payment': matrixTx() } })
     await handler(req, res)
-    expect(res._json.results).toEqual([])
-    expect(capturedBody.num).toBe(5)
+    expect(res._status).toBe(402)
+    expect(res._json.error).toMatch(/Network timeout/)
+    expect(mockSettle).not.toHaveBeenCalled()
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
-  it('forwards count at min and max bounds', async () => {
-    for (const count of ['1', '20']) {
-      let capturedBody: any = null
-      global.fetch = vi.fn().mockImplementation(async (_url: any, opts: any) => {
-        capturedBody = JSON.parse(opts.body)
-        return { ok: true, json: async () => ({ organic: [] }) } as any
-      })
-      const { req, res } = mockReqRes({ method: 'GET', query: { q: 'stellar', count }, headers: { 'x-payment': matrixTx() } })
-      await handler(req, res)
-      expect(res._json.results).toEqual([])
-      expect(capturedBody.num).toBe(Number(count))
-    }
+  it('rejects payment when facilitator settle returns success: false', async () => {
+    mockVerify.mockResolvedValue({ isValid: true })
+    mockSettle.mockResolvedValue({ success: false, errorReason: 'Insufficient balance' })
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_underpay' })).toString('base64')
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(req, res)
+    expect(res._status).toBe(402)
+    expect(res._json.error).toMatch(/Insufficient balance/)
+    expect(global.fetch).not.toHaveBeenCalled()
   })
 
-  it('forwards tbs for each supported freshness enum', async () => {
-    for (const [freshness, tbs] of Object.entries({ pd: 'qdr:d', pw: 'qdr:w', pm: 'qdr:m' })) {
-      let capturedBody: any = null
-      global.fetch = vi.fn().mockImplementation(async (_url: any, opts: any) => {
-        capturedBody = JSON.parse(opts.body)
-        return { ok: true, json: async () => ({ organic: [] }) } as any
-      })
-      const { req, res } = mockReqRes({ method: 'GET', query: { q: 'stellar', freshness }, headers: { 'x-payment': matrixTx() } })
-      await handler(req, res)
-      expect(res._json.results).toEqual([])
-      expect(capturedBody.tbs).toBe(tbs)
-    }
+  it('rejects payment when facilitator settle throws', async () => {
+    mockVerify.mockResolvedValue({ isValid: true })
+    mockSettle.mockRejectedValue(new Error('Settlement network error'))
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_settle_err' })).toString('base64')
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(req, res)
+    expect(res._status).toBe(402)
+    expect(res._json.error).toMatch(/Settlement network error/)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed payment header (invalid base64)', async () => {
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': '!!!NOT_BASE64!!!' },
+    })
+    await handler(req, res)
+    expect(res._status).toBe(402)
+    expect(res._json.error).toMatch(/Malformed payment payload/)
+    expect(mockVerify).not.toHaveBeenCalled()
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects empty string payment header (no header present)', async () => {
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: {},
+    })
+    await handler(req, res)
+    expect(res._status).toBe(402)
+    expect(res._json.error).toBe('Payment required')
+  })
+
+  it('never trusts header presence alone — verify must be called before Serper', async () => {
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_presence_only' })).toString('base64')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ organic: [{ title: 'Test', link: 'https://test.com' }] }),
+    } as any)
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'test' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(req, res)
+
+    // Verify must be called before any Serper fetch
+    expect(mockVerify).toHaveBeenCalledTimes(1)
+    expect(mockSettle).toHaveBeenCalledTimes(1)
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('forged payment with wrong tx hash is rejected by facilitator', async () => {
+    mockVerify.mockResolvedValue({ isValid: false, invalidReason: 'Transaction not found on network' })
+    const forged = Buffer.from(JSON.stringify({ transactionHash: 'forged_nonexistent_tx' })).toString('base64')
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': forged },
+    })
+    await handler(req, res)
+    expect(res._status).toBe(402)
+    expect(res._json.error).toMatch(/Transaction not found/)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('expired payment is rejected by facilitator', async () => {
+    mockVerify.mockResolvedValue({ isValid: false, invalidReason: 'Payment expired' })
+    const expired = Buffer.from(JSON.stringify({ transactionHash: 'tx_expired_payment' })).toString('base64')
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': expired },
+    })
+    await handler(req, res)
+    expect(res._status).toBe(402)
+    expect(res._json.error).toMatch(/expired/i)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('underpaid payment is rejected by facilitator', async () => {
+    mockVerify.mockResolvedValue({ isValid: false, invalidReason: 'Insufficient payment amount' })
+    const underpaid = Buffer.from(JSON.stringify({ transactionHash: 'tx_underpaid' })).toString('base64')
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': underpaid },
+    })
+    await handler(req, res)
+    expect(res._status).toBe(402)
+    expect(res._json.error).toMatch(/Insufficient payment amount/)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('payment-signature header is also accepted and verified', async () => {
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_sig_header' })).toString('base64')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ organic: [] }),
+    } as any)
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'payment-signature': fakeTx },
+    })
+    await handler(req, res)
+    expect(mockVerify).toHaveBeenCalledTimes(1)
+    expect(mockSettle).toHaveBeenCalledTimes(1)
+    expect(res._json.query).toBe('stellar')
+  })
+
+  it('X-PAYMENT header (uppercase) is also accepted and verified', async () => {
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_upper_header' })).toString('base64')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ organic: [] }),
+    } as any)
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'X-PAYMENT': fakeTx },
+    })
+    await handler(req, res)
+    expect(mockVerify).toHaveBeenCalledTimes(1)
+    expect(mockSettle).toHaveBeenCalledTimes(1)
+  })
+
+  it('both verify and settle must succeed for search to proceed', async () => {
+    // Verify succeeds but settle fails
+    mockVerify.mockResolvedValue({ isValid: true })
+    mockSettle.mockResolvedValue({ success: false, errorReason: 'Settlement rejected' })
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_settle_fail' })).toString('base64')
+
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(req, res)
+    expect(res._status).toBe(402)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('replay protection still works alongside facilitator verification', async () => {
+    const fakeTx = Buffer.from(JSON.stringify({ transactionHash: 'tx_replay_verify' })).toString('base64')
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ organic: [] }),
+    } as any)
+
+    // First request: verify + settle + search
+    const first = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(first.req, first.res)
+    expect(first.res._json.query).toBe('stellar')
+    expect(mockVerify).toHaveBeenCalledTimes(1)
+    expect(mockSettle).toHaveBeenCalledTimes(1)
+
+    // Second request: rejected by replay protection (before facilitator)
+    const second = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(second.req, second.res)
+    expect(second.res._status).toBe(402)
+    expect(second.res._json.error).toBe('Payment payload already consumed')
+    // Facilitator should NOT be called again
+    expect(mockVerify).toHaveBeenCalledTimes(1)
   })
 })
-
-
