@@ -1,0 +1,706 @@
+openapi: 3.0.3
+info:
+  title: StellarSearch API
+  description: >
+    Pay-per-query web search for AI agents, settled via the x402 payment
+    protocol on Stellar. `/search`, `/images`, and `/news` are gated by an
+    x402 `402 Payment Required` challenge and settle 0.001 USDC per query;
+    `/ai/chat` and `/health` are free. The same handlers are exposed by the
+    Express server (this document's paths, e.g. `/search`) and by the Vercel
+    serverless functions under `/api` (e.g. `/api/search`) — request and
+    response shapes are identical across both runtimes.
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+servers:
+  - url: https://{deployment}.vercel.app/api
+    description: Vercel serverless deployment
+    variables:
+      deployment:
+        default: stellar-search
+  - url: http://127.0.0.1:3001
+    description: Local Express server (development only)
+
+security: []
+
+tags:
+  - name: search
+    description: Pay-per-query web, image, and news search
+  - name: ai
+    description: Free Groq-powered chat assistant
+  - name: meta
+    description: Health and service metadata
+
+paths:
+  /search:
+    get:
+      operationId: webSearch
+      summary: Web search
+      description: >
+        Runs a web search via Serper.dev. Requires a settled x402 payment of
+        0.001 USDC; a request without a valid payment header receives a `402`
+        challenge describing how to pay.
+      tags: [search]
+      security:
+        - x402Payment: []
+      parameters:
+        - $ref: '#/components/parameters/Query'
+        - $ref: '#/components/parameters/Count'
+        - $ref: '#/components/parameters/Freshness'
+        - $ref: '#/components/parameters/Suggestions'
+        - $ref: '#/components/parameters/PaymentHeader'
+      responses:
+        '200':
+          description: Search results, with settlement metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+              example:
+                query: "stellar blockchain"
+                results:
+                  - id: "r1"
+                    title: "Stellar (payment network) - Wikipedia"
+                    url: "https://en.wikipedia.org/wiki/Stellar_(payment_network)"
+                    description: "Stellar is an open-source, decentralized protocol for digital currency to fiat money transfers."
+                    source: "en.wikipedia.org"
+                    relevanceScore: 0.98
+                    publishedAt: "2024-01-15"
+                count: 1
+                network: "stellar:testnet"
+                paidAmount: "0.001"
+                currency: "USDC"
+                txHash: "3389e9f0f1a65f19736cacf544c2e825db1f9f6"
+                latencyMs: 412
+                suggestions:
+                  - "stellar consensus protocol explained"
+                  - "stellar vs ripple"
+                  - "how to build on stellar"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '402':
+          $ref: '#/components/responses/PaymentRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /images:
+    get:
+      operationId: imageSearch
+      summary: Image search
+      description: >
+        Runs an image search via Serper.dev. Requires a settled x402 payment
+        of 0.001 USDC, identical semantics to `/search`.
+      tags: [search]
+      security:
+        - x402Payment: []
+      parameters:
+        - $ref: '#/components/parameters/Query'
+        - name: count
+          in: query
+          description: Number of image results to return (max 10).
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 10
+        - $ref: '#/components/parameters/PaymentHeader'
+      responses:
+        '200':
+          description: Image results, with settlement metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageSearchResponse'
+              example:
+                query: "stellar lumens logo"
+                results:
+                  - id: "i1"
+                    title: "Stellar (XLM) logo"
+                    imageUrl: "https://example.com/xlm-logo-full.png"
+                    thumbnailUrl: "https://example.com/xlm-logo-thumb.png"
+                    sourceUrl: "https://example.com/xlm-logo"
+                    source: "example.com"
+                    width: 512
+                    height: 512
+                count: 1
+                network: "stellar:testnet"
+                paidAmount: "0.001"
+                currency: "USDC"
+                txHash: "3389e9f0f1a65f19736cacf544c2e825db1f9f6"
+                latencyMs: 388
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '402':
+          $ref: '#/components/responses/PaymentRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /news:
+    get:
+      operationId: newsSearch
+      summary: News search
+      description: >
+        Runs a news search via Serper.dev. Requires a settled x402 payment of
+        0.001 USDC, identical semantics to `/search`.
+      tags: [search]
+      security:
+        - x402Payment: []
+      parameters:
+        - $ref: '#/components/parameters/Query'
+        - name: count
+          in: query
+          description: Number of news results to return (max 20).
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 20
+        - $ref: '#/components/parameters/Freshness'
+        - $ref: '#/components/parameters/PaymentHeader'
+      responses:
+        '200':
+          description: News results, with settlement metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsSearchResponse'
+              example:
+                query: "stellar network upgrade"
+                results:
+                  - id: "n1"
+                    title: "Stellar network completes protocol upgrade"
+                    url: "https://example.com/news/stellar-upgrade"
+                    snippet: "The Stellar network has successfully completed its latest protocol upgrade..."
+                    source: "example.com"
+                    publishedAt: "2026-08-20T12:00:00Z"
+                    imageUrl: "https://example.com/news/stellar-upgrade.jpg"
+                count: 1
+                network: "stellar:testnet"
+                paidAmount: "0.001"
+                currency: "USDC"
+                txHash: "3389e9f0f1a65f19736cacf544c2e825db1f9f6"
+                latencyMs: 401
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '402':
+          $ref: '#/components/responses/PaymentRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/UpstreamError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /ai/chat:
+    post:
+      operationId: aiChat
+      summary: Groq-powered chat assistant
+      description: >
+        Free-to-use chat completion endpoint backed by Groq. Responds as
+        Server-Sent Events when the request sends
+        `Accept: text/event-stream` (or `stream: true` in the body, or
+        `?stream=1`); otherwise returns the full completion as JSON.
+      tags: [ai]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            example:
+              model: "llama-3.3-70b-versatile"
+              messages:
+                - role: "user"
+                  content: "Summarize the top results for \"stellar blockchain\" in 3 bullet points."
+      responses:
+        '200':
+          description: >
+            Chat completion. JSON when the client does not request
+            streaming; `text/event-stream` (SSE) otherwise — see
+            `AiChatStreamEvent` for the shape of each SSE frame.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+              example:
+                content: "- Stellar is an open blockchain payments network.\n- It uses the Stellar Consensus Protocol (SCP).\n- XLM is the native asset used to pay network fees."
+                model: "llama-3.3-70b-versatile"
+            text/event-stream:
+              schema:
+                type: string
+                description: >
+                  Raw SSE stream. Each frame's `data:` payload matches
+                  `AiChatStreamEvent`.
+                x-sse-frame-schema:
+                  $ref: '#/components/schemas/AiChatStreamEvent'
+              example: |
+                event: delta
+                data: {"content":"- Stellar is an open"}
+
+                event: delta
+                data: {"content":" blockchain payments network.\n"}
+
+                event: done
+                data: {"model":"llama-3.3-70b-versatile"}
+        '400':
+          description: Missing or empty `messages` array.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "messages array required"
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /health:
+    get:
+      operationId: getHealth
+      summary: Live service health and stats
+      tags: [meta]
+      security: []
+      responses:
+        '200':
+          description: Current service configuration and running totals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "ok"
+                network: "stellar:testnet"
+                pricePerQuery: "0.001 USDC"
+                protocol: "x402"
+                facilitator: "https://www.x402.org/facilitator"
+                totalQueries: 128
+                totalUsdcSettled: "0.1280"
+                avgLatencyMs: 405
+                uptime: "3h"
+                serperApiConfigured: true
+                groqApiConfigured: true
+                receivingAddressConfigured: true
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    x402Payment:
+      type: apiKey
+      in: header
+      name: X-PAYMENT
+      description: >
+        Base64-encoded x402 "exact" scheme payment payload for 0.001 USDC on
+        Stellar. A request without it (or an equivalent `payment-signature`
+        header) receives a `402` challenge instead of a `200`. See
+        `X402PaymentRequirements` for the shape of that challenge.
+
+  parameters:
+    Query:
+      name: q
+      in: query
+      required: true
+      description: Search query text (max 256 characters after control-character stripping).
+      schema:
+        type: string
+        maxLength: 256
+    Count:
+      name: count
+      in: query
+      description: Number of results to return (max 20).
+      schema:
+        type: integer
+        default: 5
+        minimum: 1
+        maximum: 20
+    Freshness:
+      name: freshness
+      in: query
+      description: Restrict results by recency.
+      schema:
+        type: string
+        enum: [pd, pw, pm]
+        description: pd = past day, pw = past week, pm = past month
+    Suggestions:
+      name: suggestions
+      in: query
+      description: Set to `1` to include 3 AI-generated related-query suggestions (adds Groq latency).
+      schema:
+        type: string
+        enum: ['1']
+    PaymentHeader:
+      name: X-PAYMENT
+      in: header
+      required: false
+      description: >
+        Base64-encoded x402 payment payload. Omit to receive a `402`
+        challenge describing how to pay; required (in this or an equivalent
+        `payment-signature` header) to receive a `200`.
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Missing, empty, or oversized `q` parameter.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Missing required parameter: q"
+    PaymentRequired:
+      description: >
+        x402 payment challenge. The `PAYMENT-REQUIRED` response header
+        carries a base64-encoded JSON payload describing how to pay
+        (see `X402PaymentRequirements`); also returned if a payment header
+        was supplied but failed replay-protection validation.
+      headers:
+        PAYMENT-REQUIRED:
+          description: Base64-encoded `X402PaymentRequirements` JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/X402PaymentRequirements'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Payment required"
+    RateLimited:
+      description: Too many requests from this client in the current window.
+      headers:
+        Retry-After:
+          schema:
+            type: string
+          description: Seconds to wait before retrying.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Too many requests, please try again later."
+    UpstreamError:
+      description: The upstream Serper.dev API returned an error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Serper.dev API error: 503"
+    ServerError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Search failed. Check server logs."
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    X402PaymentRequirements:
+      type: object
+      description: Decoded contents of the `PAYMENT-REQUIRED` header on a 402 response.
+      properties:
+        x402Version:
+          type: integer
+          example: 2
+        error:
+          type: string
+          example: "Payment required"
+        resource:
+          type: object
+          properties:
+            url:
+              type: string
+              format: uri
+            description:
+              type: string
+            mimeType:
+              type: string
+        accepts:
+          type: array
+          items:
+            type: object
+            properties:
+              scheme:
+                type: string
+                example: "exact"
+              network:
+                type: string
+                example: "stellar:testnet"
+              amount:
+                type: string
+                description: Amount in stroops.
+                example: "10000"
+              asset:
+                type: string
+                description: Soroban USDC contract address.
+                example: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+              payTo:
+                type: string
+                description: Receiving Stellar account.
+                example: "GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOKY3B2WSQHG4W37"
+              maxTimeoutSeconds:
+                type: integer
+                example: 300
+              extra:
+                type: object
+                additionalProperties: true
+
+    SearchResult:
+      type: object
+      required: [id, title, url, description, source, relevanceScore]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        description:
+          type: string
+        source:
+          type: string
+        relevanceScore:
+          type: number
+          minimum: 0
+          maximum: 1
+        publishedAt:
+          type: string
+
+    ImageResult:
+      type: object
+      required: [id, title, imageUrl, thumbnailUrl, sourceUrl, source]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+        thumbnailUrl:
+          type: string
+          format: uri
+        sourceUrl:
+          type: string
+          format: uri
+        source:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+
+    NewsResult:
+      type: object
+      required: [id, title, url, snippet, source]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        snippet:
+          type: string
+        source:
+          type: string
+        publishedAt:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+
+    SearchResultsMeta:
+      type: object
+      required: [query, count, network, paidAmount, currency, txHash, latencyMs]
+      properties:
+        query:
+          type: string
+        count:
+          type: integer
+        network:
+          type: string
+          example: "stellar:testnet"
+        paidAmount:
+          type: string
+          example: "0.001"
+        currency:
+          type: string
+          example: "USDC"
+        txHash:
+          type: string
+          nullable: true
+          description: Settlement transaction hash, when available.
+        latencyMs:
+          type: integer
+
+    SearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/SearchResultsMeta'
+        - type: object
+          required: [results]
+          properties:
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/SearchResult'
+            suggestions:
+              type: array
+              items:
+                type: string
+              description: Present only when `?suggestions=1` was requested.
+
+    ImageSearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/SearchResultsMeta'
+        - type: object
+          required: [results]
+          properties:
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/ImageResult'
+
+    NewsSearchResponse:
+      allOf:
+        - $ref: '#/components/schemas/SearchResultsMeta'
+        - type: object
+          required: [results]
+          properties:
+            results:
+              type: array
+              items:
+                $ref: '#/components/schemas/NewsResult'
+
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant]
+        content:
+          type: string
+
+    ChatRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        model:
+          type: string
+          description: One of the whitelisted Groq models; falls back to the default if omitted or unrecognized.
+          enum:
+            - llama-3.3-70b-versatile
+            - llama-3.1-8b-instant
+            - mixtral-8x7b-32768
+        stream:
+          type: boolean
+          description: "Alternate way to request an SSE response (equivalent to `Accept: text/event-stream` or `?stream=1`)."
+
+    ChatResponse:
+      type: object
+      required: [content, model]
+      properties:
+        content:
+          type: string
+        model:
+          type: string
+
+    AiChatStreamEvent:
+      type: object
+      description: >
+        One frame of the `/ai/chat` SSE stream. `event: delta` frames carry
+        `{ content }` token fragments; the stream ends with either
+        `event: done` carrying `{ model }` or `event: error` carrying
+        `{ error }`.
+      oneOf:
+        - type: object
+          required: [content]
+          properties:
+            content:
+              type: string
+        - type: object
+          required: [model]
+          properties:
+            model:
+              type: string
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: string
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - network
+        - pricePerQuery
+        - protocol
+        - facilitator
+        - serperApiConfigured
+        - groqApiConfigured
+        - receivingAddressConfigured
+      properties:
+        status:
+          type: string
+          example: "ok"
+        network:
+          type: string
+          example: "stellar:testnet"
+        pricePerQuery:
+          type: string
+          example: "0.001 USDC"
+        protocol:
+          type: string
+          example: "x402"
+        facilitator:
+          type: string
+          format: uri
+        totalQueries:
+          type: integer
+          description: Express server only.
+        totalUsdcSettled:
+          type: string
+          description: Express server only.
+        avgLatencyMs:
+          type: integer
+          description: Express server only.
+        uptime:
+          type: string
+          description: Express server only.
+        serperApiConfigured:
+          type: boolean
+        groqApiConfigured:
+          type: boolean
+        receivingAddressConfigured:
+          type: boolean
+        timestamp:
+          type: string
+          format: date-time
+          description: Vercel serverless variant only.
