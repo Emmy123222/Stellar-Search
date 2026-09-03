@@ -32,8 +32,8 @@ import {
 import Groq from "groq-sdk";
 import dotenv from "dotenv";
 import {
-  HORIZON_URL, 
-  USDC_ISSUER, 
+  HORIZON_URL,
+  USDC_ISSUER,
   STELLAR_NETWORK,
   STELLAR_EXPERT_URL,
   AMOUNT_USDC,
@@ -58,15 +58,8 @@ import { resolveStat, statsUnavailableReason } from '../src/lib/serverHealth'
 
 dotenv.config();
 
-let config
-try {
-  config = readMcpConfig()
-} catch (error) {
-  console.error(formatConfigurationError(error))
-  throw error
-}
-const SERVER_URL = config.searchApiUrl
-const GROQ_API_KEY = config.groqApiKey
+const SERVER_URL = process.env.SEARCH_API_URL || 'http://localhost:3001'
+const GROQ_API_KEY = process.env.GROQ_API_KEY!
 
 let groq: Groq | undefined
 function getGroq(): Groq | undefined {
@@ -633,6 +626,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // Helper to handle abort without false completion
   const isAborted = () => controller.signal.aborted;
 
+  // Keep the externally exposed tools backed by the tested handler
+  // implementations. The remaining branches below handle image, news, and
+  // stats tools which have different response shapes.
+  if (name === 'web_search') {
+    const input = args as { query: string; count?: number; freshness?: string }
+    return webSearch(fetch, SERVER_URL, input.query, input.count ?? 5, input.freshness)
+  }
+  if (name === 'ai_summarize') {
+    const input = args as { text: string; instruction?: string }
+    return aiSummarize(groq, input.text, input.instruction ?? 'summarise')
+  }
+  if (name === 'check_balance') {
+    const input = args as { address: string }
+    return checkBalance(fetch, input.address)
+  }
+
   // ── web_search with progress ──────────────────────────────────────────
   if (name === "web_search") {
     const {
@@ -685,9 +694,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           code: "CANCELLED",
         });
 
-      const safeCount = clampCount(count, { min: 1, max: 10, defaultValue: 5 })
-      const params = new URLSearchParams({ q: query, count: String(safeCount) })
-      if (freshness) params.set('freshness', freshness)
       await sendProgress(server, progressToken, 'search', `Searching Serper for "${query}"`)
 
       const res = await fetch(`${SERVER_URL}/search?${params}`, {
@@ -793,7 +799,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `Searching images for "${query}"`,
       );
 
-      const safeCount = clampCount(count, { min: 1, max: 10, defaultValue: 5 })
+      const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 10)
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
       if (safeSearch) params.set('safeSearch', safeSearch)
 
@@ -909,7 +915,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `Searching news for "${query}"`,
       );
 
-      const safeCount = clampCount(count, { min: 1, max: 20, defaultValue: 10 })
+      const safeCount = Math.min(Math.max(parseInt(String(count)) || 10, 1), 20)
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
       if (freshness) params.set('freshness', freshness)
 
