@@ -1,11 +1,35 @@
 import { motion } from 'framer-motion'
-import { useState, useEffect, useMemo } from 'react'
-import { ExternalLink, Activity, BarChart2, RefreshCw, History, Search, Download } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import {
+  ExternalLink,
+  Activity,
+  BarChart2,
+  RefreshCw,
+  History,
+  Search,
+  Download,
+  CheckCircle2,
+  AlertTriangle,
+  HelpCircle,
+  Loader2,
+  ShieldCheck,
+} from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, truncateHash, formatTimeAgo, explorerTxUrl, explorerAccountUrl } from '../lib/stellar'
+import {
+  IS_MAINNET,
+  STELLAR_NETWORK,
+  AMOUNT_USDC,
+  STELLAR_EXPERT_URL,
+  truncateHash,
+  truncateAddress,
+  formatTimeAgo,
+  explorerTxUrl,
+  explorerAccountUrl,
+  verifyReceiptAgainstHorizon,
+} from '../lib/stellar'
 import { SavedResearchPanel } from '../components/search'
 import type { StellarTransaction } from '../hooks/useFreighterWallet'
-import type { SearchReceipt } from '../types'
+import type { SearchReceipt, ReceiptVerificationDetail, ReceiptVerificationStatus } from '../types'
 import { createReceiptBundle, downloadBundle } from '../lib/receiptBundle'
 
 interface Props {
@@ -19,17 +43,77 @@ interface Props {
 
 export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance, xlmBalance, onRefresh }: Props) {
   const [receipts, setReceipts] = useState<SearchReceipt[]>([])
+  const [verificationMap, setVerificationMap] = useState<Record<string, ReceiptVerificationDetail>>({})
+  const [verifyingAll, setVerifyingAll] = useState(false)
+
+  const verifyAllReceipts = useCallback(async (list: SearchReceipt[]) => {
+    if (list.length === 0) return
+    setVerifyingAll(true)
+
+    // Mark all as pending first
+    setVerificationMap((prev) => {
+      const next = { ...prev }
+      for (const r of list) {
+        if (r.txHash) {
+          next[r.txHash] = {
+            status: 'pending',
+            txHash: r.txHash,
+            network: r.network,
+          }
+        }
+      }
+      return next
+    })
+
+    const results: Record<string, ReceiptVerificationDetail> = {}
+    await Promise.all(
+      list.map(async (receipt) => {
+        if (!receipt.txHash) return
+        const detail = await verifyReceiptAgainstHorizon(receipt)
+        results[receipt.txHash] = detail
+      })
+    )
+
+    setVerificationMap((prev) => ({ ...prev, ...results }))
+    setVerifyingAll(false)
+  }, [])
+
+  const verifySingleReceipt = useCallback(async (receipt: SearchReceipt) => {
+    if (!receipt.txHash) return
+    setVerificationMap((prev) => ({
+      ...prev,
+      [receipt.txHash]: { status: 'pending', txHash: receipt.txHash, network: receipt.network },
+    }))
+
+    const detail = await verifyReceiptAgainstHorizon(receipt)
+    setVerificationMap((prev) => ({
+      ...prev,
+      [receipt.txHash]: detail,
+    }))
+  }, [])
 
   useEffect(() => {
     const raw = localStorage.getItem('stellarsearch_receipts')
     if (raw) {
       try {
-        setReceipts(JSON.parse(raw))
+        const parsed: SearchReceipt[] = JSON.parse(raw)
+        setReceipts(parsed)
+        // Automatically verify receipts against Horizon on initial load
+        if (parsed.length > 0) {
+          verifyAllReceipts(parsed)
+        }
       } catch (e) {
         console.error('Failed to parse receipts:', e)
       }
     }
-  }, [])
+  }, [verifyAllReceipts])
+
+  const handleRefresh = useCallback(() => {
+    onRefresh()
+    if (receipts.length > 0) {
+      verifyAllReceipts(receipts)
+    }
+  }, [onRefresh, receipts, verifyAllReceipts])
 
   const networkLabel = IS_MAINNET ? 'STELLAR MAINNET' : 'STELLAR TESTNET'
 
@@ -50,6 +134,25 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
     }))
   }, [transactions])
 
+  const receiptSummary = useMemo(() => {
+    let confirmed = 0
+    let mismatched = 0
+    let unverified = 0
+    let pending = 0
+
+    for (const r of receipts) {
+      if (!r.txHash) continue
+      const detail = verificationMap[r.txHash]
+      const status: ReceiptVerificationStatus = detail?.status || r.status || 'unverified'
+      if (status === 'confirmed') confirmed++
+      else if (status === 'mismatched') mismatched++
+      else if (status === 'pending') pending++
+      else unverified++
+    }
+
+    return { confirmed, mismatched, unverified, pending }
+  }, [receipts, verificationMap])
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-10 space-y-8">
 
@@ -65,11 +168,11 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
             <span className={`font-display text-xs tracking-wider ${IS_MAINNET ? 'text-neon-amber/60' : 'text-neon-green/60'}`}>{networkLabel}</span>
           </div>
           <button
-            onClick={onRefresh}
-            disabled={txLoading}
+            onClick={handleRefresh}
+            disabled={txLoading || verifyingAll}
             className="p-2 rounded-lg border border-white/10 text-white/30 hover:text-neon-cyan transition-colors disabled:opacity-40"
           >
-            <RefreshCw className={`w-4 h-4 ${txLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${(txLoading || verifyingAll) ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </motion.div>
@@ -277,25 +380,58 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
         className="rounded-2xl overflow-hidden"
         style={{ background: 'rgba(6,13,20,0.7)', border: '1px solid rgba(0,245,255,0.1)' }}
       >
-        <div className="flex items-center justify-between p-5 border-b border-white/5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-5 border-b border-white/5 gap-3">
           <div className="flex items-center gap-2">
             <History className="w-4 h-4 text-neon-cyan/40" />
             <span className="font-display text-xs text-white/30 tracking-widest">SEARCH AUDIT LOG</span>
-            <span className="font-display text-white/15" style={{ fontSize: '10px' }}>· PERSISTED LOCALLY</span>
+            <span className="font-display text-white/15" style={{ fontSize: '10px' }}>· VERIFIED AGAINST HORIZON</span>
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Verification Status Counter Pills */}
             {receipts.length > 0 && (
-              <button
-                onClick={async () => {
-                  const network = IS_MAINNET ? 'stellar:mainnet' : 'stellar:testnet'
-                  const bundle = await createReceiptBundle(receipts, network)
-                  downloadBundle(bundle)
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neon-cyan/20 text-neon-cyan/60 hover:text-neon-cyan hover:border-neon-cyan/40 transition-colors font-display text-[10px] tracking-wider"
-              >
-                <Download className="w-3 h-3" />
-                DOWNLOAD BUNDLE
-              </button>
+              <div className="flex items-center gap-1.5 mr-1 font-mono text-[10px]">
+                {receiptSummary.confirmed > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-neon-green/10 text-neon-green border border-neon-green/30">
+                    {receiptSummary.confirmed} CONFIRMED
+                  </span>
+                )}
+                {receiptSummary.mismatched > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/30">
+                    {receiptSummary.mismatched} MISMATCHED
+                  </span>
+                )}
+                {receiptSummary.unverified > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-white/5 text-white/40 border border-white/10">
+                    {receiptSummary.unverified} UNVERIFIED
+                  </span>
+                )}
+              </div>
+            )}
+
+            {receipts.length > 0 && (
+              <>
+                <button
+                  onClick={() => verifyAllReceipts(receipts)}
+                  disabled={verifyingAll}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-neon-cyan/20 text-neon-cyan/70 hover:text-neon-cyan hover:border-neon-cyan/40 transition-colors font-display text-[10px] tracking-wider disabled:opacity-40"
+                  title="Verify all receipts on Stellar Horizon"
+                >
+                  <ShieldCheck className={`w-3 h-3 ${verifyingAll ? 'animate-spin' : ''}`} />
+                  {verifyingAll ? 'VERIFYING...' : 'VERIFY ALL'}
+                </button>
+                <button
+                  onClick={async () => {
+                    const network = IS_MAINNET ? 'stellar:mainnet' : 'stellar:testnet'
+                    const bundle = await createReceiptBundle(receipts, network)
+                    downloadBundle(bundle)
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-white/60 hover:text-white hover:border-white/20 transition-colors font-display text-[10px] tracking-wider"
+                >
+                  <Download className="w-3 h-3" />
+                  DOWNLOAD BUNDLE
+                </button>
+              </>
             )}
             <div className="font-display text-[10px] text-white/20 uppercase tracking-wider">
               {receipts.length} RECEIPTS
@@ -311,38 +447,132 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
               <p className="text-white/25 text-sm mt-2">Perform a search to see your payment history</p>
             </div>
           ) : (
-            receipts.map((receipt, i) => (
-              <motion.div
-                key={receipt.txHash}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.03 }}
-                className="flex items-center gap-4 px-5 py-3.5 hover:bg-white/2 transition-colors"
-              >
-                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${receipt.network === 'stellar:mainnet' ? 'bg-neon-amber' : 'bg-neon-cyan'}`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white/70 font-medium truncate">"{receipt.query}"</p>
-                  <div className="flex items-center gap-3 mt-1">
-                    <a
-                      href={explorerTxUrl(receipt.txHash)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-white/25 hover:text-neon-cyan transition-colors flex items-center gap-1"
-                      style={{ fontSize: '10px' }}
-                    >
-                      {truncateHash(receipt.txHash, 8)} <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
-                    <span className="text-white/20" style={{ fontSize: '10px' }}>{formatTimeAgo(receipt.timestamp)}</span>
+            receipts.map((receipt, i) => {
+              const detail = verificationMap[receipt.txHash]
+              const status: ReceiptVerificationStatus = detail?.status || receipt.status || 'unverified'
+
+              return (
+                <motion.div
+                  key={receipt.txHash}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.03 }}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 hover:bg-white/2 transition-colors"
+                >
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    {/* Status Dot */}
+                    <div className="mt-1.5 flex-shrink-0">
+                      {status === 'confirmed' && (
+                        <div
+                          className="w-2 h-2 rounded-full bg-neon-green"
+                          style={{ boxShadow: '0 0 8px rgba(57,255,20,0.8)' }}
+                        />
+                      )}
+                      {status === 'pending' && (
+                        <div className="w-2 h-2 rounded-full bg-neon-cyan animate-pulse" />
+                      )}
+                      {status === 'mismatched' && (
+                        <div
+                          className="w-2 h-2 rounded-full bg-red-500"
+                          style={{ boxShadow: '0 0 8px rgba(239,68,68,0.8)' }}
+                        />
+                      )}
+                      {status === 'unverified' && (
+                        <div className="w-2 h-2 rounded-full bg-white/20" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-white/80 font-medium truncate">"{receipt.query}"</p>
+                      
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[10px]">
+                        <a
+                          href={explorerTxUrl(receipt.txHash)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono text-white/30 hover:text-neon-cyan transition-colors flex items-center gap-1"
+                        >
+                          {truncateHash(receipt.txHash, 8)} <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                        
+                        {receipt.destination && (
+                          <span className="font-mono text-white/20 truncate max-w-[140px]" title={`Destination: ${receipt.destination}`}>
+                            to: {truncateAddress(receipt.destination, 4)}
+                          </span>
+                        )}
+
+                        <span className="text-white/20">{formatTimeAgo(receipt.timestamp)}</span>
+
+                        {(status === 'unverified' || status === 'mismatched') && (
+                          <button
+                            onClick={() => verifySingleReceipt(receipt)}
+                            className="font-mono text-neon-cyan/70 hover:text-neon-cyan underline transition-colors cursor-pointer"
+                          >
+                            Re-verify
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Mismatch Warning Details */}
+                      {status === 'mismatched' && (
+                        <div className="mt-2 px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 font-mono text-[10px] flex items-center gap-2">
+                          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 text-red-400" />
+                          <span>
+                            {detail?.mismatches && detail.mismatches.length > 0
+                              ? detail.mismatches.join('; ')
+                              : 'Discrepancy detected against Horizon ledger'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="font-display text-sm text-neon-amber/80">{receipt.amount} USDC</p>
-                  <p className="font-display text-white/15 mt-0.5 uppercase" style={{ fontSize: '9px' }}>
-                    {receipt.network.split(':')[1]}
-                  </p>
-                </div>
-              </motion.div>
-            ))
+
+                  {/* Right: Amount & Distinct Status Badge */}
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center flex-shrink-0 gap-1.5 pl-5 sm:pl-0 border-t sm:border-t-0 border-white/5 pt-2 sm:pt-0">
+                    <p className="font-display text-sm text-neon-amber/90">
+                      {receipt.amount} {receipt.asset || 'USDC'}
+                    </p>
+
+                    <div className="flex items-center gap-2">
+                      {status === 'confirmed' && (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-neon-green/10 text-neon-green border border-neon-green/30"
+                          title={`Verified on Stellar Horizon${detail?.ledgerSequence ? ` at ledger #${detail.ledgerSequence}` : ''}`}
+                        >
+                          <CheckCircle2 className="w-3 h-3 text-neon-green" />
+                          CONFIRMED{detail?.ledgerSequence ? ` #${detail.ledgerSequence}` : ''}
+                        </span>
+                      )}
+
+                      {status === 'pending' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30 animate-pulse">
+                          <Loader2 className="w-3 h-3 text-neon-cyan animate-spin" />
+                          VERIFYING...
+                        </span>
+                      )}
+
+                      {status === 'mismatched' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-red-500/10 text-red-400 border border-red-500/30">
+                          <AlertTriangle className="w-3 h-3 text-red-400" />
+                          MISMATCHED
+                        </span>
+                      )}
+
+                      {status === 'unverified' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-white/5 text-white/40 border border-white/10">
+                          <HelpCircle className="w-3 h-3 text-white/40" />
+                          UNVERIFIED
+                        </span>
+                      )}
+
+                      <span className="font-display text-white/20 uppercase text-[9px]">
+                        {receipt.network ? receipt.network.split(':')[1] : 'testnet'}
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              )
+            })
           )}
         </div>
       </motion.div>

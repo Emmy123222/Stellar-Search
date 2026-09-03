@@ -14,7 +14,35 @@ import { resolveApiUrl } from '../lib/config'
 import { useState, useCallback, useRef }       from 'react'
 import { toast }                               from 'sonner'
 import { Buffer }                              from 'buffer'
-import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
+import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl, STELLAR_NETWORK } from '../lib/stellar'
+
+let paymentDepsPromise: Promise<{
+  x402Client: typeof import('@x402/fetch').x402Client
+  x402HTTPClient: typeof import('@x402/fetch').x402HTTPClient
+  ExactStellarScheme: typeof import('@x402/stellar/exact/client').ExactStellarScheme
+  signAuthEntry: typeof import('@stellar/freighter-api').signAuthEntry
+  getNetworkDetails: typeof import('@stellar/freighter-api').getNetworkDetails
+  Networks: typeof import('@stellar/stellar-sdk').Networks
+}> | null = null
+
+function loadPaymentDeps() {
+  if (!paymentDepsPromise) {
+    paymentDepsPromise = Promise.all([
+      import('@x402/fetch'),
+      import('@x402/stellar/exact/client'),
+      import('@stellar/freighter-api'),
+      import('@stellar/stellar-sdk'),
+    ]).then(([fetchMod, schemeMod, freighterMod, stellarMod]) => ({
+      x402Client: fetchMod.x402Client,
+      x402HTTPClient: fetchMod.x402HTTPClient,
+      ExactStellarScheme: schemeMod.ExactStellarScheme,
+      signAuthEntry: freighterMod.signAuthEntry,
+      getNetworkDetails: freighterMod.getNetworkDetails,
+      Networks: stellarMod.Networks,
+    }))
+  }
+  return paymentDepsPromise
+}
 
 const SERVER_URL = (path: string) => resolveApiUrl(path)
 
@@ -316,12 +344,21 @@ export function useSearch(walletAddress: string | null = null) {
           const receiptsRaw = localStorage.getItem('stellarsearch_receipts')
           const receipts: SearchReceipt[] = receiptsRaw ? JSON.parse(receiptsRaw) : []
           
+          const destination =
+            data.destination ||
+            data.payTo ||
+            (paymentRequired?.accepts?.[0] as any)?.payTo ||
+            ''
+
           const newReceipt: SearchReceipt = {
             txHash: data.txHash,
             query: query.trim(),
             amount: data.paidAmount || '0.001',
+            asset: data.currency || 'USDC',
+            destination: destination || undefined,
             timestamp: new Date().toISOString(),
-            network: data.network || 'stellar:testnet',
+            network: data.network || STELLAR_NETWORK || 'stellar:testnet',
+            status: 'unverified',
           }
 
           // Keep only last 50 receipts

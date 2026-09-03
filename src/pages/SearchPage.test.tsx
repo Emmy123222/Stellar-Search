@@ -82,7 +82,7 @@ describe('SearchPage component', () => {
 
     const searchOriginalBtn = screen.getByTestId('search-original-btn')
     fireEvent.click(searchOriginalBtn)
-    expect(handleSearch).toHaveBeenCalledWith('stelarr blockchan', undefined)
+    expect(handleSearch).toHaveBeenCalledWith('stelarr blockchan', undefined, 5, 'web')
   })
 
   it('renders "Did you mean?" suggestion banner and allows accepting or dismissing', () => {

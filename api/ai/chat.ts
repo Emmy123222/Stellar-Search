@@ -20,7 +20,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Groq is an optional feature: keep paid search deployable without its key.
-  const groqApiKey = readServerConfig().groqApiKey
+  const groqApiKey = process.env.GROQ_API_KEY || (function() {
+    try {
+      return readServerConfig().groqApiKey
+    } catch {
+      return undefined
+    }
+  })()
   if (!groqApiKey) return res.status(503).json({ error: 'AI assistant is not configured.' })
   const groq = new Groq({ apiKey: groqApiKey })
   const messages = body.messages as ChatMessage[]

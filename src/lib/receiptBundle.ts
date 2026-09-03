@@ -1,4 +1,5 @@
 import { sha256 } from './hashing'
+import { verifyReceiptAgainstHorizon } from './receiptVerification'
 import type { SearchReceipt } from '../types'
 
 /**
@@ -171,6 +172,59 @@ export async function verifyBundleOffline(
 
   const integrityValid = findings.length === 1 // only the ledger finding
   return { integrityValid, ledgerValid: false, findings }
+}
+
+/**
+ * Verifies both bundle cryptographic integrity and on-chain ledger status against Horizon.
+ *
+ * 1. Executes verifyBundleOffline() to confirm SHA-256 integrity proof.
+ * 2. If integrity is valid, queries Horizon to confirm all receipts on ledger.
+ */
+export async function verifyBundleOnline(
+  bundle: SearchReceiptBundle,
+  options?: { horizonUrl?: string; fetchFn?: typeof fetch }
+): Promise<VerificationResult> {
+  const offlineResult = await verifyBundleOffline(bundle)
+  const findings = [...offlineResult.findings.filter(f => !f.includes('not performed offline'))]
+
+  if (!offlineResult.integrityValid) {
+    return {
+      integrityValid: false,
+      ledgerValid: false,
+      findings,
+    }
+  }
+
+  let allLedgerValid = true
+
+  for (const receipt of bundle.receipts) {
+    const detail = await verifyReceiptAgainstHorizon(receipt, {
+      horizonUrl: options?.horizonUrl,
+      fetchFn: options?.fetchFn,
+      expectedNetwork: bundle.network,
+    })
+
+    if (detail.status !== 'confirmed') {
+      allLedgerValid = false
+      if (detail.mismatches && detail.mismatches.length > 0) {
+        findings.push(`Receipt ${receipt.txHash}: ${detail.mismatches.join(', ')}`)
+      } else if (detail.error) {
+        findings.push(`Receipt ${receipt.txHash}: ${detail.error}`)
+      } else {
+        findings.push(`Receipt ${receipt.txHash}: unverified on ledger`)
+      }
+    }
+  }
+
+  if (allLedgerValid) {
+    findings.push('All receipts successfully verified on Stellar Horizon ledger')
+  }
+
+  return {
+    integrityValid: true,
+    ledgerValid: allLedgerValid,
+    findings,
+  }
 }
 
 // ---------------------------------------------------------------------------
