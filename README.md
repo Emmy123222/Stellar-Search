@@ -15,16 +15,16 @@ StellarSearch is a pay-per-query web search API for autonomous AI agents. Every 
 
 ## Real stack (no mocks)
 
-| Layer | Real package / service |
-|---|---|
-| Payment protocol | `@x402/express` + `@x402/stellar` + `@x402/core` |
-| Blockchain | Stellar Testnet (via Horizon API) |
-| Facilitator | OpenZeppelin x402 (`channels.openzeppelin.com`) |
-| Wallet connect | `@stellar/freighter-api` (real Freighter extension) |
-| Balances / tx | Stellar Horizon REST API (live, not mocked) |
-| Search results | Serper.dev API (real Google search results) |
-| AI assistant | `groq-sdk` · Llama 3.3 70B (real Groq API) |
-| Frontend | React 18, TypeScript, Tailwind CSS, Framer Motion |
+| Layer            | Real package / service                              |
+| ---------------- | --------------------------------------------------- |
+| Payment protocol | `@x402/express` + `@x402/stellar` + `@x402/core`    |
+| Blockchain       | Stellar Testnet (via Horizon API)                   |
+| Facilitator      | OpenZeppelin x402 (`channels.openzeppelin.com`)     |
+| Wallet connect   | `@stellar/freighter-api` (real Freighter extension) |
+| Balances / tx    | Stellar Horizon REST API (live, not mocked)         |
+| Search results   | Serper.dev API (real Google search results)         |
+| AI assistant     | `groq-sdk` · Llama 3.3 70B (real Groq API)          |
+| Frontend         | React 18, TypeScript, Tailwind CSS, Framer Motion   |
 
 ---
 
@@ -40,11 +40,11 @@ npm install
 
 ### 2. Get your keys (all free)
 
-| Key | Where to get it |
-|---|---|
+| Key                         | Where to get it                                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `STELLAR_RECEIVING_ADDRESS` | [Stellar Lab](https://laboratory.stellar.org/#account-creator?network=test) — generate + fund testnet keypair |
-| `SERPER_API_KEY` | [serper.dev](https://serper.dev/) — free tier: 2.5k queries/month |
-| `GROQ_API_KEY` | [console.groq.com/keys](https://console.groq.com/keys) — free |
+| `SERPER_API_KEY`            | [serper.dev](https://serper.dev/) — free tier: 2.5k queries/month                                             |
+| `GROQ_API_KEY`              | [console.groq.com/keys](https://console.groq.com/keys) — free                                                 |
 
 ### 3. Configure
 
@@ -167,6 +167,7 @@ Before signing, a bounded preflight verifies the active account, expected networ
 ### Payment Integrity & Replay Protection
 
 To guarantee that each payment identifier authorizes **exactly one provider call**, StellarSearch tracks consumed payment identifiers across Express (`server/index.ts`) and Vercel (`api/search.ts`) runtimes:
+
 - **Payload Invalidation:** Extracts transaction hashes (or SHA-256 fallback hashes of payment headers) and invalidates consumed payloads for a 300-second window.
 - **Concurrency Throttling:** Rapid parallel requests using identical payment payloads are throttled so only one search query proceeds; concurrent duplicates immediately receive HTTP 402 (`Payment payload already consumed`).
 
@@ -1151,10 +1152,10 @@ The `supply-chain` CI job generates a **CycloneDX SBOM** from the committed lock
 
 ## Hackathon requirements
 
-| Requirement | ✓ |
-|---|---|
-| Open-source repo + README | ✅ |
-| 2–3 min video demo | Record showing: connect Freighter → search → see 402 → payment settles → results |
-| Real Stellar testnet transactions | ✅ Every search settles 0.001 USDC via OpenZeppelin facilitator |
-| x402 protocol | ✅ `@x402/express` + `@x402/stellar` |
-| Addresses explicit demand signal | ✅ "pay-per-query web search instead of monthly subscriptions" |
+| Requirement                       | ✓                                                                                |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| Open-source repo + README         | ✅                                                                               |
+| 2–3 min video demo                | Record showing: connect Freighter → search → see 402 → payment settles → results |
+| Real Stellar testnet transactions | ✅ Every search settles 0.001 USDC via OpenZeppelin facilitator                  |
+| x402 protocol                     | ✅ `@x402/express` + `@x402/stellar`                                             |
+| Addresses explicit demand signal  | ✅ "pay-per-query web search instead of monthly subscriptions"                   |

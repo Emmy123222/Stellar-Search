@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const mockCreate = vi.fn()
+const mockCreate = vi.fn();
 
 vi.mock('groq-sdk', () => ({
   default: class {
