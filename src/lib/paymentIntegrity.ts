@@ -131,7 +131,7 @@ export function getConsumedPaymentsCount(): number {
  * Extracts a unique, deterministic payment identifier from a payment header string or object.
  *
  * Checks if the header contains structured JSON with a transaction hash/id/signature.
- * If no explicit ID field is found, computes a SHA-256 hash of the normalized header string.
+ * If no explicit ID field is found, computes a deterministic hash of the normalized header string.
  */
 export function extractPaymentIdentifier(header: unknown): string | null {
   if (!header || (typeof header !== 'string' && typeof header !== 'object')) {
@@ -149,12 +149,7 @@ export function extractPaymentIdentifier(header: unknown): string | null {
     try {
       obj = JSON.parse(rawString)
     } catch {
-      try {
-        const decoded = Buffer.from(rawString, 'base64').toString('utf8')
-        obj = JSON.parse(decoded)
-      } catch {
-        // Raw non-JSON string
-      }
+      obj = tryDecodeBase64Json(rawString)
     }
   }
 
@@ -172,8 +167,8 @@ export function extractPaymentIdentifier(header: unknown): string | null {
     }
   }
 
-  // 2. Fallback: SHA-256 hash of the raw header string
-  const hash = crypto.createHash('sha256').update(rawString).digest('hex')
+  // 2. Fallback: deterministic hash of the raw header string
+  const hash = stableHash(rawString)
   return `hash:${hash}`
 }
 
@@ -205,7 +200,7 @@ export function consumePaymentPayload(
     expiresAt: now + validityWindowMs,
   })
 
-  return { ok: true, paymentId }
+  return { paymentId } as { ok: true; paymentId }
 }
 
 /**
@@ -217,4 +212,121 @@ export function isPaymentConsumed(header: unknown, now: number = Date.now()): bo
   if (!paymentId) return false
   const existing = consumedPayments.get(paymentId)
   return !!(existing && existing.expiresAt > now)
+}
+
+/**
+ * Input values required to perform a payment preflight check.
+ * This is intentionally a plain data object so hooks can assemble it from wallet/network state.
+ */
+export interface PaymentPreflightInput {
+  /** Active Stellar public key (from Freighter) or null if none selected. */
+  account: string | null
+  /** The network the wallet is currently connected to. */
+  network: string
+  /** The network the x402 payment requires (e.g. 'testnet' or 'public'). */
+  expectedNetwork: string
+  /** Whether the active account has a USDC trustline. */
+  usdcTrustline: boolean
+  /** Spendable USDC balance available for the payment. */
+  spendableBalance: number
+  /** Amount required for the payment. */
+  requiredAmount: number
+  /** Whether the signing wallet (Freighter) is available and unlocked. */
+  signerAvailable: boolean
+}
+
+export type PreflightFailureReason =
+  | 'NO_ACCOUNT'
+  | 'WRONG_NETWORK'
+  | 'NO_TRUSTLINE'
+  | 'INSUFFICIENT_BALANCE'
+  | 'NO_SIGNER'
+
+export type PaymentPreflightResult =
+  | { ok: true }
+  | { ok: false; reason: PreflightFailureReason; recoveryAction: string }
+
+/**
+ * Checks whether all conditions are satisfied before creating a signed x402 payment payload.
+ *
+ * This is a bounded, side-effect-free preflight: it never creates or signs a payment,
+ * and it returns a single targeted recovery action for the first unmet condition.
+ *
+ * @param input Preflight data assembled from the active wallet and network state.
+ * @returns `{ ok: true }if all checks pass. Otherwise `{ ok: false, reason, recoveryAction }`.
+ */
+export function performPaymentPreflight(input: PaymentPreflightInput): PaymentPreflightResult {
+  if (!input.signerAvailable) {
+    return {
+      ok: false,
+      reason: 'NO_SIGNER',
+      recoveryAction: 'Unlock Freighter and make sure it is available.',
+    }
+  }
+
+  if (!input.account) {
+    return {
+      ok: false,
+      reason: 'NO_ACCOUNT',
+      recoveryAction: 'Open Freighter and select an active account.',
+    }
+  }
+
+  if (input.network !== input.expectedNetwork) {
+    return {
+      ok: false,
+      reason: 'WRONG_NETWORK',
+      recoveryAction: `Switch your wallet network to ${input.expectedNetwork}.`,
+    }
+  }
+
+  if (!input.usdcTrustline) {
+    return {
+      ok: false,
+      reason: 'NO_TRUSTLINE',
+      recoveryAction: 'Add a USDC trustline in Freighter before making this payment.',
+    }
+  }
+
+  if (typeof input.spendableBalance !== 'number' || typeof input.requiredAmount !== 'number' || !Number.isFinite(input.spendableBalance) || !Number.isFinite(input.requiredAmount) || input.requiredAmount < 0 || input.spendableBalance < input.requiredAmount) {
+    return {
+      ok: false,
+      reason: 'INSUFFICIENT_BALANCE',
+      recoveryAction: 'Fund your account with more USDC to cover the payment amount.',
+    }
+  }
+
+  return { ok: true }
+}
+
+/**
+ * Helper to decode a base64-encoded UTF-8 string and parse it as JSON.
+ * Returns the parsed JSON object, or null if decoding/parsing fails.
+ */
+function tryDecodeBase64Json(raw: string): any {
+  try {
+    const binary = atob(raw)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    const decoded = new TextDecoder().decode(bytes)
+    return JSON.parse(decoded)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Computes a stable, non-cryptographic hash of a string.
+ * Used as a fallback when no explicit Payment ID is available.
+ * This is browser-safe and does not rely on Node-specific apis.
+ */
+function stableHash(input: string): string {
+  let hash = 5381
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) + hash) + input.charCodeAt(i)
+    hash |= 0 // Convert to 32bit integer
+  }
+  return hash.toString(36)
 }

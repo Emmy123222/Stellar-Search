@@ -32,6 +32,7 @@ export interface SearchSession {
   errorCode?: SearchErrorCode
   suggestions?: string[]
   durationMs?: number
+  preflight?: PreflightResult
 }
 
 export type SearchErrorCode =
@@ -71,6 +72,21 @@ export interface WalletState {
   error: string | null
   accountExists: boolean
   accountStatus: WalletAccountStatus
+}
+
+export type PreflightCheckId = 'account' | 'network' | 'trustline' | 'balance' | 'signer'
+
+export interface PreflightCheck {
+  id: PreflightCheckId
+  label: string
+  passed: boolean
+  message?: string
+}
+
+export interface PreflightResult {
+  passed: boolean
+  checks: PreflightCheck[]
+  recoveryAction: string
 }
 
 export interface StellarTransaction {

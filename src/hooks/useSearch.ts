@@ -13,6 +13,10 @@ import { resolveApiUrl } from '../lib/config'
 
 import { useState, useCallback, useRef }       from 'react'
 import { toast }                               from 'sonner'
+import { x402Client, x402HTTPClient }          from '@x402/fetch'
+import { ExactStellarScheme }                  from '@x402/stellar/exact/client'
+import { signAuthEntry, getNetworkDetails, getPublicKey } from '@stellar/freighter-api'
+import { Networks, Horizon, StrKey }           from '@stellar/stellar-sdk'
 import { Buffer }                              from 'buffer'
 import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl, STELLAR_NETWORK } from '../lib/stellar'
 
@@ -160,6 +164,79 @@ export function composeAdvancedSearchQuery(query: AdvancedSearchQuery): string {
     throw new Error(`Advanced query length ${generated.length} exceeds maximum ${ADVANCED_QUERY_MAX_LENGTH}`)
   }
   return generated
+}
+
+async function preflightStellarAccount(
+  address: string,
+  requiredAmount?: string,
+  expectedNetwork = EXPECTED_WALLET_NETWORK
+) {
+  if (!StrKey.isValidEd25519PublicKey(address)) {
+    throw new Error('Invalid Stellar account. Reconnect your Freighter wallet.')
+  }
+  if (typeof signAuthEntry !== 'function') {
+    throw new Error('Freighter signer unavailable. Install Freighter and try again.')
+  }
+
+  const net = await getNetworkDetails()
+  if (net.error) {
+    throw new Error(net.error.message)
+  }
+  if (net.network !== expectedNetwork) {
+    throw new Error(`Switch Freighter to ${expectedNetwork}. Currently: ${net.network}`)
+  }
+
+  let activeAccount: string
+  try {
+    activeAccount = await getPublicKey()
+  } catch {
+    throw new Error('Freighter signer unavailable. Unlock Freighter and try again.')
+  }
+  if (activeAccount !== address) {
+    throw new Error('Freighter active account changed. Reconnect the expected wallet.')
+  }
+
+  let account: any
+  try {
+    account = await new Horizon.Server(HORIZON_URL).loadAccount(address)
+  } catch (err: any) {
+    if (err?.response?.status === 404) {
+      throw new Error('Account not found on Stellar network. Fund the connected address first.')
+    }
+    throw new Error('Unable to verify Stellar account. Reconnect Freighter and try again.')
+  }
+
+  const usdcBalance = account.balances?.find(
+    (balance: any) =>
+      balance.asset_type === 'credit_alphanum4' &&
+      balance.asset_code === 'USDC' &&
+      balance.asset_issuer === USDC_ISSUER
+  )
+
+  if (!usdcBalance) {
+    throw new Error('No USDC trustline found. Add the USDC trustline to your wallet and try again.')
+  }
+
+  const spendableUsdc = Number(usdcBalance.balance) - Number(usdcBalance.selling_liabilities ?? 0)
+
+  if (requiredAmount !== undefined) {
+    const required = Number(requiredAmount)
+    if (!Number.isFinite(required) || required <= 0) {
+      throw new Error('Invalid payment amount from server. Retry the search.')
+    }
+    if (spendableUsdc < required) {
+      throw new Error(`Insufficient USDC balance. Required: ${requiredAmount}, available: ${spendableUsdc}.`)
+    }
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error('Preflight timed out. Check your network connection.')), ms)
+    ),
+  ])
 }
 
 /**
@@ -341,6 +418,14 @@ export function useSearch(walletAddress: string | null = null) {
         (name) => firstRes.headers.get(name)
       )
       console.log('💰 Payment requirements:', paymentRequired)
+
+      // Preflight — verify account, expected network (checked above), USDC trustline,
+      // spendable amount, and signer availability before triggering the Freighter signing popup.
+      const requiredAmount = paymentRequired.amount != null ? String(paymentRequired.amount) : undefined
+      await withTimeout(
+        preflightStellarAccount(walletAddress, requiredAmount),
+        PREFLIGHT_TIMEOUT_MS
+      )
 
       // Flow step 3 — createPaymentPayload() triggers the Freighter popup (signs auth entry)
       advance(3)

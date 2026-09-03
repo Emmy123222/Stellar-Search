@@ -138,15 +138,26 @@ The response is cacheable for five minutes. Set `PUBLIC_BASE_URL` to keep `price
 ```
 Browser (Freighter) → GET /search?q=...
                      ← HTTP 402 + payment requirements
+                     → Preflight: account, network, trustline, balance, signer
                      → Sign Soroban auth entry (Freighter prompt)
                      → GET /search + X-Payment: <signature>
                      ← OpenZeppelin facilitator verifies + settles 0.001 USDC
                      ← 200 OK + Search results
 ```
 
+Before signing, a bounded preflight verifies the active account, expected network, USDC trustline, spendable amount, and signer availability. If any check fails, no payment payload is created and the user gets a single targeted recovery action (e.g. "Add USDC", "Switch to testnet", or "Enable signer").
+
+| Preflight check | Required state | Targeted recovery action |
+|---|---|---|
+| Active account | A Freighter account is selected | Connect Freighter and select an account |
+| Expected network | Freighter network matches `VITE_STELLAR_NETWORK` (default `stellar:testnet`) | Switch Freighter to the configured Stellar network |
+| USDC trustline | Trustline to the Soroban USDC contract exists | Add the USDC trustline in Freighter |
+| Spendable amount | USDC balance ≥ 0.001 USDC (`AMOUNT_STROOPS=10000`) | Fund the wallet with testnet USDC |
+| Signer availability | Freighter can sign Soroban authorization entries | Unlock Freighter and approve the request |
+
 1. Agent hits `/search` — the `@x402/express` middleware intercepts
 2. Returns `HTTP 402 Payment Required` with price + network + payTo address
-3. The x402 client signs a Soroban authorization entry via Freighter wallet
+3. After the preflight passes, the x402 client signs a Soroban authorization entry via Freighter wallet
 4. Retries with `X-Payment` header containing the signed entry
 5. OpenZeppelin facilitator at `channels.openzeppelin.com/x402/testnet` verifies the signature and settles 0.001 USDC on Stellar testnet
 6. Server enforces payment integrity (`src/lib/paymentIntegrity.ts`), rejecting replayed or duplicate payloads within the 300-second validity window, and returns search results
@@ -223,6 +234,7 @@ sequenceDiagram
     User->>Browser: Enter search query
     Browser->>Server: GET /search?q=...
     Server-->>Browser: 402 Payment Required<br/>(price, network, payTo)
+    Browser->>Browser: Bounded preflight: account, network, trustline, balance, signer
     Browser->>Freighter: Request signature of<br/>Soroban auth entry
     Freighter-->>Browser: Signed payment payload
     Browser->>Server: GET /search?q=...<br/>+ X-Payment header
@@ -859,10 +871,13 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 | `api/ai/chat.ts` | 90% | 60% | 60% | 90% |
 | `mcp-server/index.ts` | 20% | 10% | 10% | 20% |
 | `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
+| `src/hooks/useSearch.ts` | 85% | 65% | 90% | 85% |
 
 > **Ratchet policy:** When a module's real coverage exceeds its threshold, bump the threshold in `vite.config.ts` in the same PR. Global thresholds ratchet `15 → 25 → 35` as payment, wallet, API, MCP, and UI behavior moves from untested to tested. Keep Express (`server/`), Vercel (`api/`), browser (`src/`), and MCP (`mcp-server/`) constants aligned (`STELLAR_NETWORK`, `USDC_CONTRACT`, `AMOUNT_STROOPS=10000` → `0.001 USDC`).
 
 Coverage verifies the **x402 settlement semantics** for paid routes (`/search`, `/images`, `/news`): `scheme=exact`, `network=stellar:testnet|mainnet`, `amount=10000 stroops`, `asset=C...` (Soroban USDC contract, not `USDC:ISSUER`), `payTo=G...`. See `server/index.ts:104`, `api/search.ts:48`, and `mcp-server/index.ts:19`.
+
+Coverage also verifies the **bounded preflight guard** in `src/hooks/useFreighterWallet.ts` and `src/hooks/useSearch.ts`: if account, network, USDC trustline, spendable amount, or signer availability fails, the search surfaces one targeted recovery action and never creates a payment payload.
 
 ---
 

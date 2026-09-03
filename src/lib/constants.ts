@@ -1,6 +1,6 @@
 /**
  * constants.ts
- * Centralized Stellar network constants for both Frontend and Backend.
+ * Centralized configuration for the Stellar environment.
  */
 
 import { readBrowserConfig } from './config'
@@ -11,12 +11,10 @@ export const STELLAR_NETWORK = browserConfig.stellarNetwork
 export const IS_MAINNET = STELLAR_NETWORK === 'stellar:mainnet'
 export const EXPECTED_WALLET_NETWORK = IS_MAINNET ? 'PUBLIC' : 'TESTNET'
 
-// Horizon
 export const HORIZON_TESTNET = 'https://horizon-testnet.stellar.org'
 export const HORIZON_MAINNET = 'https://horizon.stellar.org'
 export const HORIZON_URL = IS_MAINNET ? HORIZON_MAINNET : HORIZON_TESTNET
 
-// Explorer
 export const STELLAR_EXPERT_TESTNET = 'https://stellar.expert/explorer/testnet'
 export const STELLAR_EXPERT_MAINNET = 'https://stellar.expert/explorer/public'
 export const STELLAR_EXPERT_URL = IS_MAINNET ? STELLAR_EXPERT_MAINNET : STELLAR_EXPERT_TESTNET
