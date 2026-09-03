@@ -1,5 +1,5 @@
 import { readBrowserConfig } from '../../lib/config'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink, Star, Clock, Sparkles, Download, FileJson, FileSpreadsheet, Check, Copy, Bookmark } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
@@ -21,7 +21,21 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summarizing, setSummarizing]       = useState(false)
   const [copiedUrl, setCopiedUrl]           = useState<string | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
   const { isSaved, toggle: toggleSaved }    = useSavedResearch()
+
+  useEffect(() => {
+    if (!showExportMenu) return
+    const close = (event: MouseEvent) => {
+      if (!exportMenuRef.current?.contains(event.target as Node)) setShowExportMenu(false)
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowExportMenu(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', escape)
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', escape) }
+  }, [showExportMenu])
 
   const exportAsJSON = () => {
     if (!results.length) return
@@ -226,12 +240,15 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
         </div>
         <div className="flex items-center gap-3">
           {/* Export Button with Format Selector */}
-          <div className="relative">
+          <div className="relative" ref={exportMenuRef}>
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-white/70 hover:text-neon-cyan hover:bg-neon-cyan/10 transition-colors"
               style={{ border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(255,255,255,0.05)' }}
               aria-label="Export search results"
+              aria-haspopup="menu"
+              aria-expanded={showExportMenu}
+              aria-controls="export-results-menu"
             >
               <Download className="w-3 h-3" />
               EXPORT
@@ -241,6 +258,8 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
             <AnimatePresence>
               {showExportMenu && (
                 <motion.div
+                  id="export-results-menu"
+                  role="menu"
                   initial={{ opacity: 0, y: -5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -5 }}
@@ -251,6 +270,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
                   }}
                 >
                   <button
+                    role="menuitem"
                     onClick={exportAsJSON}
                     className="w-full px-3 py-2.5 text-left hover:bg-white/5 transition-colors flex items-center gap-2"
                   >
@@ -261,6 +281,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
                     </div>
                   </button>
                   <button
+                    role="menuitem"
                     onClick={exportAsCSV}
                     className="w-full px-3 py-2.5 text-left hover:bg-white/5 transition-colors flex items-center gap-2"
                   >
