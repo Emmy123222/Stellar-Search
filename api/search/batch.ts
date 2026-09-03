@@ -70,6 +70,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const parsedCount = Math.min(Math.max(parseInt(String(rawCount ?? '5')) || 5, 1), 20)
 
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT']) as string | undefined
+  let paymentId: string | null
+  let txHash: string | null
+  let verified: boolean
   if (!paymentHeader) {
     const quoteEvent = {
       v: 1, type: 'quote', requestId, totalQueries: cleanQueries.length,
@@ -86,15 +89,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const consumption = consumePaymentPayload(paymentHeader)
   if (!consumption.ok) return res.status(402).json({ error: consumption.error })
-  const paymentId = consumption.paymentId
-  const verified = true
-  let txHash: string | null = null
+  paymentId = consumption.paymentId
+  verified = true
+  txHash = null
   try {
     const decoded = Buffer.from(paymentHeader as string, 'base64').toString('utf8')
     const parsed = JSON.parse(decoded)
     txHash = parsed.transactionHash || parsed.txHash || null
-  } catch {
-    // ignore parse error
+  } catch (err) {
+    void err
   }
 
   if (idempotencyKey) {

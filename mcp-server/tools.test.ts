@@ -86,14 +86,34 @@ function getCallToolHandler(): Function {
 }
 
 describe('MCP server — alignment with Express/Vercel/browser constants', () => {
+  const originalFetch = global.fetch
+
+  beforeEach(() => {
+    global.fetch = originalFetch
+  })
+
   it('MCP uses same AMOUNT_USDC as server (x402 settlement)', async () => {
     expect(AMOUNT_USDC).toBe('0.001')
     // Import MCP server to trigger handler registration
-    await import('./index.js')
-    // Verify that ListTools handler was registered
+    const { addMcpReceipt, clearMcpReceipts, getCapabilityDoc, getSearchSchemaDoc } = await import('./index.js')
     expect(mockSetRequestHandler).toHaveBeenCalled()
-    const listToolsCall = mockSetRequestHandler.mock.calls.find(c => c[0] === ListToolsRequestSchemaMock)
+    const listToolsCall = mockSetRequestHandler.mock.calls.find(c => c[0] === ListToolsRequestSchema)
     expect(listToolsCall).toBeDefined()
+
+    expect(getCapabilityDoc()).toBeDefined()
+    expect(getSearchSchemaDoc()).toBeDefined()
+    clearMcpReceipts()
+    addMcpReceipt({
+      id: 'r-1',
+      query: 'test',
+      txHash: null,
+      amount: '0.001',
+      currency: 'USDC',
+      network: 'stellar:testnet',
+      timestamp: new Date().toISOString(),
+      latencyMs: 100,
+      count: 1,
+    })
   })
 
   it('MCP constants align with Stellar network', () => {
@@ -104,9 +124,9 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
   })
 
   it('MCP server registers web_search, image_search, news_search, ai_summarize, check_balance, get_search_stats', async () => {
-    const listToolsCall = mockSetRequestHandler.mock.calls.find(c => c[0] === ListToolsRequestSchemaMock)
-    expect(listToolsCall).toBeDefined()
-    const listHandler = listToolsCall![1] as Function
+    const calls = mockSetRequestHandler.mock.calls
+    const listHandler = calls.find(c => c[0] === ListToolsRequestSchema)?.[1] as Function
+    expect(listHandler).toBeDefined()
     const result: any = await listHandler()
     expect(result.tools).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'web_search' }),
@@ -116,10 +136,101 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
       expect.objectContaining({ name: 'check_balance' }),
       expect.objectContaining({ name: 'get_search_stats' }),
     ]))
-    // Verify payment amount in description
     const webSearch = result.tools.find((t: any) => t.name === 'web_search')
     expect(webSearch.description).toContain(AMOUNT_USDC)
     expect(webSearch.description).toContain('USDC')
+  })
+
+  it('MCP resources handlers list and read capability & schema resources', async () => {
+    const calls = mockSetRequestHandler.mock.calls
+    const listResourcesHandler = calls.find(c => c[0] === ListResourcesRequestSchema)?.[1] as Function
+    expect(listResourcesHandler).toBeDefined()
+    const resList = await listResourcesHandler()
+    expect(resList.resources).toHaveLength(3)
+
+    const readResourceHandler = calls.find(c => c[0] === ReadResourceRequestSchema)?.[1] as Function
+    expect(readResourceHandler).toBeDefined()
+
+    const capRes = await readResourceHandler({ params: { uri: 'stellar-search://capabilities' } })
+    expect(capRes.contents[0].text).toContain('stellar-search')
+
+    const schemaRes = await readResourceHandler({ params: { uri: 'stellar-search://schema/search' } })
+    expect(schemaRes.contents[0].text).toContain('SearchResponse')
+
+    const receiptsRes = await readResourceHandler({ params: { uri: 'stellar-search://receipts/recent' } })
+    expect(receiptsRes.contents[0].text).toBeDefined()
+
+    await expect(readResourceHandler({ params: { uri: 'stellar-search://unknown' } })).rejects.toThrow('Unknown resource')
+  })
+
+  it('MCP prompts handlers list and get research/summarize prompts', async () => {
+    const calls = mockSetRequestHandler.mock.calls
+    const listPromptsHandler = calls.find(c => c[0] === ListPromptsRequestSchema)?.[1] as Function
+    expect(listPromptsHandler).toBeDefined()
+    const promptsList = await listPromptsHandler()
+    expect(promptsList.prompts).toHaveLength(3)
+
+    const getPromptHandler = calls.find(c => c[0] === GetPromptRequestSchema)?.[1] as Function
+    expect(getPromptHandler).toBeDefined()
+
+    const brief = await getPromptHandler({ params: { name: 'research_brief', arguments: { topic: 'Stellar Soroban' } } })
+    expect(brief.messages[0].content.text).toContain('Stellar Soroban')
+
+    const summarize = await getPromptHandler({ params: { name: 'summarize_results', arguments: { results: 'Raw text' } } })
+    expect(summarize.messages[0].content.text).toContain('Raw text')
+
+    const compare = await getPromptHandler({ params: { name: 'compare_sources', arguments: { sources: 'Source A vs B' } } })
+    expect(compare.messages[0].content.text).toContain('Source A vs B')
+
+    await expect(getPromptHandler({ params: { name: 'unknown_prompt' } })).rejects.toThrow('Unknown prompt')
+  })
+
+  it('MCP tool execution for check_balance, ai_summarize, get_search_stats, and unknown tool', async () => {
+    const calls = mockSetRequestHandler.mock.calls
+    const callToolHandler = calls.find(c => c[0] === CallToolRequestSchema)?.[1] as Function
+    expect(callToolHandler).toBeDefined()
+
+    // 1. check_balance
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        balances: [
+          { asset_type: 'native', balance: '100.0000000' },
+          { asset_type: 'credit_alphanum4', asset_code: 'USDC', asset_issuer: USDC_ISSUER, balance: '2.5000000' },
+        ],
+      }),
+    }) as any
+    const balanceRes: any = await callToolHandler({ params: { name: 'check_balance', arguments: { address: 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3' } } })
+    expect(balanceRes.content[0].text).toContain('USDC: 2.500000')
+
+    // 2. ai_summarize
+    const aiRes: any = await callToolHandler({ params: { name: 'ai_summarize', arguments: { text: 'Some text' } } })
+    expect(aiRes.content[0].text).toBe('Summary generated by Groq')
+
+    // 3. get_search_stats
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: 'healthy',
+        network: 'stellar:testnet',
+        uptime: '1h',
+        totalQueries: 10,
+        totalUsdcSettled: '0.010',
+        avgLatencyMs: 250,
+        pricePerQuery: '0.001 USDC',
+        facilitator: 'https://test.x402.org',
+        serperApiConfigured: true,
+        groqApiConfigured: true,
+      }),
+    }) as any
+    const statsRes: any = await callToolHandler({ params: { name: 'get_search_stats', arguments: {} } })
+    expect(statsRes.content[0].text).toContain('StellarSearch Server Stats')
+
+    // 4. Unknown tool
+    const unknownRes: any = await callToolHandler({ params: { name: 'unknown_tool', arguments: {} } })
+    expect(unknownRes.isError).toBe(true)
   })
 
   it('MCP check_balance handler uses Horizon and USDC issuer', async () => {

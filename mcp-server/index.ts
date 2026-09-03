@@ -713,8 +713,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           latencyMs: data.latencyMs ?? 0,
           count: data.count ?? 0,
         })
-      } catch {
-        // ignore receipt recording failure
+      } catch (err) {
+        void err
       }
       const formatted = (data.results as any[])
         .map(
@@ -1199,8 +1199,8 @@ try {
       );
     }
   }
-} catch {
-  // ignore cancellation handler registration error
+} catch (err) {
+  void err
 }
 
 const transport = new StdioServerTransport();

@@ -84,8 +84,8 @@ async function deliverWebhookWithRetry(job: any, maxAttempts = MAX_JOB_WEBHOOK_A
       clearTimeout(timeout)
       if (res.ok) return
       if (res.status >= 400 && res.status < 500 && res.status !== 429) return
-    } catch {
-      // ignore webhook attempt error
+    } catch (err) {
+      void err
     }
     if (attempt < maxAttempts) {
       const backoff = WEBHOOK_RETRY_BASE_MS * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200)
@@ -159,8 +159,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const decoded = Buffer.from(paymentHeader as string, 'base64').toString('utf8')
     const parsed = JSON.parse(decoded)
     txHash = parsed.transactionHash || parsed.txHash || null
-  } catch {
-    // ignore header parse error
+  } catch (err) {
+    void err
   }
 
   const jobId = crypto.randomUUID()

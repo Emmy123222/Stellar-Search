@@ -1108,29 +1108,36 @@ app.post("/search/batch", async (req: Request, res: Response) => {
   }
 
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
-  if (!paymentHeader) {
+  let paymentId: string | null
+  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
+  let verified: boolean
+  if (paymentHeader) {
+    const consumption = consumePaymentPayload(paymentHeader)
+    if (!consumption.ok) {
+      return res.status(402).json({ error: consumption.error })
+    }
+    paymentId = consumption.paymentId
+    verified = true
+    try {
+      const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
+      const parsed = JSON.parse(decoded)
+      txHash = parsed.transactionHash || parsed.txHash || txHash
+    } catch (err) {
+      void err
+    }
+  } else {
+    // No payment: return 402 with quote so caller can pay and retry with Idempotency-Key
+    const quoteEvent: BatchJsonlQuoteEvent = {
+      v: 1, type: 'quote', requestId, totalQueries: cleanQueries.length,
+      pricePerQuery: AMOUNT_USDC, totalAmount, currency: 'USDC', network: NETWORK, payTo: RECEIVING_ADDRESS, idempotencyKey,
+    }
     res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify({
       x402Version: 2,
       error: 'Payment required for batch',
       resource: { url: `${req.protocol}://${req.get('host')}${req.originalUrl}`, description: `Batch search ${cleanQueries.length} x ${AMOUNT_USDC} USDC`, mimeType: 'application/x-ndjson' },
       accepts: [{ scheme: 'exact', network: NETWORK, amount: String(parseInt(AMOUNT_STROOPS) * cleanQueries.length), asset: USDC_CONTRACT, payTo: RECEIVING_ADDRESS, maxTimeoutSeconds: 300, extra: { areFeesSponsored: true } }],
     })).toString('base64'))
-    return res.status(402).json({ error: 'Payment required' })
-  }
-
-  const consumption = consumePaymentPayload(paymentHeader)
-  if (!consumption.ok) {
-    return res.status(402).json({ error: consumption.error })
-  }
-  const paymentId = consumption.paymentId
-  const verified = true
-  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
-  try {
-    const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
-    const parsed = JSON.parse(decoded)
-    txHash = parsed.transactionHash || parsed.txHash || txHash
-  } catch {
-    // ignore header parse error
+    return res.status(402).json({ error: 'Payment required', quote: quoteEvent })
   }
 
   if (idempotencyKey) {
@@ -1382,6 +1389,9 @@ app.post("/jobs", async (req: Request, res: Response) => {
 
   // Payment verification via x402 header
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
+  let paymentId: string | null
+  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
+  let verified: boolean
   if (!paymentHeader) {
     // Return 402 with payment requirements and statusUrl hint
     const paymentRequired = {
@@ -1417,15 +1427,15 @@ app.post("/jobs", async (req: Request, res: Response) => {
   }
   const consumption = consumePaymentPayload(paymentHeader)
   if (!consumption.ok) return res.status(402).json({ error: consumption.error })
-  const paymentId = consumption.paymentId
-  const verified = true
-  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
+  paymentId = consumption.paymentId
+  verified = true
+  txHash = (req.headers['x-payment-response'] as string) || null
   try {
     const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
     const parsed = JSON.parse(decoded)
     txHash = parsed.transactionHash || parsed.txHash || txHash
-  } catch {
-    // ignore parse error
+  } catch (err) {
+    void err
   }
 
   const jobId = crypto.randomUUID();

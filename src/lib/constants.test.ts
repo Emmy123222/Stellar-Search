@@ -110,3 +110,5 @@ describe('constants — Express, Vercel, browser, MCP alignment', () => {
     })).toThrow(/STELLAR_RECEIVING_ADDRESS/)
   })
 })
+
+

@@ -86,12 +86,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Proxy API calls to backend during dev (avoids CORS)
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
-        rewrite: path => path.replace(/^\/api/, ''),
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
-      // Proxy API calls to backend during dev (avoids CORS)
       '/search': {
         target: 'http://localhost:3001',
         changeOrigin: true,

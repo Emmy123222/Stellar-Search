@@ -127,6 +127,20 @@ describe('GET /health and GET /', () => {
     expect(res.body.facilitatorCompatibility.compatible).toBe(true)
     expect(res.body.facilitatorCompatibility.scheme).toBe('exact')
   })
+
+  it('GET /api returns service metadata identical to GET /', async () => {
+    const res = await request(app).get('/api')
+    expect(res.status).toBe(200)
+    expect(res.body.name).toBe('StellarSearch')
+    expect(res.body.version).toBe('1.0.0')
+  })
+
+  it('GET /api/health returns ok with settlement config', async () => {
+    const res = await request(app).get('/api/health')
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('ok')
+    expect(res.body.protocol).toBe('x402')
+  })
 })
 
 describe('Facilitator Compatibility Guard & Readiness Errors', () => {
@@ -188,8 +202,8 @@ describe('POST /ai/chat — single route with streaming, JSON fallback, and mode
     expect(res.body.error).toMatch(/messages array required/)
   })
 
-  it('returns 400 when messages empty', async () => {
-    const res = await request(app).post('/ai/chat').send({ messages: [] }).set('Content-Type', 'application/json')
+  it('returns 400 when messages empty on /api/ai/chat', async () => {
+    const res = await request(app).post('/api/ai/chat').send({ messages: [] }).set('Content-Type', 'application/json')
     expect(res.status).toBe(400)
   })
 
@@ -271,9 +285,15 @@ describe('method handling — 405 with Allow header', () => {
   })
 })
 
-describe('GET /search validation (x402 middleware bypassed via mock)', () => {
-  it('returns 400 when q missing', async () => {
+describe('GET /search & /api/search validation (x402 middleware bypassed via mock)', () => {
+  it('returns 400 when q missing on /search', async () => {
     const res = await request(app).get('/search')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/Missing required parameter/)
+  })
+
+  it('returns 400 when q missing on /api/search', async () => {
+    const res = await request(app).get('/api/search')
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/Missing required parameter/)
   })

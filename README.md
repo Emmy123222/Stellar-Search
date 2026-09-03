@@ -733,6 +733,17 @@ docker run -d --name stellar-search -p 3001:3001 --env-file .env stellar-search
 
 ---
 
+## Deployment & Vercel Configuration
+
+Production deployments are managed with a checked-in `vercel.json` deployment manifest:
+
+- **SPA Rewrites**: Client-side navigation (`/`, `/docs`, `/dashboard`, `/search`) rewrites to `/index.html` via negative lookahead (`/((?!api/|api$).*)`) without shadowing `/api/*` serverless functions.
+- **Security Headers**: Standard defense-in-depth headers configured globally (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`, CSP).
+- **Cache Headers**: Long-term immutable caching (`public, max-age=31536000, immutable`) for `/assets/(.*)` static assets and `no-store` for dynamic `/api/(.*)` endpoints.
+- **x402 CORS Headers**: `/api/(.*)` routes expose `PAYMENT-REQUIRED` and `X-Payment-Response` headers with permissive CORS to preserve verified x402 settlement semantics.
+
+---
+
 ## Internationalization (#345)
 
 English is the complete, always-available fallback locale, via [i18next](https://www.i18next.com) + `react-i18next`. Setup lives in `src/i18n/`:
@@ -948,9 +959,10 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 | `api/search/batch.ts` | 60% | 50% | 45% | 65% |
 | `api/jobs.ts` | 45% | 30% | 30% | 55% |
 | `api/jobs/[id].ts` | 95% | 90% | 100% | 95% |
-| `api/health.ts` | 80% | 50% | 100% | 80% |
-| `api/ai/chat.ts` | 90% | 60% | 60% | 90% |
-| `mcp-server/index.ts` | 20% | 10% | 10% | 20% |
+| `api/health.ts` | 95% | 90% | 100% | 95% |
+| `api/index.ts` | 95% | 90% | 100% | 95% |
+| `api/ai/chat.ts` | 95% | 80% | 100% | 95% |
+| `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
 | `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
 | `src/hooks/useSearch.ts` | 85% | 65% | 90% | 85% |
 
