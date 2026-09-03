@@ -4,6 +4,7 @@ import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
 export default function handler(req: VercelRequest, res: VercelResponse) {
   applyServerlessHeaders(res)
   res.json({
+    requestId,
     name: 'StellarSearch',
     version: '1.0.0',
     description: 'Pay-per-query web search for AI agents via x402 on Stellar',
