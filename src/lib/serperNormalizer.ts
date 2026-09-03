@@ -26,8 +26,66 @@ export function extractSafeHostname(url: string): string {
 }
 
 /**
+ * Canonical URL parameters that should be removed for deduplication.
+ * Includes common tracking parameters from various platforms.
+ */
+const TRACKING_PARAMS = new Set([
+  // Google Analytics
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+  // Facebook
+  'fbclid',
+  // Google Ads
+  'gclid',
+  // Microsoft
+  'msclkid',
+  // Other common tracking
+  'ref', 'referrer', 'source', 'campaign', 'medium', 'content',
+  'click_id', 'affiliate', 'partner_id', 'token', 'session_id',
+])
+
+/**
+ * Canonicalizes a URL for deduplication by:
+ * 1. Removing URL fragments (#...)
+ * 2. Removing configured tracking parameters (utm_*, fbclid, gclid, etc.)
+ * 3. Normalizing protocol and domain casing
+ * 4. Sorting remaining query parameters for consistency
+ *
+ * Returns the canonical URL string or the original if parsing fails.
+ */
+export function canonicalizeUrl(urlString: string): string {
+  try {
+    const url = new URL(urlString.trim())
+
+    // Remove fragment
+    url.hash = ''
+
+    // Remove tracking parameters
+    const params = new URLSearchParams(url.search)
+    for (const key of Array.from(params.keys())) {
+      if (TRACKING_PARAMS.has(key.toLowerCase())) {
+        params.delete(key)
+      }
+    }
+
+    // Reconstruct search with sorted params for consistency
+    const sortedParams = new URLSearchParams()
+    const keys = Array.from(params.keys()).sort()
+    for (const key of keys) {
+      sortedParams.append(key, params.get(key) || '')
+    }
+
+    url.search = sortedParams.toString()
+
+    return url.toString()
+  } catch {
+    return urlString.trim()
+  }
+}
+
+/**
  * Validates unknown raw upstream JSON payload from Serper web search
- * and normalizes organic results deterministically. Skips malformed rows.
+ * and normalizes organic results deterministically. Deduplicates by canonical URL.
+ * Skips malformed rows.
  */
 export function normalizeOrganicResults(rawData: unknown): SearchResult[] {
   if (!rawData || typeof rawData !== 'object') {
@@ -40,6 +98,7 @@ export function normalizeOrganicResults(rawData: unknown): SearchResult[] {
   }
 
   const validResults: SearchResult[] = []
+  const seenCanonicalUrls = new Set<string>()
 
   for (const item of payload.organic) {
     if (!item || typeof item !== 'object') {
@@ -54,6 +113,13 @@ export function normalizeOrganicResults(rawData: unknown): SearchResult[] {
     }
 
     const url = (row.link as string).trim()
+    const canonicalUrl = canonicalizeUrl(url)
+
+    // Skip if we've already seen this canonical URL (deduplication)
+    if (seenCanonicalUrls.has(canonicalUrl)) {
+      continue
+    }
+    seenCanonicalUrls.add(canonicalUrl)
 
     // Title: string or fallback
     const title = typeof row.title === 'string' && row.title.trim()
@@ -110,7 +176,8 @@ export function normalizeOrganicResults(rawData: unknown): SearchResult[] {
 
 /**
  * Validates unknown raw upstream JSON payload from Serper image search
- * and normalizes image results deterministically. Skips malformed rows.
+ * and normalizes image results deterministically. Deduplicates by source URL.
+ * Skips malformed rows.
  */
 export function normalizeImageResults(rawData: unknown): ImageResult[] {
   if (!rawData || typeof rawData !== 'object') {
@@ -123,6 +190,7 @@ export function normalizeImageResults(rawData: unknown): ImageResult[] {
   }
 
   const validResults: ImageResult[] = []
+  const seenSourceUrls = new Set<string>()
 
   for (const item of payload.images) {
     if (!item || typeof item !== 'object') {
@@ -147,6 +215,13 @@ export function normalizeImageResults(rawData: unknown): ImageResult[] {
     const sourceUrl = isValidHttpUrl(row.link)
       ? (row.link as string).trim()
       : imageUrl
+
+    // Canonicalize source URL for deduplication
+    const canonicalSourceUrl = canonicalizeUrl(sourceUrl)
+    if (seenSourceUrls.has(canonicalSourceUrl)) {
+      continue
+    }
+    seenSourceUrls.add(canonicalSourceUrl)
 
     // Thumbnail URL
     const thumbnailUrl = isValidHttpUrl(row.thumbnailUrl)
@@ -183,7 +258,8 @@ export function normalizeImageResults(rawData: unknown): ImageResult[] {
 
 /**
  * Validates unknown raw upstream JSON payload from Serper news search
- * and normalizes news results deterministically. Skips malformed rows.
+ * and normalizes news results deterministically. Deduplicates by canonical URL.
+ * Skips malformed rows.
  */
 export function normalizeNewsResults(rawData: unknown): NewsResult[] {
   if (!rawData || typeof rawData !== 'object') {
@@ -196,6 +272,7 @@ export function normalizeNewsResults(rawData: unknown): NewsResult[] {
   }
 
   const validResults: NewsResult[] = []
+  const seenCanonicalUrls = new Set<string>()
 
   for (const item of payload.news) {
     if (!item || typeof item !== 'object') {
@@ -210,6 +287,13 @@ export function normalizeNewsResults(rawData: unknown): NewsResult[] {
     }
 
     const url = (row.link as string).trim()
+    const canonicalUrl = canonicalizeUrl(url)
+
+    // Skip if we've already seen this canonical URL (deduplication)
+    if (seenCanonicalUrls.has(canonicalUrl)) {
+      continue
+    }
+    seenCanonicalUrls.add(canonicalUrl)
 
     // Title: string or fallback
     const title = typeof row.title === 'string' && row.title.trim()
