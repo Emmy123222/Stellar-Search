@@ -32,6 +32,13 @@
   100% { transform: translateX(-50%); }
 }
 .animate-ticker { animation: ticker 30s linear infinite; }
+.animate-ticker:hover,
+.animate-ticker:focus,
+.animate-ticker:focus-within { animation-play-state: paused; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-ticker { animation: none; }
+}
 
 @keyframes scan {
   0% { top: 0%; }
