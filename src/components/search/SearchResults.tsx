@@ -470,6 +470,29 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
               <p className="text-white/45 text-xs leading-relaxed line-clamp-2">
                 {r.description}
               </p>
+
+              {/* Sitelinks — rendered as span[role=link] to avoid nested <a> */}
+              {r.sitelinks && r.sitelinks.length > 0 && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2" role="list" aria-label="Sitelinks">
+                  {r.sitelinks.map((sl) => (
+                    <span
+                      key={sl.url}
+                      role="listitem"
+                    >
+                      <span
+                        role="link"
+                        tabIndex={0}
+                        aria-label={`Sitelink: ${sl.title}`}
+                        className="font-display text-[10px] text-neon-cyan/60 hover:text-neon-cyan underline underline-offset-2 cursor-pointer transition-colors"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(sl.url, '_blank', 'noopener,noreferrer') }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); window.open(sl.url, '_blank', 'noopener,noreferrer') } }}
+                      >
+                        {sl.title}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border border-white/8 text-white/25 group-hover:text-neon-cyan group-hover:border-neon-cyan/30 transition-all mt-0.5">
