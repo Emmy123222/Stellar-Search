@@ -7,9 +7,7 @@ import {
   assertValidStellarConfig,
 } from '../src/lib/constants'
 import { consumePaymentPayload, decodePaymentReceipt } from '../src/lib/paymentIntegrity'
-import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
-import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
-import { normalizeOrganicResults, normalizeQueryMetadata } from '../src/lib/serperNormalizer'
+import { normalizeOrganicResults, normalizeQueryMetadata, normalizeAnswerBox, normalizeKnowledgeGraph } from '../src/lib/serperNormalizer'
 import { fetchSerper, CircuitOpenError } from '../src/lib/serperClient'
 import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
@@ -224,6 +222,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const results = normalizeOrganicResults(data)
     const queryMeta = normalizeQueryMetadata(data, cleanQ)
+    const answerBox = normalizeAnswerBox(data)
+    const knowledgeGraph = normalizeKnowledgeGraph(data)
 
     const responseBody: SearchResponse = {
       query:      cleanQ,
@@ -234,6 +234,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       currency: 'USDC',
       txHash,
       latencyMs,
+      ...(answerBox && { answerBox }),
+      ...(knowledgeGraph && { knowledgeGraph }),
     };
 
     return res.json(responseBody);
