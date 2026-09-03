@@ -41,8 +41,16 @@ process.env.GROQ_API_KEY = 'gsk_test'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
-function makeReceipt(txHash: string): string {
-  return Buffer.from(JSON.stringify({ transactionHash: txHash })).toString('base64')
+function makeReceipt(txHash: string, overrides: Partial<Record<string, any>> = {}): string {
+  const receipt = {
+    schema: 'x402.payment.receipt',
+    network: 'stellar:testnet',
+    asset: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+    amount: '10000',
+    transactionHash: txHash,
+    ...overrides,
+  }
+  return Buffer.from(JSON.stringify(receipt)).toString('base64')
 }
 
 const SERPER_STUB = {
@@ -127,6 +135,24 @@ describe('settle — successful search after payment', () => {
     expect(res.body.results[0].title).toBe('Stellar')
   })
 
+  it('omits invalid receipt hashes and logs them with the request id', async () => {
+    const loggerMod = await import('./logger')
+    const res = await request(app)
+      .get('/search?q=stellar')
+      .set('x-request-id', 'req-123')
+      .set('x-payment', makeReceipt('tx_bad', { schema: 'bad.schema', network: 'stellar:mainnet' }))
+
+    expect(res.status).toBe(200)
+    expect(res.body.txHash).toBeNull()
+    expect(loggerMod.default.warn).toHaveBeenCalledWith(
+      'Invalid x402 payment receipt omitted from response',
+      expect.objectContaining({
+        requestId: 'req-123',
+      })
+    )
+  })
+
+  it('response includes x402 settlement metadata', async () => {
   it('response includes x402 settlement metadata and query metadata', async () => {
     const res = await request(app).get('/search?q=stellar').set('x-payment', makeReceipt('tx_settle_meta'))
     expect(res.status).toBe(200)

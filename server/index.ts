@@ -13,6 +13,7 @@
  *   groq-sdk       — Groq AI (Llama 3)
  */
 
+import crypto from 'crypto'
 import express, { Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
@@ -29,6 +30,7 @@ import {
   STELLAR_NETWORK,
   AMOUNT_USDC,
   AMOUNT_STROOPS,
+  USDC_CONTRACT,
   USDC_CONTRACT
 } from '../src/lib/constants'
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
@@ -150,6 +152,12 @@ app.use(
 app.use(cors(buildCorsOptions()))
 app.use(express.json())
 app.use(limiter)
+app.use((req: Request, res: Response, next: express.NextFunction) => {
+  const requestId = (req.get('x-request-id') as string | undefined) || crypto.randomUUID()
+  ;(req as Request & { id?: string }).id = requestId
+  res.setHeader('X-Request-Id', requestId)
+  next()
+})
 
 // Machine-readable x402 service discovery. Keep this before payment middleware:
 // discovery is public, while the resource templates it advertises are paid.

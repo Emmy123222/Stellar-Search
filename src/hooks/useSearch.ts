@@ -326,8 +326,18 @@ export function useSearch(walletAddress: string | null = null) {
       const data = (await paidRes.json()) as SearchResponse
       console.log('✅ Search complete!')
 
+      const validTxHash = isValidTxHash(data.txHash) ? data.txHash : null
+
       // Flow step 6 — result received and rendered
       setSession({
+        query,
+        results:     data.results    ?? [],
+        txHash:      validTxHash,
+        paidAmount:  data.paidAmount ?? null,
+        status:      'complete',
+        step:        6,
+        durationMs:  Date.now() - t0,
+        suggestions: data.suggestions ?? [],
         query:        data.executedQuery ?? data.query ?? query,
         originalQuery: data.originalQuery ?? query,
         executedQuery: data.executedQuery ?? data.query ?? query,
@@ -342,13 +352,12 @@ export function useSearch(walletAddress: string | null = null) {
         suggestions:  data.suggestions ?? [],
       })
 
-      if (data.txHash) {
-        const settledTxHash = data.txHash
+      if (validTxHash) {
         toast.success(`Payment settled: ${data.paidAmount || '0.001'} USDC`, {
           description: 'View transaction on Stellar network',
           action: {
             label: 'Explorer',
-            onClick: () => window.open(explorerTxUrl(settledTxHash), '_blank')
+            onClick: () => window.open(explorerTxUrl(validTxHash), '_blank')
           }
         })
       }
@@ -359,7 +368,7 @@ export function useSearch(walletAddress: string | null = null) {
       recordSearchSettled(data.paidAmount || AMOUNT_USDC, data.txHash)
 
       // Persist receipt
-      if (data.txHash) {
+      if (validTxHash) {
         try {
           const receiptsRaw = localStorage.getItem('stellarsearch_receipts')
           const receipts: SearchReceipt[] = receiptsRaw ? JSON.parse(receiptsRaw) : []
@@ -371,7 +380,7 @@ export function useSearch(walletAddress: string | null = null) {
             ''
 
           const newReceipt: SearchReceipt = {
-            txHash: data.txHash,
+            txHash: validTxHash,
             query: query.trim(),
             amount: data.paidAmount || '0.001',
             asset: data.currency || 'USDC',
