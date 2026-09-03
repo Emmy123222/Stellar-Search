@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -e
+
+# Opt-in: set SKIP_PREPUSH_CHECK=1 for an emergency bypass.
+if [ "${SKIP_PREPUSH_CHECK:-0}" = "1" ]; then
+  exit 0
+fi
+
+npm run prepush:check

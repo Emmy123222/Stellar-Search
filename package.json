@@ -12,6 +12,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "prepush:check": "npm run build && npm test && npm run lint && npm run typecheck",
     "config:check": "tsx scripts/check-config.ts",
     "lint": "eslint .",
     "test": "vitest run",
