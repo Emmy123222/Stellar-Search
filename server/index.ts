@@ -654,6 +654,8 @@ app.get('/search', validateFeatureFlag('paymentEnabled'), async (req: Request, r
   }
   const cleanQ = v.cleanQ
 
+  const validSafeSearch = ['strict', 'moderate', 'off'].includes(safeSearch) ? safeSearch : 'moderate'
+
   const t0 = Date.now()
 
   try {
@@ -706,8 +708,18 @@ app.get('/search', validateFeatureFlag('paymentEnabled'), async (req: Request, r
 
     const results = normalizeOrganicResults(data)
 
-    // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
     const txHash = (req.headers['x-payment-response'] as string) || null
+
+    const receipt = {
+      version: '1.0',
+      amount: AMOUNT_USDC,
+      asset: 'USDC',
+      network: NETWORK,
+      payer: getPayer(req),
+      payee: RECEIVING_ADDRESS || 'unknown',
+      timestamp: new Date().toISOString(),
+      transactionHash: txHash || 'unknown',
+    }
 
     // ── Optional AI suggestions via Groq ──────────────────────────────────
     let suggestions: string[] = [];
@@ -754,6 +766,7 @@ app.get('/search', validateFeatureFlag('paymentEnabled'), async (req: Request, r
 
     const responseBody: SearchResponse = {
       query: cleanQ,
+      safeSearch: validSafeSearch,
       results,
       count: results.length,
       network: NETWORK,
@@ -792,6 +805,7 @@ app.get('/images', validateFeatureFlag('searchModeEnabled'), async (req: Request
     return res.status(400).json(errorBody)
   }
   const cleanQ = v.cleanQ
+  const validSafeSearch = ['strict', 'moderate', 'off'].includes(safeSearch) ? safeSearch : 'moderate'
 
   const t0 = Date.now()
 
@@ -845,6 +859,7 @@ app.get('/images', validateFeatureFlag('searchModeEnabled'), async (req: Request
 
     const responseBody: ImageSearchResponse = {
       query: cleanQ,
+      safeSearch: validSafeSearch,
       results,
       count: results.length,
       network: NETWORK,

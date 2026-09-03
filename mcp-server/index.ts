@@ -808,6 +808,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const safeCount = clampCount(count, { min: 1, max: 10, defaultValue: 5 })
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
+      if (safeSearch) params.set('safeSearch', safeSearch)
 
       const res = await fetch(`${SERVER_URL}/images?${params}`, {
         signal: controller.signal,
