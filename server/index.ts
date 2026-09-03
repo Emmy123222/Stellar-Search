@@ -437,6 +437,9 @@ async function deliverWebhookWithRetry(
   console.error(`[webhook] exhausted retries for job ${job.id}`);
 }
 
+// ─── Search result cache (issue #21) ─────────────────────────────────────
+const searchCache = new LRUCache<string, unknown>({ max: 100, ttl: 60_000 })
+
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS ?? ''
 const FACILITATOR_URL   = process.env.FACILITATOR_URL   || 'https://www.x402.org/facilitator'

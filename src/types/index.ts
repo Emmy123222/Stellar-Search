@@ -181,6 +181,7 @@ export interface SearchResponse {
   payTo?: string
   latencyMs: number
   suggestions?: string[]
+  cached?: boolean
 }
 
 export interface ImageSearchResponse {
