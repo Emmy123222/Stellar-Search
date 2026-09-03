@@ -398,6 +398,8 @@ export function useFreighterWallet() {
 
   // Auto-check if already connected on mount
   useEffect(() => {
+    if (typeof window !== 'undefined' && window.__STELLAR_SEARCH_E2E_WALLET__) return
+
     const check = async () => {
       try {
         const { isConnected, getAddress, getNetwork } = await loadFreighterApi()

@@ -174,12 +174,14 @@ export function useSearch(walletAddress: string | null = null) {
       } = await loadPaymentDeps()
 
       // Step 1 — verify Freighter is on correct network
-      const net = await getNetworkDetails()
-      if (net.error)              throw new Error(net.error.message)
-      if (net.network !== EXPECTED_WALLET_NETWORK) {
-        throw new Error(`Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`)
+      if (!(typeof window !== 'undefined' && window.__STELLAR_SEARCH_E2E_WALLET__)) {
+        const net = await getNetworkDetails()
+        if (net.error)              throw new Error(net.error.message)
+        if (net.network !== EXPECTED_WALLET_NETWORK) {
+          throw new Error(`Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`)
+        }
+        console.log('✅ Network verified:', net.network)
       }
-      console.log('✅ Network verified:', net.network)
 
       // Step 2 — build the signer
       const passphrase = IS_MAINNET ? Networks.PUBLIC : Networks.TESTNET
