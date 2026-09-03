@@ -344,11 +344,33 @@ export function compareResultSets(
   return { added, removed, moved, unchanged }
 }
 
+const EXPORT_VERSION = 1
+
+function escapeCsv(value: unknown): string {
+  const str = value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) ?? '' : String(value)
+  return /[",\n\r]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str
+}
+
+function toCsv(results: SearchResult[], metadata: Record<string, unknown>): string {
+  const headers = Array.from(new Set(results.flatMap((result) => Object.keys(result))))
+  const lines = [
+    `# ${JSON.stringify(metadata)}`,
+    headers.map(escapeCsv).join(','),
+    ...results.map((result) =>
+      headers.map((header) => escapeCsv(result[header as keyof SearchResult])).join(',')
+    ),
+  ]
+  return lines.join('\n')
+}
+
 /**
  * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
  *
  * @param walletAddress - The Stellar public key address of the connected wallet, or `null` if unauthenticated.
- * @returns Object containing search session state (`session`), search execution function (`search`), and session reset function (`reset`).
+ * @returns Object containing search session, payment/export helpers, and selection controls (`session`, `search`, `reset`,
+ *          `selectedResults`, `toggleResult`, `toggleAllResults`, `clearSelection`, `isResultSelected`, `isAllSelected`,
+ *          and `exportSelectedResults`). Selection callbacks are intended for keyboard-accessible controls; exports
+ *          include a versioned metadata envelope (query, filters, network, receipt reference, export timestamp).
  */
 export function useSearch(walletAddress: string | null = null) {
   const [session, setSession] = useState<SearchSession>({
@@ -500,6 +522,7 @@ export function useSearch(walletAddress: string | null = null) {
         // Free response (no payment required) — nothing was settled.
         recordSearchSettled(AMOUNT_USDC, null)
         const data = (await firstRes.json()) as SearchResponse
+        setNetwork(data.network ?? null)
         return setSession({
           query: data.executedQuery ?? data.query ?? query,
           originalQuery: data.originalQuery ?? query,
