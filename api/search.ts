@@ -99,6 +99,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     language: normalizedLanguage,
   } = localeResult.values;
 
+  // Length-validate the serialized query. Advanced operators are composed
+  // client-side and sent through unchanged; the per-query price is fixed.
+  if (q.length > MAX_QUERY_LENGTH) {
+    const errorBody: ApiErrorResponse = { error: `Query exceeds maximum length of ${MAX_QUERY_LENGTH} characters` }
+    return res.status(400).json(errorBody)
+  }
+
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
     req.headers["payment-signature"] ||

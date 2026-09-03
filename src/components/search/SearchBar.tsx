@@ -35,6 +35,13 @@ interface Props {
   query?: string
 }
 
+const ADVANCED_OPERATORS = [
+  { label: '"Exact Phrase"', insert: '"exact phrase"', description: 'Wrap terms in double quotes to match an exact phrase' },
+  { label: '-Exclude', insert: '-excluded', description: 'Prefix a term with minus to exclude it' },
+  { label: 'site:', insert: 'site:', description: 'Limit results to a specific website (e.g. site:developer.mozilla.org)' },
+  { label: 'filetype:', insert: 'filetype:', description: 'Limit results by file type (e.g. filetype:pdf)' },
+] as const
+
 export function SearchBar({
   onSearch,
   isSearching,
@@ -57,6 +64,29 @@ export function SearchBar({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  const isQueryTooLong = query.length > MAX_QUERY_LENGTH
+
+  const insertOperator = (token: string) => {
+    const el = inputRef.current
+    if (!el) return
+    const start = el.selectionStart ?? query.length
+    const end = el.selectionEnd ?? query.length
+    const before = query.slice(0, start)
+    const after = query.slice(end)
+    const needsSpace = before.length > 0 && !before.endsWith(' ')
+    const next = (needsSpace ? before + ' ' + token : before + token) + after
+    if (next.length > MAX_QUERY_LENGTH) {
+      toast.warning('Query too long', { description: `Maximum ${MAX_QUERY_LENGTH} characters.` })
+      return
+    }
+    setQuery(next)
+    requestAnimationFrame(() => {
+      el.focus()
+      const caret = before.length + (needsSpace ? 1 : 0) + token.length
+      el.setSelectionRange(caret, caret)
+    })
+  }
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -150,7 +180,7 @@ export function SearchBar({
 
           <motion.button
             type="submit"
-            disabled={isSearching || isWrongNetwork}
+            disabled={isSearching || isWrongNetwork || isQueryTooLong}
             className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl font-display text-xs tracking-wider transition-all disabled:opacity-40"
             style={{
               background:
@@ -271,6 +301,45 @@ export function SearchBar({
             </button>
           );
         })}
+      </div>
+
+      {/* Advanced Operators — composed client-side, inserted into the visible editable query. */}
+      {/* These operators never change per-query price (AMOUNT_USDC). */}
+      <div
+        className="flex items-center gap-2 mt-3 px-1 flex-wrap"
+        role="group"
+        aria-label="Advanced search operators"
+      >
+        <span
+          className="inline-flex items-center gap-1 font-display text-xs text-white/30 tracking-wider uppercase mr-1"
+          title="Advanced operators do not change the payment amount"
+        >
+          <SlidersHorizontal className="w-3 h-3 text-neon-cyan/60" /> Operators:
+        </span>
+        {ADVANCED_OPERATORS.map((op) => (
+          <button
+            key={op.label}
+            type="button"
+            onClick={() => insertOperator(op.insert)}
+            title={op.description}
+            disabled={isSearching || isWrongNetwork}
+            className="px-2.5 py-1 rounded-lg font-display text-xs transition-all border cursor-pointer disabled:opacity-40"
+            style={{
+              background: 'rgba(255,255,255,0.03)',
+              borderColor: 'rgba(255,255,255,0.08)',
+              color: isQueryTooLong ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.4)',
+            }}
+          >
+            {op.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Query length validation indicator */}
+      <div className="flex justify-end px-1 mt-1">
+        <span className={`font-mono text-xs ${isQueryTooLong ? 'text-red-400' : 'text-white/30'}`}>
+          {query.length}/{MAX_QUERY_LENGTH}
+        </span>
       </div>
 
       {/* Meta row */}

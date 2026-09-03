@@ -126,6 +126,119 @@ export function DocsPage() {
         </div>
       </motion.div>
 
+      {/* Advanced search builder */}
+      <section className="space-y-5">
+        <div>
+          <span className="font-display text-xs text-neon-cyan/35 tracking-widest">ADVANCED SEARCH</span>
+          <h2 className="font-display text-2xl text-white mt-1">Query builder</h2>
+          <p className="text-white/45 text-sm leading-relaxed mt-2">
+            Compose advanced search operators visually. The generated query is editable and length-validated.
+          </p>
+        </div>
+
+        <div className="rounded-2xl p-5" style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="font-display text-xs text-white/40 tracking-wide" htmlFor="terms">Search terms</label>
+              <input
+                id="terms"
+                type="text"
+                value={terms}
+                onChange={(e) => setTerms(e.target.value)}
+                placeholder="e.g. AI agent payments"
+                className="w-full px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-white text-sm focus:outline-none focus:border-neon-cyan/50"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="font-display text-xs text-white/40 tracking-wide" htmlFor="site">Site operator</label>
+              <input
+                id="site"
+                type="text"
+                value={site}
+                onChange={(e) => setSite(e.target.value)}
+                placeholder="stellar.org"
+                className="w-full px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-white text-sm focus:outline-none focus:border-neon-cyan/50"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="font-display text-xs text-white/40 tracking-wide" htmlFor="filetype">Filetype operator</label>
+              <input
+                id="filetype"
+                type="text"
+                value={filetype}
+                onChange={(e) => setFiletype(e.target.value)}
+                placeholder="pdf"
+                className="w-full px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-white text-sm focus:outline-none focus:border-neon-cyan/50"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="font-display text-xs text-white/40 tracking-wide" htmlFor="exclude">Exclude words</label>
+              <input
+                id="exclude"
+                type="text"
+                value={exclude}
+                onChange={(e) => setExclude(e.target.value)}
+                placeholder="tutorial, outdated"
+                className="w-full px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-white text-sm focus:outline-none focus:border-neon-cyan/50"
+              />
+            </div>
+            <label className="flex items-center gap-2 sm:col-span-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={exact}
+                onChange={(e) => setExact(e.target.checked)}
+                className="w-4 h-4 rounded border-white/20 bg-black/30 text-neon-cyan focus:ring-neon-cyan/50"
+              />
+              <span className="font-display text-xs text-white/50">Exact phrase (wraps in double quotes)</span>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-3 mt-5">
+            <button
+              onClick={handleCompose}
+              className="px-4 py-2 rounded-lg font-display text-xs tracking-wider text-black bg-neon-cyan hover:opacity-90 transition-opacity"
+            >
+              Compose query
+            </button>
+            <button
+              onClick={() => { setTerms(''); setSite(''); setFiletype(''); setExclude(''); setExact(false); setQuery(''); setCharCount(0); }}
+              className="px-4 py-2 rounded-lg font-display text-xs tracking-wider text-white/40 hover:text-white transition-colors"
+              style={{ border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              Reset
+            </button>
+          </div>
+
+          <div className="mt-5">
+            <label className="font-display text-xs text-white/40 tracking-wide" htmlFor="query">Generated query</label>
+            <textarea
+              id="query"
+              value={query}
+              onChange={(e) => handleQueryChange(e.target.value)}
+              rows={2}
+              placeholder="Your query appears here"
+              className="w-full mt-1.5 px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-white text-sm font-mono focus:outline-none focus:border-neon-cyan/50 resize-y"
+            />
+            <div className="flex justify-between mt-1.5 text-xs font-mono">
+              <span style={{ color: charCount > MAX_QUERY_LENGTH ? '#ff4d4d' : 'rgba(255,255,255,0.35)' }}>
+                {charCount} / {MAX_QUERY_LENGTH} chars
+              </span>
+              {charCount > MAX_QUERY_LENGTH && (
+                <span style={{ color: '#ff4d4d' }}>Query too long — payment amount unchanged, but results may be truncated.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-5 pt-4 border-t border-white/5 text-xs text-white/35 leading-relaxed">
+            <span className="font-display text-white/50 tracking-wider">OPERATORS DOCUMENTATION:</span>{' '}
+            <code className="font-mono text-neon-cyan/60">site:</code> limit to domain,{' '}
+            <code className="font-mono text-neon-cyan/60">filetype:</code> limit to file type,{' '}
+            <code className="font-mono text-neon-cyan/60">"exact phrase"</code> for exact match,{' '}
+            <code className="font-mono text-neon-cyan/60">-term</code> to exclude. Length-validated client-side before payment.
+          </div>
+        </div>
+      </section>
+
       {/* x402 payment flow */}
       <section className="space-y-5">
         <div>
