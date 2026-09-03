@@ -262,22 +262,14 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
   }
 
   const copyToClipboard = async (url: string, e: React.MouseEvent) => {
-    // Prevent the anchor tag from navigating when clicking copy button
     e.preventDefault()
     e.stopPropagation()
     
     try {
       await navigator.clipboard.writeText(url)
       setCopiedUrl(url)
-      
-      // Reset copied state after 1.5 seconds
-      setTimeout(() => {
-        setCopiedUrl(prev => prev === url ? null : prev)
-      }, 1500)
-    } catch (err) {
-      console.error('Failed to copy:', err)
-      
-      // Fallback for older browsers
+      setTimeout(() => setCopiedUrl(prev => prev === url ? null : prev), 1500)
+    } catch {
       try {
         const textArea = document.createElement('textarea')
         textArea.value = url
@@ -288,9 +280,7 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
         document.execCommand('copy')
         document.body.removeChild(textArea)
         setCopiedUrl(url)
-        setTimeout(() => {
-          setCopiedUrl(prev => prev === url ? null : prev)
-        }, 1500)
+        setTimeout(() => setCopiedUrl(prev => prev === url ? null : prev), 1500)
       } catch (fallbackErr) {
         console.error('Fallback copy failed:', fallbackErr)
       }
@@ -407,6 +397,29 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+      {/* Quota error banner */}
+      <AnimatePresence>
+        {collections?.quotaError && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+            style={{
+              background: 'rgba(255,80,80,0.07)',
+              border: '1px solid rgba(255,80,80,0.25)',
+            }}
+          >
+            <p className="text-xs text-red-300">{collections.quotaError}</p>
+            <button
+              onClick={collections.clearQuotaError}
+              className="text-xs text-white/30 hover:text-white transition-colors"
+              aria-label="Dismiss quota error"
+            >✕</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2.5 flex-wrap">
           <p className="font-display text-xs text-white/35 tracking-widest" aria-live="polite">
@@ -464,7 +477,6 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
               EXPORT
             </button>
 
-            {/* Export Format Dropdown */}
             <AnimatePresence>
               {showExportMenu && (
                 <motion.div
@@ -617,7 +629,7 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
         >
           <div className="flex items-start justify-between gap-3 flex-col sm:flex-row">
             <div className="flex-1 min-w-0 w-full">
-              {/* Source + score */}
+              {/* Source + score + date */}
               <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                 <input
                   type="checkbox"
@@ -679,7 +691,7 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
                 <p className="font-mono text-xs truncate" style={{ color: 'rgba(0,245,255,0.35)' }}>
                   {r.url}
                 </p>
-                {/* Copy button */}
+                {/* Copy URL button */}
                 <button
                   onClick={(e) => copyToClipboard(r.url, e)}
                   className="relative flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10"
@@ -696,7 +708,6 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
                     <Copy className="w-3 h-3" />
                   )}
                   
-                  {/* Tooltip */}
                   <AnimatePresence>
                     {copiedUrl === r.url && (
                       <motion.div
@@ -745,8 +756,23 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
               )}
             </div>
 
-            <div className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border border-white/8 text-white/25 group-hover:text-neon-cyan group-hover:border-neon-cyan/30 transition-all mt-0.5">
-              <ExternalLink className="w-3.5 h-3.5" />
+            {/* Right-side actions */}
+            <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+              {/* Save-to-collection button (only when collections prop is provided) */}
+              {collections && (
+                <SaveButton
+                  result={r}
+                  query={query}
+                  txHash={txHash}
+                  network={network}
+                  collections={collections}
+                />
+              )}
+
+              {/* External link icon */}
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center border border-white/8 text-white/25 group-hover:text-neon-cyan group-hover:border-neon-cyan/30 transition-all">
+                <ExternalLink className="w-3.5 h-3.5" />
+              </div>
             </div>
           </div>
 

@@ -58,6 +58,9 @@ export default defineConfig({
         'api/ai/chat.ts': { statements: 90, branches: 60, functions: 60, lines: 90 },
         'mcp-server/index.ts': { statements: 20, branches: 10, functions: 10, lines: 20 },
         'src/hooks/useFreighterWallet.ts': { statements: 85, branches: 65, functions: 90, lines: 85 },
+        // Collections feature — ratchet up as UI tests land
+        'src/hooks/useCollections.ts': { statements: 80, branches: 75, functions: 90, lines: 80 },
+        'src/components/collections/CollectionsPanel.tsx': { statements: 0, branches: 0, functions: 0, lines: 0 },
       },
     },
   },
