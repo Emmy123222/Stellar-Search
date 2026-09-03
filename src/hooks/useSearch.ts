@@ -239,6 +239,111 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ])
 }
 
+export interface SavedResultSet {
+  id: string
+  query: string
+  timestamp: string
+  txHash: string | null
+  results: SearchResult[]
+}
+
+export interface MovedResult {
+  result: SearchResult
+  fromRank: number
+  toRank: number
+}
+
+export interface ResultComparison {
+  added: SearchResult[]
+  removed: SearchResult[]
+  moved: MovedResult[]
+  unchanged: Array<{ result: SearchResult; rank: number }>
+}
+
+const RESULT_SETS_KEY = 'stellarsearch_result_sets'
+const SELECTED_RESULT_SETS_KEY = 'stellarsearch_selected_result_sets'
+
+const canonicalUrl = (result: SearchResult): string =>
+  (result as SearchResult & { url?: string }).url ?? ''
+
+const readResultSets = (): SavedResultSet[] => {
+  try {
+    const raw = localStorage.getItem(RESULT_SETS_KEY)
+    return raw ? (JSON.parse(raw) as SavedResultSet[]) : []
+  } catch {
+    return []
+  }
+}
+
+const writeResultSets = (sets: SavedResultSet[]) => {
+  try {
+    localStorage.setItem(RESULT_SETS_KEY, JSON.stringify(sets))
+  } catch {
+    // Ignore storage quota / privacy errors.
+  }
+}
+
+const readSelectedResultSetIds = (): string[] => {
+  try {
+    const raw = localStorage.getItem(SELECTED_RESULT_SETS_KEY)
+    return raw ? (JSON.parse(raw) as string[]) : []
+  } catch {
+    return []
+  }
+}
+
+const writeSelectedResultSetIds = (ids: string[]) => {
+  try {
+    localStorage.setItem(SELECTED_RESULT_SETS_KEY, JSON.stringify(ids))
+  } catch {
+    // Ignore storage quota / privacy errors.
+  }
+}
+
+/**
+ * Compares two paid result sets by canonical URL.
+ * Results present only in `current` are added; only in `previous` are removed;
+ * present in both but at different ranks are moved; otherwise unchanged.
+ */
+export function compareResultSets(
+  previous: SearchResult[],
+  current: SearchResult[]
+): ResultComparison {
+  const previousByUrl = new Map<string, { result: SearchResult; rank: number }>()
+  const currentByUrl = new Map<string, { result: SearchResult; rank: number }>()
+
+  previous.forEach((result, index) => {
+    const url = canonicalUrl(result)
+    if (!previousByUrl.has(url)) previousByUrl.set(url, { result, rank: index + 1 })
+  })
+  current.forEach((result, index) => {
+    const url = canonicalUrl(result)
+    if (!currentByUrl.has(url)) currentByUrl.set(url, { result, rank: index + 1 })
+  })
+
+  const added: SearchResult[] = []
+  const removed: SearchResult[] = []
+  const moved: MovedResult[] = []
+  const unchanged: Array<{ result: SearchResult; rank: number }> = []
+
+  currentByUrl.forEach((entry, url) => {
+    const prev = previousByUrl.get(url)
+    if (!prev) {
+      added.push(entry.result)
+    } else if (prev.rank !== entry.rank) {
+      moved.push({ result: entry.result, fromRank: prev.rank, toRank: entry.rank })
+    } else {
+      unchanged.push({ result: entry.result, rank: entry.rank })
+    }
+  })
+
+  previousByUrl.forEach((entry, url) => {
+    if (!currentByUrl.has(url)) removed.push(entry.result)
+  })
+
+  return { added, removed, moved, unchanged }
+}
+
 /**
  * Custom React hook for executing x402-metered search queries via Stellar/Freighter payment authorization.
  *

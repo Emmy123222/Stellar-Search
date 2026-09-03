@@ -514,6 +514,74 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
         </motion.div>
       )}
 
+      {/* Compare stored result sets */}
+      {comparison && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.18 }}
+          className="rounded-2xl p-5"
+          style={{ background: 'rgba(6,13,20,0.7)', border: '1px solid rgba(0,245,255,0.12)' }}
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <History className="w-4 h-4 text-neon-cyan/40" />
+            <span className="font-display text-xs text-white/30 tracking-widest">COMPARE RESULT SETS</span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-4 mb-4">
+            <select
+              value={leftIdx}
+              onChange={e => setLeftIdx(Number(e.target.value))}
+              className="bg-[#0d1b24] text-white/70 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-neon-cyan/40"
+            >
+              {receipts.map((r, i) => (
+                <option key={i} value={i}>{new Date(r.timestamp).toLocaleString()} - {(r.query || '').slice(0, 30)}</option>
+              ))}
+            </select>
+            <span className="text-white/30 text-xs self-center font-display">VS</span>
+            <select
+              value={rightIdx}
+              onChange={e => setRightIdx(Number(e.target.value))}
+              className="bg-[#0d1b24] text-white/70 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-neon-cyan/40"
+            >
+              {receipts.map((r, i) => (
+                <option key={i} value={i}>{new Date(r.timestamp).toLocaleString()} - {(r.query || '').slice(0, 30)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left font-mono text-xs">
+              <thead>
+                <tr className="text-white/30 border-b border-white/10">
+                  <th className="py-2 pr-4 font-display tracking-widest">STATUS</th>
+                  <th className="py-2 pr-4 font-display tracking-widest">URL</th>
+                  <th className="py-2 pr-4 font-display tracking-widest text-center">LEFT RANK</th>
+                  <th className="py-2 font-display tracking-widest text-center">RIGHT RANK</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {comparison.rows.map(row => (
+                  <tr key={row.url} className="align-top">
+                    <td className="py-2 pr-4">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-display tracking-wider ${
+                        row.status === 'added' ? 'bg-neon-green/10 text-neon-green border border-neon-green/30' :
+                        row.status === 'removed' ? 'bg-red-500/10 text-red-400 border border-red-500/30' :
+                        row.status === 'moved' ? 'bg-neon-amber/10 text-neon-amber border border-neon-amber/30' :
+                        'bg-white/5 text-white/40 border border-white/10'
+                      }`}>{row.status.toUpperCase()}</span>
+                    </td>
+                    <td className="py-2 pr-4">
+                      <a href={row.url} target="_blank" rel="noopener noreferrer" className="text-neon-cyan/70 hover:text-neon-cyan break-all">{row.url}</a>
+                    </td>
+                    <td className="py-2 pr-4 text-center text-white/50">{row.leftRank ?? '—'}</td>
+                    <td className="py-2 text-center text-white/50">{row.rightRank ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
+      )}
+
       {/* Live transactions from Horizon */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
