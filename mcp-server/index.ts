@@ -233,6 +233,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: 'web_search',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       description: `Search the web via StellarSearch. Automatically pays ${AMOUNT_USDC} USDC on Stellar (x402 protocol).
 The server handles the full payment flow: HTTP 402 → sign Soroban auth → settle → return results.
 Use for current events, documentation, research, or anything needing up-to-date web information.`,
@@ -248,6 +249,7 @@ Use for current events, documentation, research, or anything needing up-to-date 
     },
     {
       name: 'image_search',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       description: `Search the web for images via StellarSearch. Automatically pays ${AMOUNT_USDC} USDC on Stellar (x402 protocol).
 Returns image URLs, titles, and source domains via the Serper.dev images API.
 Use for visual references, photos, diagrams, or anything where you need image results.`,
@@ -262,6 +264,7 @@ Use for visual references, photos, diagrams, or anything where you need image re
     },
     {
       name: 'news_search',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       description: `Search recent news articles via StellarSearch. Automatically pays ${AMOUNT_USDC} USDC on Stellar (x402 protocol).
 Returns articles with title, URL, snippet, publication date, and source via the Serper.dev news API.
 Use for breaking stories, current events, and time-sensitive reporting.`,
@@ -277,6 +280,7 @@ Use for breaking stories, current events, and time-sensitive reporting.`,
     },
     {
       name: 'ai_summarize',
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: 'Use Groq (Llama 3) to summarise or analyse text. Free — no payment required.',
       inputSchema: {
         type: 'object',
