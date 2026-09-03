@@ -6,6 +6,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
+import { withHorizonRetry, classifyHorizonError } from '../lib/horizonClient'
 import i18n from '../i18n'
 import type { WalletState, StellarTransaction, WalletAccountStatus } from '../types'
 
@@ -317,7 +318,7 @@ export function useFreighterWallet() {
     const currentGen = ++balanceGenRef.current
     try {
       const horizon = await loadHorizon()
-      const account = await horizon.loadAccount(publicKey)
+      const account = await withHorizonRetry(() => horizon.loadAccount(publicKey))
 
       if (balanceGenRef.current !== currentGen) return
 
@@ -394,12 +395,14 @@ export function useFreighterWallet() {
     setTxLoading(true)
     try {
       const horizon = await loadHorizon()
-      const ops = await horizon
-        .operations()
-        .forAccount(publicKey)
-        .order('desc')
-        .limit(15)
-        .call()
+      const ops = await withHorizonRetry(() =>
+        horizon
+          .operations()
+          .forAccount(publicKey)
+          .order('desc')
+          .limit(15)
+          .call()
+      )
 
       if (txGenRef.current !== currentGen) return
 
