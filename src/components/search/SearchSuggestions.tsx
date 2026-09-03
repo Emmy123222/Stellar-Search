@@ -36,7 +36,7 @@ export function SearchSuggestions({ onSelect, aiSuggestions }: Props) {
     >
       <div className="flex items-center gap-1.5">
         {isAi && <Sparkles className="w-3 h-3 text-neon-amber/60" />}
-        <p className="font-display text-xs text-white/25 tracking-widest">
+        <p className="font-display text-xs text-white/50 tracking-widest">
           {isAi ? 'YOU MIGHT ALSO SEARCH FOR' : 'TRY THESE'}
         </p>
       </div>
@@ -49,7 +49,7 @@ export function SearchSuggestions({ onSelect, aiSuggestions }: Props) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.06 }}
             onClick={() => onSelect(q)}
-            className="px-3 py-1.5 rounded-lg text-xs font-display tracking-wide transition-all text-white/40 hover:text-neon-cyan/80"
+            className="px-3 py-1.5 rounded-lg text-xs font-display tracking-wide transition-all text-white/55 hover:text-neon-cyan/80"
             style={{ border: '1px solid rgba(255,255,255,0.08)' }}
             onMouseEnter={e => {
               const el = e.currentTarget as HTMLButtonElement

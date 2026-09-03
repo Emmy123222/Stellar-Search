@@ -22,6 +22,8 @@ export function Footer() {
           >
             <Zap className="w-2.5 h-2.5 text-neon-cyan" />
           </div>
+          <span className="font-display text-xs text-white/45">
+            STELLARSEARCH · Stellar Hackathon 2026
           <span className="font-display text-xs text-white/20">
             {t('footer.tagline')}
           </span>
@@ -33,7 +35,7 @@ export function Footer() {
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-display text-xs text-white/20 hover:text-neon-cyan/60 transition-colors hidden sm:inline"
+              className="font-display text-xs text-white/55 hover:text-neon-cyan/80 transition-colors hidden sm:inline"
             >
               {label}
             </a>

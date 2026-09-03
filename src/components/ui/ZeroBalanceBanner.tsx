@@ -131,7 +131,7 @@ export function ZeroBalanceBanner({
                 Get free USDC <ExternalLink className="w-3 h-3" />
               </a>
             </p>
-            <p className="text-xs text-white/45">
+            <p className="text-xs text-white/55">
               New to Stellar?{' '}
               <a
                 href={TRUSTLINE_GUIDE_URL}
@@ -168,7 +168,7 @@ export function ZeroBalanceBanner({
           <button
             onClick={onDismiss}
             aria-label="Dismiss zero-balance notice"
-            className="absolute top-3 right-3 p-1 rounded text-white/30 hover:text-white/70 transition-colors"
+            className="absolute top-3 right-3 min-w-11 min-h-11 flex items-center justify-center rounded text-white/40 hover:text-white/70 transition-colors"
           >
             <X className="w-3.5 h-3.5" />
           </button>

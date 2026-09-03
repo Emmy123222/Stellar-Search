@@ -40,6 +40,16 @@ import {
   USDC_CONTRACT,
   AMOUNT_STROOPS,
 } from '../src/lib/constants'
+import { formatReceipt } from './receipt'
+import type {
+  SearchResponse,
+  ImageSearchResponse,
+  NewsSearchResponse,
+  ApiErrorResponse,
+  SearchResult,
+  ImageResult,
+  NewsResult,
+} from '../src/types/index.js'
 import { formatConfigurationError, readMcpConfig } from '../src/lib/config'
 import { resolveStat, statsUnavailableReason } from '../src/lib/serverHealth'
 
@@ -277,6 +287,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       description: `Search the web via StellarSearch. Automatically pays ${AMOUNT_USDC} USDC on Stellar (x402 protocol).
 The server handles the full payment flow: HTTP 402 → sign Soroban auth → settle → return results.
+Paid responses include a verifiable x402 receipt with on-chain transaction hash and Stellar Expert explorer link.
 Use for current events, documentation, research, or anything needing up-to-date web information.`,
       inputSchema: {
         type: "object",
@@ -316,6 +327,7 @@ Use for current events, documentation, research, or anything needing up-to-date 
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       description: `Search the web for images via StellarSearch. Automatically pays ${AMOUNT_USDC} USDC on Stellar (x402 protocol).
 Returns image URLs, titles, and source domains via the Serper.dev images API.
+Paid responses include a verifiable x402 receipt with on-chain transaction hash and Stellar Expert explorer link.
 Use for visual references, photos, diagrams, or anything where you need image results.`,
       inputSchema: {
         type: "object",
@@ -335,6 +347,7 @@ Use for visual references, photos, diagrams, or anything where you need image re
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
       description: `Search recent news articles via StellarSearch. Automatically pays ${AMOUNT_USDC} USDC on Stellar (x402 protocol).
 Returns articles with title, URL, snippet, publication date, and source via the Serper.dev news API.
+Paid responses include a verifiable x402 receipt with on-chain transaction hash and Stellar Expert explorer link.
 Use for breaking stories, current events, and time-sensitive reporting.`,
       inputSchema: {
         type: "object",

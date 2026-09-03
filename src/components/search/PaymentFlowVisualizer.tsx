@@ -50,7 +50,7 @@ export function PaymentFlowVisualizer({ session }: Props) {
     >
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="font-display text-xs text-white/30 tracking-widest">x402 PAYMENT FLOW</span>
+        <span className="font-display text-xs text-white/55 tracking-widest">x402 PAYMENT FLOW</span>
         {session.status === 'complete' && <span className="font-display text-xs text-neon-green">✓ SETTLED</span>}
         {session.status === 'error'    && <span className="font-display text-xs text-red-400">✗ FAILED</span>}
       </div>
@@ -111,7 +111,7 @@ export function PaymentFlowVisualizer({ session }: Props) {
                   }}>
                     {step.label}
                   </p>
-                  <p className="text-white/20 hidden sm:block" style={{ fontSize: '9px' }}>{step.sub}</p>
+                  <p className="text-white/45 hidden sm:block" style={{ fontSize: '9px' }}>{step.sub}</p>
                 </div>
               </div>
             )
@@ -135,7 +135,7 @@ export function PaymentFlowVisualizer({ session }: Props) {
               transition={{ duration: 0.7, repeat: Infinity }}
             />
           )}
-          <p className="font-display text-xs text-white/50">
+          <p className="font-display text-xs text-white/65">
             {isSearching && `→ Step ${session.step ?? 1}/${TOTAL_STEPS}: ${STEPS[activeIdx]?.label} — ${STEPS[activeIdx]?.sub}...`}
             {isComplete  && `✓ Payment settled — ${session.results.length} results in ${session.durationMs}ms`}
             {isError     && `✗ ${session.error}`}

@@ -287,7 +287,7 @@ export function SearchBar({
         aria-label="Date range filters"
       >
         <span className="inline-flex items-center gap-1 font-display text-xs text-white/30 tracking-wider uppercase mr-1">
-          <Calendar className="w-3 h-3 text-neon-cyan/60" /> Freshness:
+          <Calendar className="w-3 h-3 text-neon-cyan/70" /> Freshness:
         </span>
         {FRESHNESS_OPTIONS.map((opt) => {
           const isSelected = freshness === opt.value;
@@ -355,7 +355,7 @@ export function SearchBar({
 
       {/* Meta row */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mt-2 px-1">
-        <p className="font-display text-xs text-white/20">
+        <p className="font-display text-xs text-white/45">
           {walletConnected
             ? `Balance: ${usdcBalance} USDC · ~${Math.floor(
                 parseFloat(usdcBalance) / parseFloat(AMOUNT_USDC),
