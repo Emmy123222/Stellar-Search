@@ -116,6 +116,64 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const bottomRef               = useRef<HTMLDivElement>(null)
   const contextInjectedFor      = useRef<string | null>(null)
+  const dropdownRef             = useRef<HTMLDivElement>(null)
+  const dropdownButtonRef       = useRef<HTMLButtonElement>(null)
+  const optionRefs              = useRef<(HTMLButtonElement | null)[]>([])
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowModelDropdown(false)
+      }
+    }
+    if (showModelDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showModelDropdown])
+
+  const handleDropdownKeyDown = (e: React.KeyboardEvent, index: number) => {
+    switch (e.key) {
+      case 'ArrowDown': {
+        e.preventDefault()
+        const next = (index + 1) % AVAILABLE_MODELS.length
+        optionRefs.current[next]?.focus()
+        break
+      }
+      case 'ArrowUp': {
+        e.preventDefault()
+        const prev = (index - 1 + AVAILABLE_MODELS.length) % AVAILABLE_MODELS.length
+        optionRefs.current[prev]?.focus()
+        break
+      }
+      case 'Enter':
+      case ' ':
+        e.preventDefault()
+        setSelectedModel(AVAILABLE_MODELS[index].id)
+        setShowModelDropdown(false)
+        dropdownButtonRef.current?.focus()
+        break
+      case 'Escape':
+        e.preventDefault()
+        setShowModelDropdown(false)
+        dropdownButtonRef.current?.focus()
+        break
+    }
+  }
+
+  const handleButtonKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+      if (!showModelDropdown) {
+        e.preventDefault()
+        setShowModelDropdown(true)
+        setTimeout(() => optionRefs.current[0]?.focus(), 50)
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setShowModelDropdown(false)
+      dropdownButtonRef.current?.focus()
+    }
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -269,16 +327,27 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                 <Bot className="w-4 h-4 text-neon-cyan" />
                 <span className="font-display text-xs text-neon-cyan tracking-wider">GROQ AI</span>
                 {/* Model Selector Dropdown */}
-                <div className="relative">
+                <div className="relative" ref={dropdownRef}>
                   <button
-                    onClick={() => setShowModelDropdown(!showModelDropdown)}
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
+                    ref={dropdownButtonRef}
+                    onClick={() => {
+                      setShowModelDropdown(!showModelDropdown)
+                      if (!showModelDropdown) {
+                        setTimeout(() => optionRefs.current[0]?.focus(), 50)
+                      }
+                    }}
+                    onKeyDown={handleButtonKeyDown}
+                    aria-haspopup="listbox"
+                    aria-expanded={showModelDropdown}
+                    aria-labelledby="model-selector-label"
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-neon-cyan/50"
                     style={{
                       background: 'rgba(0,245,255,0.1)',
                       border: '1px solid rgba(0,245,255,0.2)',
                       color: 'rgba(255,255,255,0.8)',
                     }}
                   >
+                    <span id="model-selector-label" className="sr-only">Select AI Model</span>
                     <span>{getModelLabel(selectedModel)}</span>
                     <ChevronDown className="w-3 h-3" />
                   </button>
@@ -290,28 +359,36 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                         initial={{ opacity: 0, y: -5 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -5 }}
-                        className="absolute top-full left-0 mt-1 w-48 rounded-lg overflow-hidden z-50"
+                        role="listbox"
+                        aria-label="Available AI Models"
+                        className="absolute top-full left-0 mt-1 w-48 rounded-lg overflow-hidden z-50 shadow-xl"
                         style={{
                           background: 'rgba(6,13,20,0.98)',
                           border: '1px solid rgba(0,245,255,0.2)',
                         }}
                       >
-                        {AVAILABLE_MODELS.map(model => (
+                        {AVAILABLE_MODELS.map((model, index) => (
                           <button
                             key={model.id}
+                            ref={el => optionRefs.current[index] = el}
+                            role="option"
+                            aria-selected={selectedModel === model.id}
                             onClick={() => {
                               setSelectedModel(model.id)
                               setShowModelDropdown(false)
+                              dropdownButtonRef.current?.focus()
                             }}
-                            className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors"
+                            onKeyDown={e => handleDropdownKeyDown(e, index)}
+                            tabIndex={selectedModel === model.id ? 0 : -1}
+                            className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors focus:outline-none focus:bg-white/10"
                           >
                             <div className="flex items-center justify-between">
-                              <span className="text-xs text-white">{model.label}</span>
+                              <span className="text-xs text-white font-medium">{model.label}</span>
                               {selectedModel === model.id && (
-                                <span className="text-neon-cyan text-xs">✓</span>
+                                <span className="text-neon-cyan text-xs" aria-hidden="true">✓</span>
                               )}
                             </div>
-                            <div className="text-xs text-white/40 mt-0.5">{model.description}</div>
+                            <div className="text-xs text-white/50 mt-0.5">{model.description}</div>
                           </button>
                         ))}
                       </motion.div>

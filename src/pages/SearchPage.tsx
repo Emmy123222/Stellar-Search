@@ -146,7 +146,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         walletConnected={wallet.connected}
         usdcBalance={wallet.usdcBalance}
         walletNetwork={wallet.network}
-        defaultQuery={session.query}
+        query={session.query}
       />
 
       <AnimatePresence>

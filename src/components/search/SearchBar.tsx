@@ -22,7 +22,7 @@ interface Props {
   walletConnected: boolean
   usdcBalance: string
   walletNetwork: string
-  defaultQuery?: string
+  query?: string
 }
 
 export function SearchBar({
@@ -31,10 +31,15 @@ export function SearchBar({
   walletConnected,
   usdcBalance,
   walletNetwork,
-  defaultQuery = '',
+  query = '',
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [freshness, setFreshness] = useState<string>('')
+  const [inputValue, setInputValue] = useState(query)
+
+  useEffect(() => {
+    setInputValue(query)
+  }, [query])
 
   const isWrongNetwork = walletConnected && walletNetwork !== EXPECTED_WALLET_NETWORK
 
@@ -108,7 +113,8 @@ export function SearchBar({
             name="q"
             type="text"
             aria-label="Search query"
-            defaultValue={defaultQuery}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
             placeholder={
               isWrongNetwork
                 ? 'Switch network to search...'
