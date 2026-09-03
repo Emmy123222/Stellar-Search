@@ -35,10 +35,14 @@ import { createReceiptBundle, downloadBundle } from '../lib/receiptBundle'
 interface Props {
   transactions: StellarTransaction[]
   txLoading: boolean
+  txLoadingMore?: boolean
+  txHasMore?: boolean
+  txError?: string | null
   publicKey: string | null
   usdcBalance: string
   xlmBalance: string
   onRefresh: () => void
+  onLoadMore?: () => void
 }
 
 type DashboardTab = 'overview' | 'collections'

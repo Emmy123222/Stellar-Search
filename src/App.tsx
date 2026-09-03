@@ -103,10 +103,14 @@ export default function App() {
                 <DashboardPage
                   transactions={transactions}
                   txLoading={txLoading}
+                  txLoadingMore={txLoadingMore}
+                  txHasMore={txHasMore}
+                  txError={txError}
                   publicKey={wallet.publicKey}
                   usdcBalance={wallet.usdcBalance}
                   xlmBalance={wallet.xlmBalance}
                   onRefresh={refresh}
+                  onLoadMore={loadMore}
                 />
               )}
             </motion.div>

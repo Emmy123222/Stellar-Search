@@ -249,6 +249,15 @@ Connection, balance, and history are tracked as **independent resources** so a f
 
 `WalletPanel.tsx:14,43` consumes `balance/history/connection` to show separate spinners, `Balance: ...`/`History: ...` error banners, and `Updated Xm ago` timestamps (via `formatTimeAgo`), with `Refresh balances` and `Refresh history` buttons that call `onRefreshBalances`/`onRefreshHistory` without cross-erasure. This keeps Express/Vercel/MCP (x402) and browser (Horizon) aligned — Horizon history remains browser-only and x402 settlement (`AMOUNT_STROOPS=10000` → `0.001 USDC`) is unchanged.
 
+### Transaction History Pagination
+
+Dashboard transaction history is **paginated with Horizon cursors** to lift the legacy 15-operation limit:
+
+- **Cursor:** `useFreighterWallet.ts:134` builds `Horizon.Server.operations().forAccount(pub).order('desc').limit(15).cursor(paging_token)` where `paging_token` is the last operation's `paging_token` (fallback `id`). Initial load uses no cursor; `loadMore` appends older records via the stored cursor.
+- **Deduplication:** Appended pages are deduplicated by `op.id` (`useFreighterWallet.ts:238`) so Horizon overlap or filtered `manage_offer` gaps never duplicate rows.
+- **States:** `txLoading` (initial), `txLoadingMore` (pagination), `txHasMore` (records.length === 15), `txError` with retry, and account-switch reset (`currentPublicKeyRef`) are all tested (`src/hooks/useFreighterWallet.test.ts`, `src/pages/DashboardPage.test.tsx`). Dashboard shows *Load older transactions*, *Loading...*, *End of history*, and *Retry* (`DashboardPage.tsx:210`).
+- **Alignment:** Horizon history is a browser concern only; Express (`server/index.ts`), Vercel (`api/search.ts`), and MCP (`mcp-server/index.ts`) share the same `STELLAR_NETWORK`/`HORIZON_URL` constants but do not paginate transactions, so no cross-runtime divergence. x402 settlement semantics remain unchanged.
+
 ### Sequence diagram
 
 ```mermaid

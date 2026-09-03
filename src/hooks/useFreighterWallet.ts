@@ -591,6 +591,40 @@ export function useFreighterWallet() {
     }
   }, [fetchBalances, fetchTransactions])
 
+  // Load older records with Horizon cursor and stable deduplication
+  const loadMore = useCallback(async () => {
+    const publicKey = currentPublicKeyRef.current || wallet.publicKey
+    if (!publicKey) return
+    if (txLoading || txLoadingMore || !txHasMore) return
+    setTxLoadingMore(true)
+    setTxError(null)
+    try {
+      const horizon = await loadHorizon()
+      const { records, txs } = await fetchOperationsPage(horizon, publicKey, nextCursorRef.current)
+
+      if (records.length > 0) {
+        const last: any = records[records.length - 1]
+        nextCursorRef.current = last.paging_token || last.id || null
+      }
+      setTxHasMore(records.length === TRANSACTIONS_PAGE_SIZE)
+
+      // Stable deduplication by operation id
+      if (txs.length > 0) {
+        setTransactions(prev => {
+          const seen = new Set(prev.map(p => p.id))
+          const deduped = txs.filter(t => !seen.has(t.id))
+          if (deduped.length === 0) return prev
+          return [...prev, ...deduped]
+        })
+      }
+      setTxError(null)
+    } catch (err: any) {
+      setTxError(err?.message || 'Failed to load more transactions')
+    } finally {
+      setTxLoadingMore(false)
+    }
+  }, [wallet.publicKey, txLoading, txLoadingMore, txHasMore])
+
   const disconnect = useCallback(() => {
     setWallet({
       publicKey: null,

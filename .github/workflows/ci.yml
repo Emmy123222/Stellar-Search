@@ -269,14 +269,19 @@ jobs:
 
       - name: Scan dependencies (OSV)
         run: |
+          # osv-scanner exits 1 whenever it finds ANY unfiltered vulnerability,
+          # including LOW/MODERATE ones that the policy explicitly allows. The
+          # authoritative gate is scripts/check-vulnerabilities.mjs below, which
+          # fails only on unexcused HIGH/CRITICAL findings — so tolerate the
+          # scanner's exit code and always produce the JSON/SARIF artifacts.
           osv-scanner --recursive \
             --config=osv-scanner.toml \
             --format json \
-            --output=osv-results.json ./
+            --output=osv-results.json ./ || true
           osv-scanner --recursive \
             --config=osv-scanner.toml \
             --format sarif \
-            --output=osv-results.sarif ./
+            --output=osv-results.sarif ./ || true
 
       - name: Enforce dependency fail/exception policy (fail on unexcused HIGH/CRITICAL)
         run: node scripts/check-vulnerabilities.mjs osv-results.json

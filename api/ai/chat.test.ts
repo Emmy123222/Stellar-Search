@@ -12,6 +12,14 @@ vi.mock('groq-sdk', () => ({
   },
 }))
 
+vi.mock('../../src/lib/aiChatService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/lib/aiChatService')>()
+  return {
+    ...actual,
+    streamChatCompletion: mockStreamChatCompletion,
+  }
+})
+
 describe('Vercel API: /api/ai/chat handler', () => {
   beforeEach(() => {
     vi.clearAllMocks()
