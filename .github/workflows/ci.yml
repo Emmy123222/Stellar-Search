@@ -41,11 +41,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-<<<<<<< HEAD
-      - name: Verify coverage thresholds
-        run: echo "Coverage thresholds 100% satisfied"
-=======
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -60,6 +55,35 @@ jobs:
         # thresholds defined in vite.config.ts: global 25/23/20/26 + per-file ratchets for
         # src/lib/constants, src/lib/stellar, server/corsConfig, api/search, etc.
         # CI fails if any threshold drops — ratchet upward as payment/wallet/API/MCP/UI tests land.
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    needs: [typecheck, lint, test]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Upload production build for diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-build-${{ github.sha }}
+          path: dist/
+          if-no-files-found: warn
+          retention-days: 7
 
   supply-chain:
     name: Supply chain (SBOM & vulnerabilities)
