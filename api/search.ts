@@ -105,6 +105,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const cleanQ = v.cleanQ
 
+  const validSafeSearch = ['strict', 'moderate', 'off'].includes(safeSearch) ? safeSearch : 'moderate'
+
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
     req.headers["payment-signature"] ||

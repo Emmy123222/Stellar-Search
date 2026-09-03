@@ -453,6 +453,9 @@ export function useSearch(walletAddress: string | null = null) {
       if (freshness) {
         params.set("freshness", freshness);
       }
+      if (safeSearch) {
+        params.set('safeSearch', safeSearch)
+      }
 
     const advance = (step: PaymentStep) =>
       setSession((prev: SearchSession) => ({ ...prev, step }))

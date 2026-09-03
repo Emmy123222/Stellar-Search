@@ -26,8 +26,19 @@ export const FRESHNESS_OPTIONS: FreshnessOption[] = [
   { label: "Past Month", value: "pm" },
 ];
 
+export interface SafeSearchOption {
+  label: string
+  value: string
+}
+
+export const SAFE_SEARCH_OPTIONS: SafeSearchOption[] = [
+  { label: 'Strict', value: 'strict' },
+  { label: 'Moderate', value: 'moderate' },
+  { label: 'Off', value: 'off' },
+]
+
 interface Props {
-  onSearch: (query: string, freshness?: string) => void
+  onSearch: (query: string, freshness?: string, safeSearch?: string) => void
   isSearching: boolean
   walletConnected: boolean
   usdcBalance: string
