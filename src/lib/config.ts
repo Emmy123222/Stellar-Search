@@ -32,6 +32,14 @@ export interface BrowserConfig {
   apiBaseUrl: string
 }
 
+/** Resolve an API route without introducing double slashes or dropping a path prefix. */
+export function resolveApiUrl(path: string, env?: Environment): string {
+  const base = readBrowserConfig(env).apiBaseUrl
+  const route = path.replace(/^\//, '')
+  if (base.startsWith('/')) return `${base}/${route}`.replace(/\/+/g, '/')
+  return new URL(route, `${base}/`).toString()
+}
+
 export interface McpConfig { searchApiUrl: string; groqApiKey?: string }
 
 const networks = new Set<StellarNetwork>(['stellar:testnet', 'stellar:mainnet'])

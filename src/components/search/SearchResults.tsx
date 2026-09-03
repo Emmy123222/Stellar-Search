@@ -14,7 +14,7 @@ interface Props {
   txHash?: string | null
 }
 
-const SERVER_URL = readBrowserConfig().apiBaseUrl
+const SERVER_URL = (path: string) => resolveApiUrl(path)
 
 export function SearchResults({ results, query, isLoading, txHash }: Props) {
   const [summary, setSummary]               = useState<string>('')
@@ -155,7 +155,7 @@ export function SearchResults({ results, query, isLoading, txHash }: Props) {
       `Cite source numbers like [1], [2] when relevant.\n\n${snippets}`
 
     try {
-      const res = await fetch(`${SERVER_URL}/ai/chat`, {
+      const res = await fetch(SERVER_URL('/ai/chat'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
