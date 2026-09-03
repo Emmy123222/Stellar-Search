@@ -54,6 +54,12 @@ function loadFreighterApi(): Promise<FreighterApi> {
   return freighterApiPromise
 }
 
+export interface ResourceState {
+  loading: boolean
+  error: string | null
+  lastUpdated: string | null
+}
+
 type HorizonServer = InstanceType<
   typeof import('@stellar/stellar-sdk').Horizon.Server
 >
@@ -291,6 +297,8 @@ export async function preflightPayment({
 
 /**
  * Custom React hook to manage connection, balances (XLM & USDC), and recent transaction history for the Freighter wallet on Stellar.
+ * Each resource (connection, balance, history) exposes independent loading/error/lastUpdated so that a failure in one does
+ * not obscure valid data from the others and refresh of one does not erase the other.
  *
  * @returns Object containing the current wallet state (`wallet`), list of recent transactions (`transactions`),
  * transaction loading state (`txLoading`), preflight readiness check (`preflight`), and action callbacks (`connect`, `disconnect`, `refresh`).
@@ -310,6 +318,12 @@ export function useFreighterWallet() {
   })
   const [transactions, setTransactions] = useState<StellarTransaction[]>([])
   const [txLoading, setTxLoading] = useState(false)
+  const [txError, setTxError] = useState<string | null>(null)
+  const [txLastUpdated, setTxLastUpdated] = useState<string | null>(null)
+  const [balanceLoading, setBalanceLoading] = useState(false)
+  const [balanceError, setBalanceError] = useState<string | null>(null)
+  const [balanceLastUpdated, setBalanceLastUpdated] = useState<string | null>(null)
+  const [connectionLastUpdated, setConnectionLastUpdated] = useState<string | null>(null)
 
   const balanceGenRef = useRef(0)
 
@@ -359,6 +373,8 @@ export function useFreighterWallet() {
         accountStatus: status,
         error: null,
       }))
+      setBalanceError(null)
+      setBalanceLastUpdated(new Date().toISOString())
     } catch (err: any) {
       const isNotFound =
         err?.response?.status === 404 ||
@@ -393,6 +409,7 @@ export function useFreighterWallet() {
   const fetchTransactions = useCallback(async (publicKey: string) => {
     const currentGen = ++txGenRef.current
     setTxLoading(true)
+    setTxError(null)
     try {
       const horizon = await loadHorizon()
       const ops = await withHorizonRetry(() =>
@@ -558,8 +575,9 @@ export function useFreighterWallet() {
         loading: false,
         error: null,
       }))
+      setConnectionLastUpdated(new Date().toISOString())
 
-      // Fetch live data after connect
+      // Fetch live data after connect — balance and history are independent
       await fetchBalances(addressResult.address)
       await fetchTransactions(addressResult.address)
     } catch (err: any) {
@@ -569,6 +587,7 @@ export function useFreighterWallet() {
         connected: false,
         error: err.message || i18n.t('errors:connectionFailed'),
       }))
+      // connection error does not clear balance/history valid data or their lastUpdated
     }
   }, [fetchBalances, fetchTransactions])
 
@@ -586,12 +605,31 @@ export function useFreighterWallet() {
       accountStatus: 'unfunded',
     })
     setTransactions([])
+    setTxError(null)
+    setTxLastUpdated(null)
+    setBalanceError(null)
+    setBalanceLastUpdated(null)
+    setConnectionLastUpdated(null)
+    setTxLoading(false)
+    setBalanceLoading(false)
   }, [])
+
+  const refreshBalances = useCallback(async () => {
+    if (wallet.publicKey) {
+      await fetchBalances(wallet.publicKey)
+    }
+  }, [wallet.publicKey, fetchBalances])
+
+  const refreshHistory = useCallback(async () => {
+    if (wallet.publicKey) {
+      await fetchTransactions(wallet.publicKey)
+    }
+  }, [wallet.publicKey, fetchTransactions])
 
   const refresh = useCallback(async () => {
     if (wallet.publicKey) {
-      await fetchBalances(wallet.publicKey)
-      await fetchTransactions(wallet.publicKey)
+      // Run in parallel but keep errors/lastUpdated isolated
+      await Promise.allSettled([fetchBalances(wallet.publicKey), fetchTransactions(wallet.publicKey)])
     }
   }, [wallet.publicKey, fetchBalances, fetchTransactions])
 
@@ -684,10 +722,35 @@ export function useFreighterWallet() {
     check()
   }, [fetchBalances, fetchTransactions])
 
+  const connection: ResourceState = {
+    loading: wallet.loading,
+    error: wallet.error,
+    lastUpdated: connectionLastUpdated,
+  }
+  const balance: ResourceState = {
+    loading: balanceLoading,
+    error: balanceError,
+    lastUpdated: balanceLastUpdated,
+  }
+  const history: ResourceState = {
+    loading: txLoading,
+    error: txError,
+    lastUpdated: txLastUpdated,
+  }
+
   return {
     wallet,
     transactions,
     txLoading,
+    txError,
+    txLastUpdated,
+    balanceLoading,
+    balanceError,
+    balanceLastUpdated,
+    connectionLastUpdated,
+    connection,
+    balance,
+    history,
     connect,
     disconnect,
     refresh,

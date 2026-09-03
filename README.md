@@ -239,6 +239,16 @@ Every endpoint explicitly handles `OPTIONS` (preflight) and returns `405 Method 
 
 405 responses include a common error body: `{ "error": "Method not allowed" }`.
 
+### Wallet & Horizon — Independent Resource Tracking
+
+Connection, balance, and history are tracked as **independent resources** so a failure in one never erases valid data from the others (`src/hooks/useFreighterWallet.ts:27,268`):
+
+- **Connection `connection: ResourceState`** (`src/hooks/useFreighterWallet.ts:268`) — `loading = wallet.loading`, `error = wallet.error`, `lastUpdated` set on successful `connect` (`src/hooks/useFreighterWallet.ts:186`). A connection error (e.g., `Freighter extension not found`) does not clear `balance` or `history` data/lastUpdated.
+- **Balance `balance: ResourceState`** (`src/hooks/useFreighterWallet.ts:273`) — `loading/error/lastUpdated` wired to `horizon.loadAccount` (`src/hooks/useFreighterWallet.ts:74`). On success updates `wallet.xlmBalance/usdcBalance` and `balanceLastUpdated`; on error sets `balanceError` only and **preserves** previous balances. `refreshBalances` (`src/hooks/useFreighterWallet.ts:223`) touches only balance.
+- **History `history: ResourceState`** (`src/hooks/useFreighterWallet.ts:278`) — `loading/error/lastUpdated` wired to `horizon.operations().forAccount` (`src/hooks/useFreighterWallet.ts:112`). On success updates `transactions` and `txLastUpdated`; on error sets `historyError` only and **preserves** previous transactions. `refreshHistory` (`src/hooks/useFreighterWallet.ts:229`) touches only history. `refresh` runs both via `Promise.allSettled` keeping errors isolated (`src/hooks/useFreighterWallet.ts:235`).
+
+`WalletPanel.tsx:14,43` consumes `balance/history/connection` to show separate spinners, `Balance: ...`/`History: ...` error banners, and `Updated Xm ago` timestamps (via `formatTimeAgo`), with `Refresh balances` and `Refresh history` buttons that call `onRefreshBalances`/`onRefreshHistory` without cross-erasure. This keeps Express/Vercel/MCP (x402) and browser (Horizon) aligned — Horizon history remains browser-only and x402 settlement (`AMOUNT_STROOPS=10000` → `0.001 USDC`) is unchanged.
+
 ### Sequence diagram
 
 ```mermaid

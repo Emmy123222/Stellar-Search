@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { Search, BookOpen, BarChart2, ExternalLink, Zap, Github, Globe, HelpCircle } from 'lucide-react'
 import { WalletPanel } from '../wallet/WalletPanel'
-import type { WalletState, StellarTransaction } from '../../hooks/useFreighterWallet'
+import type { WalletState, StellarTransaction, ResourceState } from '../../hooks/useFreighterWallet'
 import { IS_MAINNET } from '../../lib/stellar'
 
 type Page = 'search' | 'docs' | 'dashboard'
@@ -19,16 +19,23 @@ interface Props {
   wallet: WalletState
   transactions: StellarTransaction[]
   txLoading: boolean
+  balance?: ResourceState
+  history?: ResourceState
+  connection?: ResourceState
   onConnect: () => void
   onDisconnect: () => void
   onRefresh: () => void
+  onRefreshBalances?: () => void
+  onRefreshHistory?: () => void
   onOpenOnboarding: () => void
 }
 
 export function Navbar({
   page, onNavigate,
   wallet, transactions, txLoading,
+  balance, history, connection,
   onConnect, onDisconnect, onRefresh,
+  onRefreshBalances, onRefreshHistory,
   onOpenOnboarding,
 }: Props) {
   const { t } = useTranslation('common')
@@ -126,9 +133,14 @@ export function Navbar({
             wallet={wallet}
             transactions={transactions}
             txLoading={txLoading}
+            balance={balance}
+            history={history}
+            connection={connection}
             onConnect={onConnect}
             onDisconnect={onDisconnect}
             onRefresh={onRefresh}
+            onRefreshBalances={onRefreshBalances}
+            onRefreshHistory={onRefreshHistory}
           />
         </div>
       </div>

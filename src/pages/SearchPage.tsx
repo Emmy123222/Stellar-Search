@@ -59,11 +59,6 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
     search(query, nextFreshness, searchMode === 'web' ? 5 : 10, searchMode)
   }
 
-  const handleReset = () => {
-    setDismissedSuggestion(false)
-    reset()
-  }
-
   const isSearching = session.status === 'searching'
 
   return (

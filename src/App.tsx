@@ -18,7 +18,8 @@ export default function App() {
 
   const {
     wallet, transactions, txLoading,
-    connect, disconnect, refresh,
+    balance, history, connection,
+    connect, disconnect, refresh, refreshBalances, refreshHistory,
   } = useFreighterWallet()
 
   // First-run onboarding (#342): auto-opens once per browser (unless
@@ -64,9 +65,14 @@ export default function App() {
           wallet={wallet}
           transactions={transactions}
           txLoading={txLoading}
+          balance={balance}
+          history={history}
+          connection={connection}
           onConnect={connect}
           onDisconnect={disconnect}
           onRefresh={refresh}
+          onRefreshBalances={refreshBalances}
+          onRefreshHistory={refreshHistory}
           onOpenOnboarding={reopenOnboarding}
         />
 
