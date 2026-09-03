@@ -1575,6 +1575,11 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
     ...messages,
   ];
 
+  // Abort the Groq stream if the client disconnects mid-response.
+  const controller = new AbortController()
+  const onReqClose = () => controller.abort()
+  req.on('close', onReqClose)
+
   if (!wantsStream) {
     try {
       const completion = await groq.chat.completions.create({
