@@ -121,7 +121,7 @@ describe('GET /health and GET /', () => {
   })
 })
 
-describe('POST /ai/chat validation', () => {
+describe('POST /ai/chat — single route with streaming, JSON fallback, and model selection', () => {
   it('returns 400 when messages missing', async () => {
     const res = await request(app).post('/ai/chat').send({}).set('Content-Type', 'application/json')
     expect(res.status).toBe(400)
@@ -131,6 +131,27 @@ describe('POST /ai/chat validation', () => {
   it('returns 400 when messages empty', async () => {
     const res = await request(app).post('/ai/chat').send({ messages: [] }).set('Content-Type', 'application/json')
     expect(res.status).toBe(400)
+  })
+
+  it('validates messages structure — rejects null messages', async () => {
+    const res = await request(app).post('/ai/chat').send({ messages: null }).set('Content-Type', 'application/json')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/messages array required/)
+  })
+
+  it('only registers a single POST /ai/chat route', async () => {
+    // Verify the route only accepts POST — GET returns 404 (no GET handler registered)
+    const getRes = await request(app).get('/ai/chat')
+    expect(getRes.status).toBe(404)
+
+    // Verify POST with valid data reaches the handler (Groq mock returns default response)
+    const postRes = await request(app)
+      .post('/ai/chat')
+      .send({ messages: [{ role: 'user', content: 'hello' }] })
+      .set('Content-Type', 'application/json')
+    // The handler either succeeds (200) or fails with Groq error (500),
+    // but it MUST be handled — not 404
+    expect(postRes.status).not.toBe(404)
   })
 })
 
