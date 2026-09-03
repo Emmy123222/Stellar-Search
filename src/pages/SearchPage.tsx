@@ -31,6 +31,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
   const { t } = useTranslation('search')
   const [dismissedSuggestion, setDismissedSuggestion] = useState(false)
   const [searchMode, setSearchMode] = useState<SearchMode>('web')
+  const [activeFreshness, setActiveFreshness] = useState<string | undefined>(undefined)
 
   // #150 — after an async search settles, move keyboard/screen-reader focus to
   // the error alert (SearchResults moves focus to the results heading on
@@ -49,8 +50,12 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
   const handleSearch = (query: string, freshness?: string) => {
     setDismissedSuggestion(false)
+    // Suggestions are alternate queries, not new filter selections. Keep the
+    // user's visible freshness filter when they choose one.
+    const nextFreshness = freshness ?? activeFreshness
+    if (freshness !== undefined) setActiveFreshness(freshness)
     if (!wallet.connected) { onConnectWallet(); return }
-    search(query, freshness, searchMode === 'web' ? 5 : 10, searchMode)
+    search(query, nextFreshness, searchMode === 'web' ? 5 : 10, searchMode)
   }
 
   const handleReset = () => {
