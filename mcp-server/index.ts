@@ -39,6 +39,9 @@ import {
   AMOUNT_USDC,
   USDC_CONTRACT,
   AMOUNT_STROOPS,
+  AI_TEXT_MAX_LENGTH,
+  AI_INSTRUCTION_MAX_LENGTH,
+  AI_COMBINED_MAX_LENGTH,
 } from '../src/lib/constants'
 import { formatReceipt } from './receipt'
 import type {
@@ -993,6 +996,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const aiClient = getGroq()
     if (!aiClient) {
       return { content: [{ type: 'text', text: 'AI summarization is not configured.' }], isError: true }
+    }
+
+    // ── Input length validation ──────────────────────────────────────────
+    if (!text || typeof text !== 'string') {
+      return { content: [{ type: 'text', text: 'Validation error: text is required and must be a string.' }], isError: true }
+    }
+    if (text.length > AI_TEXT_MAX_LENGTH) {
+      return { content: [{ type: 'text', text: `Validation error: text exceeds maximum length of ${AI_TEXT_MAX_LENGTH} characters (received ${text.length}).` }], isError: true }
+    }
+    if (instruction.length > AI_INSTRUCTION_MAX_LENGTH) {
+      return { content: [{ type: 'text', text: `Validation error: instruction exceeds maximum length of ${AI_INSTRUCTION_MAX_LENGTH} characters (received ${instruction.length}).` }], isError: true }
+    }
+    if (text.length + instruction.length > AI_COMBINED_MAX_LENGTH) {
+      return { content: [{ type: 'text', text: `Validation error: combined text + instruction length exceeds maximum of ${AI_COMBINED_MAX_LENGTH} characters (received ${text.length + instruction.length}).` }], isError: true }
     }
 
     try {

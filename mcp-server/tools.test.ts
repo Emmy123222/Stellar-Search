@@ -73,6 +73,18 @@ beforeAll(async () => {
   mcpCancelHandler = cancel?.[1]
 })
 
+/**
+ * Helper: get the CallTool handler registered by the MCP server.
+ * It is the second setRequestHandler call (after ListTools).
+ */
+function getCallToolHandler(): Function {
+  const calls = mockSetRequestHandler.mock.calls
+  // The ListTools handler is the first registration; CallTool is the second.
+  if (calls.length >= 2) return calls[1][1] as Function
+  // Fallback: any handler whose schema is not the ListTools one
+  return calls.find(c => c[0] !== calls[0][0])?.[1] as Function
+}
+
 describe('MCP server — alignment with Express/Vercel/browser constants', () => {
   it('MCP uses same AMOUNT_USDC as server (x402 settlement)', async () => {
     expect(AMOUNT_USDC).toBe('0.001')
@@ -111,8 +123,7 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
   })
 
   it('MCP check_balance handler uses Horizon and USDC issuer', async () => {
-    const callToolCall = mockSetRequestHandler.mock.calls.find(c => c[0] === CallToolRequestSchemaMock)
-    const callToolHandler = callToolCall?.[1] as Function
+    const callToolHandler = getCallToolHandler()
     if (callToolHandler) {
       // Mock fetch for Horizon
       const mockFetch = vi.fn().mockResolvedValue({

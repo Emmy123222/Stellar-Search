@@ -713,9 +713,7 @@ English is the complete, always-available fallback locale, via [i18next](https:/
 }
 ```
 
-Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.
-
-### MCP progress notifications (#327)
+Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.### MCP progress notifications (#327)
 
 Paid MCP tools (`web_search`, `image_search`, `news_search`) emit **bounded** `notifications/progress` events for actual payment/search phases **only when the client sends `_meta.progressToken`**:
 
@@ -783,6 +781,7 @@ curl -N -X POST http://localhost:3001/search/batch \
 ```
 
 ### Async paid search jobs with webhooks (#324)
+
 
 ```
 POST /jobs  → 202 { jobId, statusUrl, paymentVerified, paymentId, txHash }
