@@ -439,6 +439,10 @@ export function useSearch(walletAddress: string | null = null) {
         paidAmount: null,
         status: "searching",
         step: 1,
+        activePhase: "challenge",
+        completedPhases: [],
+        timings: { ...EMPTY_TIMINGS },
+        currentStep: 1,
         suggestions: [],
       });
 
@@ -560,11 +564,17 @@ export function useSearch(walletAddress: string | null = null) {
         PREFLIGHT_TIMEOUT_MS
       )
 
-      // Flow step 3 — createPaymentPayload() triggers the Freighter popup (signs auth entry)
-      advance(3)
-      console.log('🔐 Triggering Freighter popup via createPaymentPayload...')
-      const paymentPayload = await client.createPaymentPayload(paymentRequired)
-      console.log('✅ Freighter approved, payload created')
+          return {
+            ...prev,
+            activePhase: phaseState.activePhase,
+            completedPhases: phaseState.completedPhases,
+            timings: phaseState.timings,
+            currentStep: phaseState.currentStep,
+            durationMs: phaseState.durationMs,
+            step: Math.min(phaseState.currentStep, 6) as PaymentStep,
+          };
+        });
+      };
 
             const result = await signAuthEntry(xdr, {
               networkPassphrase: opts?.networkPassphrase ?? passphrase,
