@@ -529,6 +529,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       cleanup()
       return {
+        structuredContent: { query: data.executedQuery || query, results: data.results, count: data.count, payment: { amount: data.paidAmount, currency: data.currency, network: data.network }, latencyMs: data.latencyMs, txHash: data.txHash ?? null },
         content: [
           {
             type: 'text',
@@ -590,6 +591,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       cleanup()
       return {
+        structuredContent: { query, results: data.results, count: data.count, payment: { amount: data.paidAmount, currency: data.currency, network: data.network }, latencyMs: data.latencyMs, txHash: data.txHash ?? null },
         content: [
           {
             type: 'text',
@@ -661,6 +663,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       cleanup()
       return {
+        structuredContent: { query, results: data.results, count: data.count, payment: { amount: data.paidAmount, currency: data.currency, network: data.network }, latencyMs: data.latencyMs, txHash: data.txHash ?? null },
         content: [
           {
             type: 'text',
