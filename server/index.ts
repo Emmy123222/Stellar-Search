@@ -109,11 +109,20 @@ function methodNotAllowed(res: Response, allow: string): void {
   res.status(405).json({ error: 'Method not allowed' })
 }
 
-const limiter = rateLimit({
+// Separate rate limit budgets for each route type
+const RATE_LIMIT_PAID_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PAID_PER_MINUTE || '30', 10)
+const RATE_LIMIT_AI_PER_MINUTE = parseInt(process.env.RATE_LIMIT_AI_PER_MINUTE || '60', 10)
+const RATE_LIMIT_HEALTH_PER_MINUTE = parseInt(process.env.RATE_LIMIT_HEALTH_PER_MINUTE || '1000', 10)
+
+// Rate limiter for paid search routes (/search, /images, /news)
+const paidSearchLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: RATE_LIMIT_PER_MINUTE,
+  max: RATE_LIMIT_PAID_PER_MINUTE,
   standardHeaders: true,
-  legacyHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    return req.ip || 'unknown'
+  },
   handler: (_req: Request, res: Response) => {
     res.setHeader("Retry-After", "60");
     res
