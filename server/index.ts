@@ -39,6 +39,8 @@ import {
   normalizeImageResults,
   normalizeNewsResults,
   normalizeQueryMetadata,
+  normalizeAnswerBox,
+  normalizeKnowledgeGraph,
 } from '../src/lib/serperNormalizer.js'
 import type {
   SearchResponse,
@@ -505,6 +507,8 @@ app.get('/search', async (req: Request, res: Response) => {
 
     const results = normalizeOrganicResults(data)
     const queryMeta = normalizeQueryMetadata(data, cleanQ)
+    const answerBox = normalizeAnswerBox(data)
+    const knowledgeGraph = normalizeKnowledgeGraph(data)
 
     // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
     txHash = (req.headers['x-payment-response'] as string) || null
@@ -553,6 +557,8 @@ app.get('/search', async (req: Request, res: Response) => {
       isCorrected: queryMeta.isCorrected,
       results,
       count: results.length,
+      answerBox,
+      knowledgeGraph,
       network: NETWORK,
       paidAmount: AMOUNT_USDC,
       currency: 'USDC',
@@ -899,6 +905,8 @@ app.post('/search/batch', async (req: Request, res: Response) => {
       if (stats.latencies.length > 200) stats.latencies.shift()
       const results = normalizeOrganicResults(data)
       const queryMeta = normalizeQueryMetadata(data, q)
+      const answerBox = normalizeAnswerBox(data)
+      const knowledgeGraph = normalizeKnowledgeGraph(data)
       addRecentReceipt({ id: txHash || `${requestId}-${i}`, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
       const evt: BatchJsonlResultEvent = {
         v: 1,
@@ -912,6 +920,8 @@ app.post('/search/batch', async (req: Request, res: Response) => {
         isCorrected: queryMeta.isCorrected,
         results,
         count: results.length,
+        answerBox,
+        knowledgeGraph,
         latencyMs,
         paidAmount: AMOUNT_USDC,
         currency: 'USDC',

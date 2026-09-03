@@ -357,3 +357,144 @@ export function normalizeQueryMetadata(
   }
 }
 
+/**
+ * Normalizes answer box data from Serper upstream search response.
+ * Answer boxes contain direct factual answers to queries like "what is X".
+ */
+export function normalizeAnswerBox(rawData: unknown): import('../types/index.js').AnswerBox | undefined {
+  if (!rawData || typeof rawData !== 'object') {
+    return undefined
+  }
+
+  const payload = rawData as Record<string, unknown>
+  const answerBoxRaw = payload.answerBox as Record<string, unknown> | undefined
+
+  if (!answerBoxRaw) {
+    return undefined
+  }
+
+  // Extract title
+  const title = typeof answerBoxRaw.title === 'string' && answerBoxRaw.title.trim()
+    ? answerBoxRaw.title.trim()
+    : undefined
+
+  // Extract answer
+  const answer = typeof answerBoxRaw.answer === 'string' && answerBoxRaw.answer.trim()
+    ? answerBoxRaw.answer.trim()
+    : undefined
+
+  // Must have both title and answer
+  if (!title || !answer) {
+    return undefined
+  }
+
+  // Extract source
+  const sourceRaw = answerBoxRaw.source as Record<string, unknown> | undefined
+  if (!sourceRaw || !isValidHttpUrl(sourceRaw.link)) {
+    return undefined
+  }
+
+  const sourceLink = (sourceRaw.link as string).trim()
+  const sourceTitle = typeof sourceRaw.title === 'string' && sourceRaw.title.trim()
+    ? sourceRaw.title.trim()
+    : 'Source'
+  const sourceDisplayLink = typeof sourceRaw.displayLink === 'string' && sourceRaw.displayLink.trim()
+    ? sourceRaw.displayLink.trim()
+    : undefined
+
+  return {
+    title,
+    answer,
+    source: {
+      title: sourceTitle,
+      link: sourceLink,
+      displayLink: sourceDisplayLink,
+    },
+  }
+}
+
+/**
+ * Normalizes knowledge graph data from Serper upstream search response.
+ * Knowledge graphs contain structured data about entities (people, places, things).
+ */
+export function normalizeKnowledgeGraph(rawData: unknown): import('../types/index.js').KnowledgeGraph | undefined {
+  if (!rawData || typeof rawData !== 'object') {
+    return undefined
+  }
+
+  const payload = rawData as Record<string, unknown>
+  const knowledgeGraphRaw = payload.knowledgeGraph as Record<string, unknown> | undefined
+
+  if (!knowledgeGraphRaw) {
+    return undefined
+  }
+
+  // Extract title (required)
+  const title = typeof knowledgeGraphRaw.title === 'string' && knowledgeGraphRaw.title.trim()
+    ? knowledgeGraphRaw.title.trim()
+    : undefined
+
+  if (!title) {
+    return undefined
+  }
+
+  // Extract optional fields
+  const type = typeof knowledgeGraphRaw.type === 'string' && knowledgeGraphRaw.type.trim()
+    ? knowledgeGraphRaw.type.trim()
+    : undefined
+
+  const description = typeof knowledgeGraphRaw.description === 'string' && knowledgeGraphRaw.description.trim()
+    ? knowledgeGraphRaw.description.trim()
+    : undefined
+
+  const imageUrl = isValidHttpUrl(knowledgeGraphRaw.imageUrl)
+    ? (knowledgeGraphRaw.imageUrl as string).trim()
+    : undefined
+
+  const website = isValidHttpUrl(knowledgeGraphRaw.website)
+    ? (knowledgeGraphRaw.website as string).trim()
+    : undefined
+
+  // Extract attributes array
+  const attributes: import('../types/index.js').KnowledgeGraphAttribute[] = []
+  if (Array.isArray(knowledgeGraphRaw.attributes)) {
+    for (const attr of knowledgeGraphRaw.attributes) {
+      if (!attr || typeof attr !== 'object') continue
+      const attrRow = attr as Record<string, unknown>
+      const attrName = typeof attrRow.name === 'string' && attrRow.name.trim()
+        ? attrRow.name.trim()
+        : undefined
+      const attrValue = typeof attrRow.value === 'string' && attrRow.value.trim()
+        ? attrRow.value.trim()
+        : undefined
+      if (attrName && attrValue) {
+        attributes.push({ name: attrName, value: attrValue })
+      }
+    }
+  }
+
+  // Extract links array (related entities)
+  const links: import('../types/index.js').KnowledgeGraphLink[] = []
+  if (Array.isArray(knowledgeGraphRaw.links)) {
+    for (const link of knowledgeGraphRaw.links) {
+      if (!link || typeof link !== 'object') continue
+      const linkRow = link as Record<string, unknown>
+      if (!isValidHttpUrl(linkRow.link)) continue
+      const linkTitle = typeof linkRow.title === 'string' && linkRow.title.trim()
+        ? linkRow.title.trim()
+        : 'Link'
+      links.push({ title: linkTitle, link: (linkRow.link as string).trim() })
+    }
+  }
+
+  return {
+    title,
+    type,
+    description,
+    imageUrl,
+    website,
+    attributes: attributes.length > 0 ? attributes : undefined,
+    links: links.length > 0 ? links : undefined,
+  }
+}
+
