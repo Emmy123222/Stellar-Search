@@ -19,7 +19,8 @@ export default function App() {
   // Lifted so the floating GroqAssistant can read the last completed search
   // and pre-populate context (issue #57).
   const { session, search, reset } = useSearch(
-    wallet.connected ? wallet.publicKey : null
+    wallet.connected ? wallet.publicKey : null,
+    wallet.network,
   )
 
   const lastSearch = useMemo(

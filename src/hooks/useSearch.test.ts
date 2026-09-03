@@ -181,6 +181,35 @@ describe('useSearch — lazy-loaded x402 payment flow (#336)', () => {
     vi.unstubAllGlobals()
   })
 
+  it('cancels payment creation when the wallet network changes', async () => {
+    let resolvePayment!: (value: unknown) => void
+    mockCreatePaymentPayload.mockReturnValueOnce(new Promise(resolve => {
+      resolvePayment = resolve
+    }))
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 402,
+      headers: { get: () => null },
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result, rerender } = renderHook(
+      ({ network }) => useSearch(WALLET, network),
+      { initialProps: { network: 'TESTNET' } },
+    )
+    let searchPromise: Promise<void>
+    act(() => { searchPromise = result.current.search('paid query') })
+    await waitFor(() => expect(mockCreatePaymentPayload).toHaveBeenCalledTimes(1))
+
+    rerender({ network: 'PUBLIC' })
+    resolvePayment({ payload: 'signed' })
+    await act(async () => { await searchPromise! })
+
+    expect(result.current.session.status).toBe('error')
+    expect(result.current.session.error).toMatch(/network changed/i)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.unstubAllGlobals()
+  })
+
   it('blocks the search before any payment when the session cap is exceeded (#313)', async () => {
     // Exhaust the default 0.01 USDC session cap (10 × 0.001 settled searches).
     for (let i = 0; i < 10; i++) settleSpend('0.001')

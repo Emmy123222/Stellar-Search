@@ -153,6 +153,8 @@ Browser (Freighter) → GET /search?q=...
 
 Before signing, a bounded preflight verifies the active account, expected network, USDC trustline, spendable amount, and signer availability. If any check fails, no payment payload is created and the user gets a single targeted recovery action (e.g. "Add USDC", "Switch to testnet", or "Enable signer").
 
+While connected, the browser watches Freighter for account/network updates. A network switch immediately updates the search controls and cancels any in-flight payment creation before its signature can be sent. Express, Vercel, and MCP paid-route settlement remain unchanged: only the browser-side request is stopped before submission.
+
 | Preflight check | Required state | Targeted recovery action |
 |---|---|---|
 | Active account | A Freighter account is selected | Connect Freighter and select an account |

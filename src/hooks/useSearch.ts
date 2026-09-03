@@ -10,7 +10,7 @@
  * Fix: convert Buffer → base64 string using Buffer.from(result).toString('base64')
  */
 
-import { useState, useCallback }              from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { toast }                               from 'sonner'
 import { x402Client, x402HTTPClient }          from '@x402/fetch'
 import { ExactStellarScheme }                  from '@x402/stellar/exact/client'
@@ -64,13 +64,59 @@ export interface SearchSession {
   suggestions: string[]
 }
 
-export function useSearch(walletAddress: string | null = null) {
+interface ActivePayment {
+  controller: AbortController
+  cancelled: boolean
+}
+
+const NETWORK_CHANGED_MESSAGE = 'Freighter network changed. Payment creation was cancelled; switch back and try again.'
+
+export function useSearch(
+  walletAddress: string | null = null,
+  walletNetwork?: string,
+) {
   const [session, setSession] = useState<SearchSession>({
     query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
   })
+  const activePaymentRef = useRef<ActivePayment | null>(null)
+  const previousNetworkRef = useRef(walletNetwork)
+
+  const cancelActivePayment = useCallback((message = NETWORK_CHANGED_MESSAGE) => {
+    const activePayment = activePaymentRef.current
+    if (!activePayment) return
+
+    activePayment.cancelled = true
+    activePayment.controller.abort()
+    setSession(prev => prev.status === 'searching'
+      ? { ...prev, status: 'error', error: message }
+      : prev)
+  }, [])
+
+  // A Freighter network switch invalidates any in-progress payment payload.
+  // `createPaymentPayload` itself cannot be aborted by the wallet API, so we
+  // invalidate its result and abort network requests before it can be sent.
+  useEffect(() => {
+    const previousNetwork = previousNetworkRef.current
+    previousNetworkRef.current = walletNetwork
+
+    if (previousNetwork && walletNetwork && previousNetwork !== walletNetwork) {
+      cancelActivePayment()
+    }
+  }, [walletNetwork, cancelActivePayment])
 
   const search = useCallback(async (query: string, count = 5) => {
     if (!query.trim()) return
+
+    const activePayment: ActivePayment = {
+      controller: new AbortController(),
+      cancelled: false,
+    }
+    activePaymentRef.current = activePayment
+    const throwIfCancelled = () => {
+      if (activePayment.cancelled || activePayment.controller.signal.aborted) {
+        throw new Error(NETWORK_CHANGED_MESSAGE)
+      }
+    }
 
     setSession({ query, results: [], txHash: null, paidAmount: null, status: 'searching', step: 1, suggestions: [] })
 
@@ -82,12 +128,16 @@ export function useSearch(walletAddress: string | null = null) {
 
     try {
       if (!walletAddress) throw new Error('Connect your Freighter wallet first.')
+      if (walletNetwork && walletNetwork !== EXPECTED_WALLET_NETWORK) {
+        throw new Error(`Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${walletNetwork}`)
+      }
 
       console.log('🔍 Starting search with wallet:', walletAddress)
 
       // Step 1 — verify Freighter is on correct network
       if (!(typeof window !== 'undefined' && window.__STELLAR_SEARCH_E2E_WALLET__)) {
         const net = await getNetworkDetails()
+        throwIfCancelled()
         if (net.error)              throw new Error(net.error.message)
         if (net.network !== EXPECTED_WALLET_NETWORK) {
           throw new Error(`Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`)
@@ -136,7 +186,10 @@ export function useSearch(walletAddress: string | null = null) {
       // Flow step 1 — initial request, expect 402
       advance(1)
       console.log('🚀 Initial request:', `${SERVER_URL}/search?${params}`)
-      const firstRes = await fetch(`${SERVER_URL}/search?${params}`)
+      const firstRes = await fetch(`${SERVER_URL}/search?${params}`, {
+        signal: activePayment.controller.signal,
+      })
+      throwIfCancelled()
       console.log('📡 Status:', firstRes.status)
 
       if (firstRes.status !== 402) {
@@ -160,6 +213,7 @@ export function useSearch(walletAddress: string | null = null) {
       advance(3)
       console.log('🔐 Triggering Freighter popup via createPaymentPayload...')
       const paymentPayload = await client.createPaymentPayload(paymentRequired)
+      throwIfCancelled()
       console.log('✅ Freighter approved, payload created')
 
       const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload)
@@ -170,11 +224,13 @@ export function useSearch(walletAddress: string | null = null) {
       console.log('🔄 Retrying with payment...')
       const paidResPromise = fetch(`${SERVER_URL}/search?${params}`, {
         headers: paymentHeaders,
+        signal: activePayment.controller.signal,
       })
 
       // Flow step 5 — facilitator settles on Stellar while the retry is in flight
       advance(5)
       const paidRes = await paidResPromise
+      throwIfCancelled()
       console.log('📡 Paid response status:', paidRes.status)
 
       if (!paidRes.ok) {
@@ -231,6 +287,7 @@ export function useSearch(walletAddress: string | null = null) {
       }
 
     } catch (err: any) {
+      if (activePayment.cancelled) return
       console.error('❌ Search failed:', err)
       const msg = err.message || 'Search failed.'
       toast.error('Search Payment Failed', { description: msg })
@@ -239,12 +296,16 @@ export function useSearch(walletAddress: string | null = null) {
         status: 'error',
         error:  msg,
       }))
+    } finally {
+      if (activePaymentRef.current === activePayment) {
+        activePaymentRef.current = null
+      }
     }
-  }, [walletAddress])
+  }, [walletAddress, walletNetwork])
 
   const reset = useCallback(() => {
     setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [] })
   }, [])
 
-  return { session, search, reset }
+  return { session, search, reset, cancelActivePayment }
 }
