@@ -224,6 +224,21 @@ the same page. To prevent that from producing two Freighter payment prompts
 Both guards release in a `finally` block regardless of success or failure, so
 a completed or failed search always unblocks the next one.
 
+### Method Handling & Allow Headers
+
+Every endpoint explicitly handles `OPTIONS` (preflight) and returns `405 Method Not Allowed` with a correct `Allow` header for unsupported methods. This keeps Express, Vercel, browser, and MCP behaviour aligned:
+
+| Endpoint | Allowed Methods |
+|---|---|
+| `GET /search` | `GET, OPTIONS` |
+| `GET /images` | `GET, OPTIONS` |
+| `GET /news` | `GET, OPTIONS` |
+| `GET /health` | `GET, OPTIONS` |
+| `POST /ai/chat` | `POST, OPTIONS` |
+| `GET /` | `GET, OPTIONS` |
+
+405 responses include a common error body: `{ "error": "Method not allowed" }`.
+
 ### Sequence diagram
 
 ```mermaid

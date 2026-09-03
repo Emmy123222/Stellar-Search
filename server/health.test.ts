@@ -155,6 +155,62 @@ describe('POST /ai/chat — single route with streaming, JSON fallback, and mode
   })
 })
 
+describe('method handling — 405 with Allow header', () => {
+  it('GET /search returns 405 with Allow header for POST', async () => {
+    const res = await request(app).post('/search')
+    expect(res.status).toBe(405)
+    expect(res.body.error).toMatch(/Method not allowed/)
+    expect(res.headers['allow']).toMatch(/GET/)
+    expect(res.headers['allow']).toMatch(/OPTIONS/)
+  })
+
+  it('GET /search returns 405 with Allow header for PUT', async () => {
+    const res = await request(app).put('/search')
+    expect(res.status).toBe(405)
+    expect(res.headers['allow']).toMatch(/GET/)
+  })
+
+  it('GET /images returns 405 with Allow header for POST', async () => {
+    const res = await request(app).post('/images')
+    expect(res.status).toBe(405)
+    expect(res.body.error).toMatch(/Method not allowed/)
+    expect(res.headers['allow']).toMatch(/GET/)
+  })
+
+  it('GET /news returns 405 with Allow header for DELETE', async () => {
+    const res = await request(app).delete('/news')
+    expect(res.status).toBe(405)
+    expect(res.headers['allow']).toMatch(/GET/)
+  })
+
+  it('GET /health returns 405 with Allow header for POST', async () => {
+    const res = await request(app).post('/health')
+    expect(res.status).toBe(405)
+    expect(res.body.error).toMatch(/Method not allowed/)
+    expect(res.headers['allow']).toMatch(/GET/)
+  })
+
+  it('POST /ai/chat returns 405 with Allow header for GET', async () => {
+    const res = await request(app).get('/ai/chat')
+    expect(res.status).toBe(405)
+    expect(res.body.error).toMatch(/Method not allowed/)
+    expect(res.headers['allow']).toMatch(/POST/)
+  })
+
+  it('POST /ai/chat returns 405 with Allow header for DELETE', async () => {
+    const res = await request(app).delete('/ai/chat')
+    expect(res.status).toBe(405)
+    expect(res.headers['allow']).toMatch(/POST/)
+  })
+
+  it('GET / returns 405 with Allow header for POST', async () => {
+    const res = await request(app).post('/')
+    expect(res.status).toBe(405)
+    expect(res.body.error).toMatch(/Method not allowed/)
+    expect(res.headers['allow']).toMatch(/GET/)
+  })
+})
+
 describe('GET /search validation (x402 middleware bypassed via mock)', () => {
   it('returns 400 when q missing', async () => {
     const res = await request(app).get('/search')
