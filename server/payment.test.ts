@@ -136,6 +136,24 @@ describe("challenge — query validation gate (pre-payment)", () => {
   });
 });
 
+// ─── Shared validator table (Express side) ────────────────────────────────
+// Same table drives api/search.test.ts — asserts Express and Vercel agree on
+// which queries pass validation and on the cleaned query that reaches Serper.
+
+describe('shared query-validator table — /search (Express)', () => {
+  it.each(queryValidationCases)('$name', async ({ input, expectedStatus, expectedCleanQ }) => {
+    const res = await request(app)
+      .get('/search')
+      .query(typeof input === 'string' ? { q: input } : {})
+      .set('x-payment', makeReceipt(`tx_table_${Math.random()}`))
+
+    expect(res.status).toBe(expectedStatus)
+    if (expectedStatus === 200 && expectedCleanQ !== undefined) {
+      expect(res.body.query).toBe(expectedCleanQ)
+    }
+  })
+})
+
 // ─── Settle ──────────────────────────────────────────────────────────────────
 
 describe('settle — successful search after payment', () => {

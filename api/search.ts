@@ -103,6 +103,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const errorBody: ApiErrorResponse = { error: `Query exceeds maximum length of ${MAX_QUERY_LENGTH} characters` }
     return res.status(400).json(errorBody)
   }
+  const cleanQ = v.cleanQ
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =

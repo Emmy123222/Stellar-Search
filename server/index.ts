@@ -36,6 +36,7 @@ import {
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
 import { fetchSerper, CircuitOpenError, getSerperBreakerState } from '../src/lib/serperClient.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
+import { validateQuery } from '../src/lib/queryValidator.js'
 import {
   normalizeOrganicResults,
   normalizeImageResults,
