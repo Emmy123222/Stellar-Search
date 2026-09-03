@@ -1566,7 +1566,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
     (req.body as any)?.stream === true ||
     req.query.stream === "1";
 
-  const groqMessages = [
+  const rawGroqMessages = [
     {
       role: "system" as const,
       content:
@@ -1579,6 +1579,8 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   const controller = new AbortController()
   const onReqClose = () => controller.abort()
   req.on('close', onReqClose)
+
+  const { truncatedMessages: groqMessages, wasTruncated } = enforceTokenBudget(rawGroqMessages)
 
   if (!wantsStream) {
     try {

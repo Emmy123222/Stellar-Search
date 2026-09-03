@@ -47,7 +47,7 @@ const SERVER_URL = (path: string) => resolveApiUrl(path)
 async function consumeSSE(
   body: ReadableStream<Uint8Array>,
   onDelta: (delta: string) => void,
-  onModel?: (model: string) => void,
+  onModel?: (model: string, truncated?: boolean) => void,
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
