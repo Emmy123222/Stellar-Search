@@ -100,7 +100,7 @@ All environment variables are read from a local `.env` (see the sanitized `.env.
 | `STELLAR_RECEIVING_ADDRESS` | **Yes** | — | Stellar public key that receives 0.001 USDC per query. Without this, the x402 payment middleware has no `payTo` address and payments fail. Server prints `Receiving: ✗ MISSING` on startup. | `GDXA3V2LI3VN3GBH5BMOF25QSFJV7S7ZOWMHHQMJRPP4BVORDDRTIIMU` |
 | `STELLAR_NETWORK` | No | `stellar:testnet` | Stellar network for the server-side x402 middleware. Accepts `stellar:testnet` or `stellar:mainnet`. Falls back to testnet if missing. | `stellar:testnet` |
 | `VITE_STELLAR_NETWORK` | No | `stellar:testnet` | Frontend copy of `STELLAR_NETWORK` (must be prefixed `VITE_` for browser access). Falls back to testnet if missing. | `stellar:testnet` |
-| `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Falls back to the public OpenZeppelin facilitator if missing. | `https://www.x402.org/facilitator` |
+| `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Validated against `STELLAR_NETWORK` at startup and request time; incompatible configuration (e.g. testnet facilitator on mainnet) blocks paid routes with an actionable `503` readiness error. | `https://www.x402.org/facilitator` |
 | `PORT` | No | `3001` | Express server listen port. Falls back to `3001` if missing. | `3001` |
 | `TRUST_PROXY_HOPS` | No | `0` | Reverse-proxy hops to trust so the rate limiter resolves real client IPs (e.g. `1` for Vercel). `0`/unset disables trusting `X-Forwarded-For` (spoof-safe); `true` trusts all proxies. | `1` |
 | `RATE_LIMIT_PER_MINUTE` | No | `30` | Positive request limit applied by Express. | `30` |
@@ -902,6 +902,7 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 |---|---:|---:|---:|---:|
 | **Global** | 40% | 35% | 30% | 40% |
 | `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
+| `src/lib/facilitatorValidation.ts` | 85% | 70% | 75% | 85% |
 | `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
 | `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
 | `src/lib/serperNormalizer.ts` | 95% | 90% | 100% | 95% |

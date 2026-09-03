@@ -33,6 +33,7 @@ export default defineConfig({
         // Critical modules ratchet upward — keep Express, Vercel, browser, and MCP aligned
         // Bump these as coverage improves; CI fails if a PR drops below the ratchet.
         'src/lib/constants.ts': { statements: 90, branches: 60, functions: 100, lines: 90 },
+        'src/lib/facilitatorValidation.ts': { statements: 85, branches: 70, functions: 75, lines: 85 },
         'src/lib/stellar.ts': { statements: 85, branches: 75, functions: 85, lines: 85 },
         'src/lib/paymentIntegrity.ts': { statements: 90, branches: 85, functions: 95, lines: 90 },
         'src/lib/receiptBundle.ts': { statements: 90, branches: 85, functions: 95, lines: 90 },

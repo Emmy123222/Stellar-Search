@@ -364,13 +364,14 @@ Global thresholds start modest and ratchet upward as payment/wallet/API/MCP/UI b
 |---|---:|---:|---:|---:|
 | Global | 35% | 30% | 28% | 35% |
 | `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
+| `src/lib/facilitatorValidation.ts` | 85% | 70% | 75% | 85% |
 | `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
 | `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
 | `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
 | `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
 | `server/index.ts` | 65% | 60% | 65% | 65% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
-| `api/health.ts` | 80% | 50% | 100% | 80% |
+| `api/health.ts` | 95% | 90% | 100% | 95% |
 | `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
 | `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
 

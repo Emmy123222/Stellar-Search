@@ -4,11 +4,7 @@ const mockCreate = vi.fn();
 
 vi.mock('groq-sdk', () => ({
   default: class {
-    chat = {
-      completions: {
-        create: mockCreate,
-      },
-    }
+    chat = { completions: { create: mockCreate } }
   },
 }))
 

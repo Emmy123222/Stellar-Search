@@ -499,7 +499,48 @@ const x402Routes = {
 const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR_URL });
 const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }];
 
-// Apply middleware to all routes, not just /search
+// ─── Facilitator Compatibility Startup Validation ─────────────────────────
+const initialFacilitatorValidation = validateFacilitatorConfig({
+  facilitatorUrl: FACILITATOR_URL,
+  network: NETWORK,
+  scheme: 'exact',
+  asset: USDC_CONTRACT,
+})
+
+if (!initialFacilitatorValidation.valid) {
+  console.error('\n❌ Facilitator configuration is incompatible with selected Stellar network:')
+  initialFacilitatorValidation.errors.forEach(err => console.error(`   - ${err}`))
+} else {
+  console.log(`\n✓ Facilitator compatibility verified: ${FACILITATOR_URL} on ${NETWORK} (scheme: exact)`)
+}
+
+// ─── Facilitator Readiness Middleware for Paid Routes ─────────────────────
+const paidRoutePaths = ['/search', '/api/search', '/images', '/api/images', '/news', '/api/news']
+
+app.use((req, res, next) => {
+  if (paidRoutePaths.includes(req.path)) {
+    const currentValidation = validateFacilitatorConfig({
+      facilitatorUrl: process.env.FACILITATOR_URL || FACILITATOR_URL,
+      network: process.env.STELLAR_NETWORK || NETWORK,
+      scheme: 'exact',
+      asset: ((process.env.STELLAR_NETWORK || NETWORK) === 'stellar:mainnet')
+        ? USDC_CONTRACT_MAINNET
+        : USDC_CONTRACT_TESTNET,
+    })
+
+    if (!currentValidation.valid) {
+      return res.status(503).json({
+        error: 'Payment facilitator configuration is incompatible with the selected Stellar network',
+        code: 'FACILITATOR_NETWORK_INCOMPATIBLE',
+        details: currentValidation.errors,
+        action: 'Ensure FACILITATOR_URL matches STELLAR_NETWORK (e.g. use testnet facilitator for stellar:testnet and mainnet facilitator for stellar:mainnet).',
+        network: currentValidation.network,
+        facilitator: currentValidation.facilitatorUrl,
+      })
+    }
+  }
+  next()
+})
 
 // ─── Payment Logging Middleware ──────────────────────────────────────────
 const paidRoutes = ['/search', '/images', '/news'];
@@ -1566,7 +1607,16 @@ app.get("/health", (_req: Request, res: Response) => {
     network:                   NETWORK,
     pricePerQuery:             '0.001 USDC',
     protocol:                  'x402',
-    facilitator:               FACILITATOR_URL,
+    facilitator:               process.env.FACILITATOR_URL || FACILITATOR_URL,
+    facilitatorCompatibility: {
+      compatible:  currentValidation.valid,
+      network:     currentValidation.network,
+      scheme:      currentValidation.scheme,
+      asset:       currentValidation.asset,
+      facilitator: currentValidation.facilitatorUrl,
+      errors:      currentValidation.errors,
+      warnings:    currentValidation.warnings,
+    },
     totalQueries:              stats.totalQueries,
     totalUsdcSettled:          stats.totalUsdcSettled.toFixed(4),
     avgLatencyMs:              avg,
