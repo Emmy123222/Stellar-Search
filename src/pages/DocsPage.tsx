@@ -69,10 +69,10 @@ const getEndpoints = () => [
 ]
 
 const getStack = () => [
-  { label: 'Payment protocol', value: 'x402 (@x402/express + @x402/stellar)',              href: 'https://x402.org' },
+  { label: 'Payment protocol', value: 'x402 v2 (@x402/express + @x402/stellar)',           href: 'https://x402.org' },
   { label: 'Blockchain',       value: IS_MAINNET ? 'Stellar Mainnet' : 'Stellar Testnet',    href: 'https://developers.stellar.org' },
   { label: 'Smart contracts',  value: 'Soroban auth entry signing',                        href: 'https://developers.stellar.org/docs/smart-contracts' },
-  { label: 'Facilitator',      value: 'OpenZeppelin x402 (channels.openzeppelin.com)',     href: 'https://docs.openzeppelin.com/relayer/1.4.x/guides/stellar-x402-facilitator-guide' },
+  { label: 'Facilitator',      value: 'x402 Facilitator (www.x402.org)',                   href: 'https://www.x402.org/facilitator' },
   { label: 'Wallet',           value: 'Freighter (@stellar/freighter-api)',                href: 'https://freighter.app' },
   { label: 'Balances / tx',    value: 'Stellar Horizon REST API (live)',                   href: HORIZON_URL },
   { label: 'Search backend',   value: 'Serper.dev API',                                   href: 'https://serper.dev' },

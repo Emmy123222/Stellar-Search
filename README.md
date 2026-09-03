@@ -281,7 +281,7 @@ sequenceDiagram
     Browser->>Browser: Bounded preflight: account, network, trustline, balance, signer
     Browser->>Freighter: Request signature of<br/>Soroban auth entry
     Freighter-->>Browser: Signed payment payload
-    Browser->>Server: GET /search?q=...<br/>+ X-Payment header
+    Browser->>Server: GET /search?q=...<br/>X-Payment: <base64>
     Server->>Facilitator: Verify X-Payment (HTTPFacilitatorClient)
     Facilitator->>Horizon: Submit & settle 0.001 USDC tx
     Horizon-->>Facilitator: Transaction confirmed (tx hash)

@@ -1,0 +1,102 @@
+name: Bug Report
+description: Create a report to help us fix a bug or unexpected behavior in StellarSearch.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Security Warning**: Do NOT include private keys, wallet secret seeds (`S...`), or secret API keys in this report!
+
+  - type: input
+    id: summary
+    attributes:
+      label: Bug Summary
+      description: A clear and concise description of the bug.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: network
+    attributes:
+      label: Stellar Network
+      description: Which Stellar network were you targeting?
+      options:
+        - Stellar Testnet (stellar:testnet)
+        - Stellar Mainnet (stellar:mainnet)
+        - N/A
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: runtime
+    attributes:
+      label: Runtime / Component Affected
+      description: Select all runtime environments where this issue occurs.
+      options:
+        - label: Express Backend (`server/`)
+        - label: Vercel Serverless (`api/`)
+        - label: Browser Frontend (`src/`)
+        - label: MCP Server (`mcp-server/`)
+
+  - type: dropdown
+    id: payment_phase
+    attributes:
+      label: x402 Payment Phase
+      description: At which step of the x402 flow did the failure occur?
+      options:
+        - "Phase 1: Initial GET /search request"
+        - "Phase 2: Parsing HTTP 402 PAYMENT-REQUIRED header"
+        - "Phase 3: Freighter wallet signing (signAuthEntry)"
+        - "Phase 4: Retrying with X-Payment header"
+        - "Phase 5: Facilitator verification & settlement"
+        - "Phase 6: Search result rendering / response delivery"
+        - "N/A (non-payment issue)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to Reproduce
+      description: Provide detailed steps to reproduce the behavior.
+      placeholder: |
+        1. Start Express server with `npm run server`
+        2. Execute query...
+        3. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: Clear description of what you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior & Error Logs
+      description: Include error tracebacks, HTTP status codes, or console logs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Proposed Acceptance Criteria
+      description: Describe what conditions define this issue as successfully resolved.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission Checks
+      options:
+        - label: I confirmed no private keys, secret seeds, or private API keys are included in this issue.
+          required: true
+        - label: I searched existing open and closed issues to ensure this is not a duplicate.
+          required: true

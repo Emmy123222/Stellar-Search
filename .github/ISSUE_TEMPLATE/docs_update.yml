@@ -1,0 +1,53 @@
+name: Documentation Update
+description: Propose improvements, fixes, or updates to StellarSearch documentation.
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping keep our documentation accurate and up to date!
+
+  - type: checkboxes
+    id: doc_targets
+    attributes:
+      label: Target Documentation Files
+      description: Select the documentation files you wish to update.
+      options:
+        - label: `README.md`
+        - label: `TROUBLESHOOTING.md`
+        - label: `CONTRIBUTING.md`
+        - label: In-app Documentation (`src/pages/DocsPage.tsx`)
+        - label: Code comments / API docs
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Proposed Documentation Changes
+      description: Describe the changes, corrections, or additions needed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Rationale
+      description: Why is this update needed? (e.g. outdated API reference, missing step, ambiguous header naming).
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance Criteria
+      description: What specific verification confirms this documentation change is accurate and complete?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission Checks
+      options:
+        - label: I searched existing issues to ensure this documentation request is not duplicated.
+          required: true

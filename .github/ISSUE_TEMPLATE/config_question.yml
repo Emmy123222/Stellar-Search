@@ -1,0 +1,59 @@
+name: Configuration Question
+description: Ask a question about configuring environment variables, Stellar network, or MCP server setup.
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Security Warning**: Do NOT post secret API keys (`SERPER_API_KEY`, `GROQ_API_KEY`) or wallet secret seeds (`S...`) in your question!
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Question Topic
+      description: What configuration area is your question about?
+      options:
+        - Environment Variables (`.env`)
+        - Stellar Network (Testnet / Mainnet / Horizon)
+        - x402 Facilitator setup
+        - Serper.dev / Groq API integration
+        - CORS / Express / Vercel deployment
+        - Claude Code / MCP Server setup
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Environment & Setup Details
+      description: Describe your environment (OS, Node version, Freighter version, targeting Express vs Vercel).
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: State your question clearly with any relevant error messages (sanitized).
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Desired Outcome / Acceptance Criteria
+      description: What specific answer or resolution criteria would satisfy this question?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission Checks
+      options:
+        - label: I verified that no secret keys or private wallet credentials are included in this question.
+          required: true
+        - label: I checked `TROUBLESHOOTING.md` and `README.md` first before submitting.
+          required: true

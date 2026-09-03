@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Stellar Developer Documentation
+    url: https://developers.stellar.org
+    about: Read the official Stellar and x402 developer documentation.
+  - name: Troubleshooting Guide
+    url: https://github.com/Ghoost-404/Stellar-Search/blob/main/TROUBLESHOOTING.md
+    about: Check common error fixes and setup instructions.
