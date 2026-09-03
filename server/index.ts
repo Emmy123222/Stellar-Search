@@ -161,6 +161,32 @@ app.get('/.well-known/x402', (req: Request, res: Response) => {
   return res.json(getX402DiscoveryMetadata({ origin: requestOrigin(req) }))
 })
 
+// ─── Feature Flag Validation ─────────────────────────────────────────────
+// Get server-side feature flags
+const featureFlags = getServerFeatureFlags()
+
+// Log feature flag configuration at startup
+console.log('🚀 Feature Flags Configuration:')
+console.log(`   Payment: ${featureFlags.paymentEnabled ? '✅' : '❌'}`)
+console.log(`   AI: ${featureFlags.aiEnabled ? '✅' : '❌'}`)
+console.log(`   Search Modes: ${featureFlags.searchModeEnabled ? '✅' : '❌'}`)
+console.log(`   Integrations: ${featureFlags.integrationEnabled ? '✅' : '❌'}`)
+
+// Middleware to validate feature flags for specific routes
+const validateFeatureFlag = (feature: keyof typeof featureFlags) => {
+  return (req: Request, res: Response, next: Function) => {
+    if (!featureFlags[feature]) {
+      const featureName = feature.replace('Enabled', '').toLowerCase()
+      return res.status(404).json({
+        error: `Feature "${featureName}" is disabled`,
+        message: 'This feature has been disabled via feature flags',
+        feature: featureName,
+      })
+    }
+    next()
+  }
+}
+
 // ─── In-memory stats ──────────────────────────────────────────────────────
 const stats = {
   totalQueries: 0,
@@ -528,6 +554,11 @@ app.use(paymentMiddlewareFromConfig(x402Routes, facilitatorClient, schemes))
 app.use((req, res, next) => {
   const paidRoutes = ["/search", "/images", "/news"];
   if (paidRoutes.includes(req.path)) {
+    // If payment is disabled, skip payment validation
+    if (!featureFlags.paymentEnabled) {
+      return next()
+    }
+    
     const paymentHeader =
       req.headers["payment-signature"] ||
       req.headers["x-payment"] ||
@@ -597,7 +628,7 @@ function recordReconciliation(params: {
 export { validateQuery, MAX_QUERY_LENGTH }
 
 // ─── GET /search ──────────────────────────────────────────────────────────
-app.get('/search', async (req: Request, res: Response) => {
+app.get('/search', validateFeatureFlag('paymentEnabled'), async (req: Request, res: Response) => {
   const { q, count = '5', freshness } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -736,7 +767,7 @@ app.get('/search', async (req: Request, res: Response) => {
 });
 
 // ─── GET /images ──────────────────────────────────────────────────────────
-app.get('/images', async (req: Request, res: Response) => {
+app.get('/images', validateFeatureFlag('searchModeEnabled'), async (req: Request, res: Response) => {
   const { q, count = '10' } = req.query as Record<string, string>
 
   const v = validateQuery(q)
@@ -823,7 +854,7 @@ app.get('/images', async (req: Request, res: Response) => {
 });
 
 // ─── GET /news ────────────────────────────────────────────────────────────
-app.get('/news', async (req: Request, res: Response) => {
+app.get('/news', validateFeatureFlag('searchModeEnabled'), async (req: Request, res: Response) => {
   const { q, count = '10', freshness } = req.query as Record<string, string>
 
   const v = validateQuery(q)
