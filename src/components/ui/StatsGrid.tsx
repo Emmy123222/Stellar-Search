@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { TrendingUp, Zap, Clock, Shield, HelpCircle } from 'lucide-react'
 import { fetchServerStats } from '../../lib/stellar'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 import { usePageVisible } from '../../hooks/usePageVisible'
 import {
   resolveStat,

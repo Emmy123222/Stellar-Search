@@ -11,6 +11,7 @@ import {
   explorerAccountUrl, explorerTxUrl, formatTimeAgo,
   IS_MAINNET, EXPECTED_WALLET_NETWORK, AMOUNT_USDC
 } from '../../lib/stellar'
+import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 interface Props {
   wallet: WalletState
@@ -55,6 +56,7 @@ export function WalletPanel({
   const connectionState: ResourceState | null = connection ?? null
   const [open, setOpen]     = useState(false)
   const [copied, setCopied] = useState(false)
+  const reducedMotion = useReducedMotion()
 
   const isWrongNetwork = wallet.connected && wallet.network !== EXPECTED_WALLET_NETWORK
 
@@ -72,15 +74,19 @@ export function WalletPanel({
         onClick={onConnect}
         disabled={wallet.loading}
         className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 font-display text-xs tracking-wider text-white/50 hover:border-neon-cyan/40 hover:text-neon-cyan transition-all disabled:opacity-50"
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
+        whileHover={{ scale: reducedMotion ? 1 : 1.02 }}
+        whileTap={{ scale: reducedMotion ? 1 : 0.98 }}
       >
         {wallet.loading ? (
-          <motion.div
-            className="w-3.5 h-3.5 rounded-full border border-neon-cyan/40 border-t-neon-cyan"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-          />
+          reducedMotion ? (
+            <div className="w-3.5 h-3.5 rounded-full border border-neon-cyan/40" />
+          ) : (
+            <motion.div
+              className="w-3.5 h-3.5 rounded-full border border-neon-cyan/40 border-t-neon-cyan"
+              animate={{ rotate: 360 }}
+              transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+            />
+          )
         ) : (
           <Wallet className="w-3.5 h-3.5" />
         )}
@@ -102,10 +108,10 @@ export function WalletPanel({
             ? 'border-red-500/50 bg-red-500/5 text-red-400' 
             : 'border-neon-cyan/30 bg-neon-cyan/5 text-neon-cyan'
         }`}
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
+        whileHover={{ scale: reducedMotion ? 1 : 1.02 }}
+        whileTap={{ scale: reducedMotion ? 1 : 0.98 }}
       >
-        <div className={`w-2 h-2 rounded-full animate-pulse ${isWrongNetwork ? 'bg-red-500' : 'bg-neon-green'}`} />
+        <div className={`w-2 h-2 rounded-full ${isWrongNetwork ? 'bg-red-500' : 'bg-neon-green'} ${reducedMotion ? '' : 'animate-pulse'}`} />
         <span>{truncateAddress(wallet.publicKey!)}</span>
         <span className="text-white/30">·</span>
         <span className={isWrongNetwork ? 'text-red-300' : 'text-neon-amber'}>
@@ -118,16 +124,17 @@ export function WalletPanel({
         {open && (
           <>
             <motion.div 
-              initial={{ opacity: 0 }} 
+              initial={{ opacity: reducedMotion ? 1 : 0 }} 
               animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }} 
+              exit={{ opacity: reducedMotion ? 1 : 0 }} 
               className="fixed inset-0 z-40 bg-black/60 sm:hidden" 
               onClick={() => setOpen(false)} 
             />
             <motion.div
-              initial={{ opacity: 0, y: 8, scale: 0.95 }}
+              initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8, scale: reducedMotion ? 1 : 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.95 }}
+              exit={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8, scale: reducedMotion ? 1 : 0.95 }}
+              transition={reducedMotion ? { duration: 0 } : { type: 'spring', bounce: 0.2, duration: 0.3 }}
               className="fixed inset-x-0 bottom-0 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 z-50 rounded-t-2xl sm:rounded-xl overflow-hidden pb-4 sm:pb-0 w-full sm:w-[320px]"
               style={{
                 background: 'rgba(6,13,20,0.95)',
@@ -271,11 +278,15 @@ export function WalletPanel({
 
               {historyLoading ? (
                 <div className="flex justify-center py-4">
-                  <motion.div
-                    className="w-4 h-4 rounded-full border border-neon-cyan/30 border-t-neon-cyan"
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-                  />
+                  {reducedMotion ? (
+                    <div className="w-4 h-4 rounded-full border border-neon-cyan/30" />
+                  ) : (
+                    <motion.div
+                      className="w-4 h-4 rounded-full border border-neon-cyan/30 border-t-neon-cyan"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                    />
+                  )}
                 </div>
               ) : transactions.length === 0 ? (                    <p className="text-xs text-white/45 text-center py-3">No transactions yet</p>
               ) : transactions.length === 0 ? (

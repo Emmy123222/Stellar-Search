@@ -59,11 +59,16 @@ export function PaymentFlowVisualizer({ session }: Props) {
   const activeIdx = PAYMENT_PHASES.indexOf(activePhase);
   const doneCount = isComplete ? TOTAL_STEPS : completedPhases.length;
 
+  const transition = reducedMotion
+    ? { duration: 0 }
+    : { type: 'spring', bounce: 0.2, duration: 0.4 }
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16 }}
+      initial={{ opacity: 0, y: reducedMotion ? 0 : 16 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -16 }}
+      exit={{ opacity: 0, y: reducedMotion ? 0 : -16 }}
+      transition={transition}
       className="rounded-xl p-5 space-y-4"
       role="status"
       aria-live="polite"
@@ -115,6 +120,7 @@ export function PaymentFlowVisualizer({ session }: Props) {
                       ? `0 0 20px ${phase.color}50`
                       : "none",
                   }}
+                  transition={reducedMotion ? { duration: 0 } : { duration: 0.3 }}
                 >
                   {stepDone || phaseCompleted ? (
                     <motion.span
@@ -144,7 +150,7 @@ export function PaymentFlowVisualizer({ session }: Props) {
                       {phase.icon}
                     </span>
                   )}
-                  {stepActive && (
+                  {stepActive && !reducedMotion && (
                     <motion.div
                       className="absolute inset-0 rounded-full border"
                       style={{ borderColor: phase.color }}

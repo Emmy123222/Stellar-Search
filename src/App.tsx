@@ -3,7 +3,7 @@ import { motion, AnimatePresence }             from 'framer-motion'
 import { AnimatedBackground, Navbar, LiveTicker, Footer } from './components/layout'
 import { OnboardingFlow, shouldAutoOpenOnboarding } from './components/onboarding'
 import { SearchPage, DocsPage, DashboardPage } from './pages'
-import { useFreighterWallet, useSearch }       from './hooks'
+import { useFreighterWallet, useSearch, useReducedMotion }       from './hooks'
 import { clearOnboardingDismissed }            from './lib/onboarding'
 import { Toaster }                             from 'sonner'
 
@@ -15,6 +15,7 @@ type Page = 'search' | 'docs' | 'dashboard'
 
 export default function App() {
   const [page, setPage] = useState<Page>('search')
+  const reducedMotion = useReducedMotion()
 
   const {
     wallet, transactions, txLoading,
@@ -51,6 +52,10 @@ export default function App() {
     [session.status, session.query, session.results],
   )
 
+  const pageTransition = reducedMotion
+    ? { duration: 0 }
+    : { duration: 0.2 }
+
   return (
     <div className="min-h-screen relative text-white">
       {/* Canvas particle / matrix background */}
@@ -84,10 +89,10 @@ export default function App() {
           <AnimatePresence mode="wait">
             <motion.div
               key={page}
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: reducedMotion ? 0 : 12 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
+              exit={{ opacity: 0, y: reducedMotion ? 0 : -8 }}
+              transition={pageTransition}
             >
               {page === 'search' && (
                 <SearchPage

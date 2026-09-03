@@ -562,14 +562,20 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
               <span className="font-display text-xs text-neon-cyan tracking-wider">AI SUMMARY · GROQ</span>
               {summarizing && (
                 <span className="flex items-center gap-1 ml-auto">
-                  {[0, 1, 2].map(j => (
-                    <motion.div
-                      key={j}
-                      className="w-1 h-1 rounded-full bg-neon-cyan/60"
-                      animate={{ opacity: [0.3, 1, 0.3] }}
-                      transition={{ duration: 0.8, repeat: Infinity, delay: j * 0.15 }}
-                    />
-                  ))}
+                  {reducedMotion ? (
+                    [0, 1, 2].map(j => (
+                      <div key={j} className="w-1 h-1 rounded-full bg-neon-cyan/60" />
+                    ))
+                  ) : (
+                    [0, 1, 2].map(j => (
+                      <motion.div
+                        key={j}
+                        className="w-1 h-1 rounded-full bg-neon-cyan/60"
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{ duration: 0.8, repeat: Infinity, delay: j * 0.15 }}
+                      />
+                    ))
+                  )}
                 </span>
               )}
             </div>
@@ -627,7 +633,7 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
           rel="noopener noreferrer"
           role="article"
           aria-label={r.title}
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: i * 0.06 }}
           className="block group rounded-xl p-4 hover:border-neon-cyan/25 transition-all relative focus:outline-none focus:ring-2 focus:ring-neon-cyan/60"
@@ -701,9 +707,10 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
                   <AnimatePresence>
                     {copiedUrl === r.url && (
                       <motion.div
-                        initial={{ opacity: 0, y: 5, scale: 0.8 }}
+                        initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 5, scale: reducedMotion ? 1 : 0.8 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 5, scale: 0.8 }}
+                        exit={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 5, scale: reducedMotion ? 1 : 0.8 }}
+                        transition={reducedMotion ? { duration: 0 } : { type: 'spring', bounce: 0.3, duration: 0.2 }}
                         className="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap pointer-events-none"
                         style={{
                           background: 'rgba(0,0,0,0.9)',

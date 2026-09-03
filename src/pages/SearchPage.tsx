@@ -29,6 +29,7 @@ interface Props {
 }
 
 export function SearchPage({ wallet, onConnectWallet, session, search, reset }: Props) {
+  const reducedMotion = useReducedMotion()
   const { t } = useTranslation('search')
   const [dismissedSuggestion, setDismissedSuggestion] = useState(false)
   const [searchMode, setSearchMode] = useState<SearchMode>('web')
@@ -48,7 +49,6 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
       errorRef.current.focus()
     }
   }, [session.status])
-
   const handleSearch = (query: string, freshness?: string) => {
     setDismissedSuggestion(false)
     // Suggestions are alternate queries, not new filter selections. Keep the
@@ -68,9 +68,10 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
       <AnimatePresence>
         {session.status === "idle" && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            exit={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : -20 }}
+            transition={reducedMotion ? { duration: 0 } : { duration: 0.3 }}
             className="text-center space-y-4 py-8"
           >
             <motion.div
@@ -172,8 +173,9 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         {session.status !== 'idle' && (
           <motion.div
             key="results-area"
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 16 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}
             className="space-y-5"
           >
             <PaymentFlowVisualizer session={session} />
@@ -222,31 +224,31 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
             )}
 
             {searchMode === 'web' && (session.status === 'complete' || session.status === 'searching') && (
-              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}>
                 <SearchResults results={session.results as any} query={session.query} isLoading={session.status === 'searching'} txHash={session.txHash} />
               </motion.div>
             )}
 
             {searchMode === 'images' && (session.status === 'complete' || session.status === 'searching') && (
-              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}>
                 <ImageResults results={session.results as any} isLoading={session.status === 'searching'} />
               </motion.div>
             )}
 
             {searchMode === 'news' && (session.status === 'complete' || session.status === 'searching') && (
-              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}>
                 <NewsResults results={session.results as any} isLoading={session.status === 'searching'} />
               </motion.div>
             )}
 
             {session.status === 'complete' && session.suggestions && session.suggestions.length > 0 && searchMode === 'web' && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.3 }}>
                 <SearchSuggestions onSelect={handleSearch} aiSuggestions={session.suggestions} />
               </motion.div>
             )}
 
             {(session.status === 'complete' || session.status === 'error') && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
+              <motion.div initial={{ opacity: reducedMotion ? 1 : 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
                 <button onClick={handleReset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
                   {t('newSearch')}
                 </button>

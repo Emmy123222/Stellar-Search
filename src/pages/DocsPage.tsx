@@ -80,6 +80,7 @@ const getStack = () => [
 ]
 
 export function DocsPage() {
+  const reducedMotion = useReducedMotion()
   const { t } = useTranslation('docs')
   const STEPS = getSteps()
   const STACK = getStack()
@@ -254,9 +255,9 @@ export function DocsPage() {
             return (
               <motion.div
                 key={step.num}
-                initial={{ opacity: 0, x: -16 }}
+                initial={{ opacity: reducedMotion ? 1 : 0, x: reducedMotion ? 0 : -16 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.08 }}
+                transition={reducedMotion ? { duration: 0 } : { delay: i * 0.08 }}
                 className="flex gap-5 rounded-xl p-5"
                 style={{ background: 'rgba(6,13,20,0.6)', border: '1px solid rgba(255,255,255,0.06)' }}
               >
@@ -413,9 +414,9 @@ export function DocsPage() {
           {STACK.map(({ label, value, href }, i) => (
             <motion.div
               key={label}
-              initial={{ opacity: 0 }}
+              initial={{ opacity: reducedMotion ? 1 : 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: i * 0.04 }}
+              transition={reducedMotion ? { duration: 0 } : { delay: i * 0.04 }}
               className="flex items-center justify-between py-3.5 px-5 group"
               style={{
                 borderBottom: i < STACK.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
@@ -441,7 +442,7 @@ export function DocsPage() {
 
       {/* Hackathon note */}
       <motion.div
-        initial={{ opacity: 0, y: 16 }}
+        initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 16 }}
         animate={{ opacity: 1, y: 0 }}
         className="rounded-2xl p-6"
         style={{ background: 'rgba(6,13,20,0.7)', border: '1px solid rgba(0,245,255,0.2)' }}

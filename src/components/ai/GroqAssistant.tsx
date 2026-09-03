@@ -367,7 +367,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
             "0 0 15px rgba(0,245,255,0.3)",
           ],
         }}
-        transition={{ duration: 2, repeat: Infinity }}
+        transition={reducedMotion ? {} : { duration: 2, repeat: Infinity }}
       >
         <Bot className="w-5 h-5 text-neon-cyan" />
       </motion.button>

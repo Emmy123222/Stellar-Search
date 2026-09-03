@@ -48,6 +48,7 @@ interface Props {
 type DashboardTab = 'overview' | 'collections'
 
 export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance, xlmBalance, onRefresh }: Props) {
+  const reducedMotion = useReducedMotion()
   const [receipts, setReceipts] = useState<SearchReceipt[]>([])
   const [verificationMap, setVerificationMap] = useState<Record<string, ReceiptVerificationDetail>>({})
   const [verifyingAll, setVerifyingAll] = useState(false)
