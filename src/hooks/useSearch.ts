@@ -24,6 +24,7 @@ const SOROBAN_RPC_MAINNET = 'https://soroban-rpc.mainnet.stellar.org' // Or anot
 const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET
 
 import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSession, SearchMode } from '../types'
+import { classifySearchError } from '../types'
 
 export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
 
@@ -338,6 +339,7 @@ export function useSearch(walletAddress: string | null = null) {
         ...prev,
         status: 'error',
         error:  msg,
+        errorCode: classifySearchError(err),
       }))
     } finally {
       inFlightRef.current = false

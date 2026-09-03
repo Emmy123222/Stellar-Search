@@ -22,8 +22,29 @@ export interface SearchSession {
   status: 'idle' | 'searching' | 'done' | 'error' | 'complete'
   step?: PaymentStep
   error?: string
+  errorCode?: SearchErrorCode
   suggestions?: string[]
   durationMs?: number
+}
+
+export type SearchErrorCode =
+  | 'wallet_required'
+  | 'network_mismatch'
+  | 'insufficient_balance'
+  | 'payment_rejected'
+  | 'payment_failed'
+  | 'provider_unavailable'
+  | 'request_failed'
+
+export function classifySearchError(error: unknown): SearchErrorCode {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+  if (message.includes('connect') && message.includes('wallet')) return 'wallet_required'
+  if (message.includes('switch') && message.includes('freighter')) return 'network_mismatch'
+  if (message.includes('balance') || message.includes('usdc')) return 'insufficient_balance'
+  if (message.includes('reject') || message.includes('denied') || message.includes('cancel')) return 'payment_rejected'
+  if (message.includes('payment failed') || message.includes('402')) return 'payment_failed'
+  if (message.includes('serper') || message.includes('provider') || message.includes('503')) return 'provider_unavailable'
+  return 'request_failed'
 }
 
 export type WalletAccountStatus = 'unfunded' | 'no_trustline' | 'zero_balance' | 'funded'
