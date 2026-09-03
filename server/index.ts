@@ -1559,6 +1559,14 @@ app.get("/health", (_req: Request, res: Response) => {
   })
 })
 
+// ─── GET /ai/models ───────────────────────────────────────────────────────
+app.get('/ai/models', (_req: Request, res: Response) => {
+  res.json({
+    models: AVAILABLE_MODELS,
+    default: DEFAULT_MODEL,
+  })
+})
+
 // ─── POST /ai/chat ────────────────────────────────────────────────────────
 // Streams responses as Server-Sent Events when the client sends
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON

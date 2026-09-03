@@ -1,7 +1,7 @@
 import { resolveApiUrl } from '../../lib/config'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bot, Send, X, ChevronDown } from 'lucide-react'
+import { Bot, Send, X, ChevronDown, Trash2, Download } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
 import { AiMarkdown } from './AiMarkdown'
 
@@ -121,13 +121,29 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
   const [messages, setMessages] = useState<Message[]>([SYSTEM_INTRO])
   const [input, setInput]       = useState('')
   const [loading, setLoading]   = useState(false)
-  const [selectedModel, setSelectedModel] = useState<ModelId>('llama-3.3-70b-versatile')
+  const [availableModels, setAvailableModels] = useState<AIModel[]>([])
+  const [selectedModel, setSelectedModel] = useState<ModelId>('')
   const [showModelDropdown, setShowModelDropdown] = useState(false)
   const bottomRef               = useRef<HTMLDivElement>(null)
   const contextInjectedFor      = useRef<string | null>(null)
   const dropdownRef             = useRef<HTMLDivElement>(null)
   const dropdownButtonRef       = useRef<HTMLButtonElement>(null)
   const optionRefs              = useRef<(HTMLButtonElement | null)[]>([])
+
+  // Fetch models from capability endpoint
+  useEffect(() => {
+    fetch(`${SERVER_URL}/ai/models`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.models && Array.isArray(data.models)) {
+          setAvailableModels(data.models)
+        }
+        if (data.default) {
+          setSelectedModel(data.default)
+        }
+      })
+      .catch(err => console.error('Failed to fetch AI models', err))
+  }, [])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -294,6 +310,42 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
     const model = AVAILABLE_MODELS.find((m) => m.id === modelId);
     return model?.label || modelId;
   };
+
+  const handleClear = () => {
+    if (window.confirm('Clear conversation?')) {
+      setMessages([SYSTEM_INTRO])
+      contextInjectedFor.current = null
+    }
+  }
+
+  const handleExport = () => {
+    const format = window.confirm('Export as JSON? (Cancel for Markdown)') ? 'json' : 'markdown'
+    const includeSystem = window.confirm('Include system messages?')
+    
+    const exportMsgs = messages.filter(m => includeSystem || m.role !== 'system')
+    
+    let content = ''
+    let mimeType = ''
+    let ext = ''
+    
+    if (format === 'json') {
+      content = JSON.stringify(exportMsgs, null, 2)
+      mimeType = 'application/json'
+      ext = 'json'
+    } else {
+      content = exportMsgs.map(m => `**${m.role.toUpperCase()}**:\n${m.content}\n\n`).join('')
+      mimeType = 'text/markdown'
+      ext = 'md'
+    }
+    
+    const blob = new Blob([content], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `conversation-export.${ext}`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <>
