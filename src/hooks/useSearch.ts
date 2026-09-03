@@ -194,6 +194,19 @@ export function useSearch(walletAddress: string | null = null) {
     try {
       if (!walletAddress) throw new Error('Connect your Freighter wallet first.')
 
+      // Guard — run before any payment SDK loads or Freighter prompt opens.
+      // A blocked search reserves nothing, so no release is needed.
+      const spendCheck = recordSearchStart(AMOUNT_USDC)
+      if (!spendCheck.allowed) {
+        const isSession = spendCheck.kind === 'session'
+        const cap = isSession ? spendCheck.sessionCap : spendCheck.dailyCap
+        const msg = `Spending limit reached: ${isSession ? 'session' : 'daily'} cap (${cap} USDC). Raise it on the Dashboard.`
+        console.warn('🛑 Search blocked by spending limit:', spendCheck)
+        toast.error('Search Blocked by Spending Limit', { description: msg })
+        setSession((prev: SearchSession) => ({ ...prev, status: 'error', error: msg }))
+        return
+      }
+
       console.log('🔍 Starting search with wallet:', walletAddress)
 
       const {
@@ -257,6 +270,8 @@ export function useSearch(walletAddress: string | null = null) {
 
       if (firstRes.status !== 402) {
         if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`)
+        // Free response (no payment required) — nothing was settled.
+        recordSearchSettled(AMOUNT_USDC, null)
         const data = (await firstRes.json()) as SearchResponse
         return setSession({
           query: data.executedQuery ?? data.query ?? query,
@@ -338,6 +353,11 @@ export function useSearch(walletAddress: string | null = null) {
         })
       }
 
+      // Settle the spending ledger only for a verified payment (txHash).
+      // Without a txHash the search was free or unverified — release the
+      // reservation instead of counting it against the caps (#313).
+      recordSearchSettled(data.paidAmount || AMOUNT_USDC, data.txHash)
+
       // Persist receipt
       if (data.txHash) {
         try {
@@ -372,6 +392,8 @@ export function useSearch(walletAddress: string | null = null) {
 
     } catch (err: any) {
       console.error('❌ Search failed:', err)
+      // Release the in-flight reservation — nothing was settled.
+      recordSearchSettled(AMOUNT_USDC, null)
       const msg = err.message || 'Search failed.'
       toast.error('Search Payment Failed', { description: msg })
       setSession((prev: SearchSession) => ({
@@ -384,7 +406,7 @@ export function useSearch(walletAddress: string | null = null) {
       inFlightRef.current = false
       releaseSearchLock(lockId)
     }
-  }, [walletAddress])
+  }, [walletAddress, recordSearchStart, recordSearchSettled])
 
   const reset = useCallback(() => {
     setSession({

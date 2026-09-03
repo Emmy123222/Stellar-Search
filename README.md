@@ -847,6 +847,9 @@ Global thresholds are deliberately modest initially and ratchet upward as paymen
 | `src/components/search/SpellingCorrectionBanner.tsx` | 85% | 90% | 70% | 85% |
 | `src/components/ui/StatsGrid.tsx` | 90% | 90% | 100% | 95% |
 | `src/pages/SearchPage.tsx` | 65% | 65% | 70% | 75% |
+| `src/pages/DashboardPage.tsx` | 70% | 55% | 55% | 75% |
+| `src/lib/spendingLimits.ts` | 90% | 75% | 95% | 90% |
+| `src/hooks/useSpendingLimits.ts` | 90% | 80% | 95% | 90% |
 | `server/index.ts` | 30% | 24% | 25% | 35% |
 | `api/search.ts` | 90% | 75% | 80% | 90% |
 | `api/search/batch.ts` | 60% | 50% | 45% | 65% |

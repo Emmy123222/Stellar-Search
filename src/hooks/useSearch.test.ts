@@ -52,6 +52,7 @@ vi.mock('../lib/stellar', () => ({
 }))
 
 import { useSearch } from './useSearch'
+import { settleSpend, getSpendUsage } from '../lib/spendingLimits'
 
 const WALLET = 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3'
 const SEARCH_LOCK_KEY = 'stellarsearch_search_lock'
@@ -177,6 +178,84 @@ describe('useSearch — lazy-loaded x402 payment flow (#336)', () => {
     expect(receipts[0].destination).toBe(WALLET)
     expect(receipts[0].network).toBe('stellar:testnet')
     expect(receipts[0].status).toBe('unverified')
+    vi.unstubAllGlobals()
+  })
+
+  it('blocks the search before any payment when the session cap is exceeded (#313)', async () => {
+    // Exhaust the default 0.01 USDC session cap (10 × 0.001 settled searches).
+    for (let i = 0; i < 10; i++) settleSpend('0.001')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useSearch(WALLET))
+    await act(async () => {
+      await result.current.search('blocked query')
+    })
+
+    expect(result.current.session.status).toBe('error')
+    expect(result.current.session.error).toMatch(/Spending limit reached/)
+    expect(result.current.session.error).toMatch(/session cap/)
+    // Guard runs before the payment SDKs load and before any network call.
+    expect(mockGetNetworkDetails).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('releases the spending reservation when the paid flow fails (#313)', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        status: 402,
+        headers: { get: () => null },
+      })
+      .mockResolvedValueOnce({
+        status: 500,
+        ok: false,
+        text: async () => 'boom',
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useSearch(WALLET))
+    await act(async () => {
+      await result.current.search('failing query')
+    })
+
+    expect(result.current.session.status).toBe('error')
+    // Nothing settled, nothing left pending in the ledger.
+    const usage = getSpendUsage()
+    expect(usage.reservations).toHaveLength(0)
+    expect(usage.sessionSpent).toBe('0')
+    expect(usage.dailySpent).toBe('0')
+    vi.unstubAllGlobals()
+  })
+
+  it('settles the ledger only for verified payments (txHash present) (#313)', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        status: 402,
+        headers: { get: () => null },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        ok: true,
+        json: async () => ({
+          results: [{ title: 'Paid Result' }],
+          suggestions: [],
+          txHash: 'cafebabe',
+          paidAmount: '0.001',
+          network: 'stellar:testnet',
+        }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { result } = renderHook(() => useSearch(WALLET))
+    await act(async () => {
+      await result.current.search('settling query')
+    })
+    await waitFor(() => expect(result.current.session.status).toBe('complete'))
+
+    const usage = getSpendUsage()
+    expect(usage.sessionSpent).toBe('0.001')
+    expect(usage.reservations).toHaveLength(0)
     vi.unstubAllGlobals()
   })
 
