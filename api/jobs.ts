@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults, normalizeQueryMetadata } from '../src/lib/serperNormalizer'
+import { fetchSerper } from '../src/lib/serperClient'
 import crypto from 'crypto'
 
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -202,7 +203,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
         if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
       }
-      const serperRes = await fetch('https://google.serper.dev/search', {
+      const serperRes = await fetchSerper('/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),

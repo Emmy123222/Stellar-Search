@@ -4,6 +4,9 @@ import {
   USDC_CONTRACT_TESTNET,
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { normalizeOrganicResults, normalizeQueryMetadata } from '../src/lib/serperNormalizer'
+import { fetchSerper, CircuitOpenError } from '../src/lib/serperClient'
+import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
 
@@ -129,7 +132,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
     }
 
-    const serperRes = await fetch('https://google.serper.dev/search', {
+    const serperRes = await fetchSerper('/search', {
       method:  'POST',
       headers: {
         'X-API-KEY':    SERPER_API_KEY,
@@ -169,6 +172,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json(responseBody)
 
   } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      console.error('[serper circuit open]', err.message)
+      res.setHeader('Retry-After', Math.ceil(err.retryAfterMs / 1000).toString())
+      const errorBody: ApiErrorResponse = { error: 'Search provider temporarily unavailable. Please retry shortly.' }
+      return res.status(503).json(errorBody)
+    }
     console.error('[search error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'Search failed.' }
     return res.status(500).json(errorBody)

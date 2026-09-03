@@ -48,6 +48,15 @@ describe('GET /health and GET /', () => {
     expect(typeof res.body.serperApiConfigured).toBe('boolean')
     expect(typeof res.body.groqApiConfigured).toBe('boolean')
     expect(typeof res.body.receivingAddressConfigured).toBe('boolean')
+    // Serper circuit breaker state (issue #120)
+    expect(res.body.serperCircuitBreaker).toMatchObject({
+      name: 'serper',
+      state: expect.stringMatching(/^(closed|open|half-open)$/),
+      failureCount: expect.any(Number),
+      failureThreshold: expect.any(Number),
+      openDurationMs: expect.any(Number),
+      halfOpenMaxProbes: expect.any(Number),
+    })
   })
 
   it('GET / returns service metadata with paid routes', async () => {

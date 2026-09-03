@@ -32,6 +32,7 @@ import {
   USDC_CONTRACT
 } from '../src/lib/constants'
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
+import { fetchSerper, CircuitOpenError, getSerperBreakerState } from '../src/lib/serperClient.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import {
   normalizeOrganicResults,
@@ -467,7 +468,7 @@ app.get('/search', async (req: Request, res: Response) => {
       }
     }
 
-    const serperRes = await fetch('https://google.serper.dev/search', {
+    const serperRes = await fetchSerper('/search', {
       method: 'POST',
       headers: {
         'X-API-KEY': SERPER_API_KEY,
@@ -560,6 +561,12 @@ app.get('/search', async (req: Request, res: Response) => {
     resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      console.error('[serper circuit open]', err.message)
+      res.setHeader('Retry-After', Math.ceil(err.retryAfterMs / 1000).toString())
+      const errorBody: ApiErrorResponse = { error: 'Search provider temporarily unavailable. Please retry shortly.' }
+      return res.status(503).json(errorBody)
+    }
     console.error('[search error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.' }
     return res.status(500).json(errorBody)
@@ -587,7 +594,7 @@ app.get('/images', async (req: Request, res: Response) => {
 
     const t0 = Date.now()
 
-    const serperRes = await fetch('https://google.serper.dev/images', {
+    const serperRes = await fetchSerper('/images', {
       method: 'POST',
       headers: {
         'X-API-KEY': SERPER_API_KEY,
@@ -633,6 +640,12 @@ app.get('/images', async (req: Request, res: Response) => {
     resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      console.error('[serper circuit open]', err.message)
+      res.setHeader('Retry-After', Math.ceil(err.retryAfterMs / 1000).toString())
+      const errorBody: ApiErrorResponse = { error: 'Search provider temporarily unavailable. Please retry shortly.' }
+      return res.status(503).json(errorBody)
+    }
     console.error('[images error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.' }
     return res.status(500).json(errorBody)
@@ -676,7 +689,7 @@ app.get('/news', async (req: Request, res: Response) => {
       }
     }
 
-    const serperRes = await fetch('https://google.serper.dev/news', {
+    const serperRes = await fetchSerper('/news', {
       method: 'POST',
       headers: {
         'X-API-KEY': SERPER_API_KEY,
@@ -719,6 +732,12 @@ app.get('/news', async (req: Request, res: Response) => {
     resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      console.error('[serper circuit open]', err.message)
+      res.setHeader('Retry-After', Math.ceil(err.retryAfterMs / 1000).toString())
+      const errorBody: ApiErrorResponse = { error: 'Search provider temporarily unavailable. Please retry shortly.' }
+      return res.status(503).json(errorBody)
+    }
     console.error('[news error]', err.message)
     const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.' }
     return res.status(500).json(errorBody)
@@ -847,7 +866,7 @@ app.post('/search/batch', async (req: Request, res: Response) => {
         const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
         if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
       }
-      const serperRes = await fetch('https://google.serper.dev/search', {
+      const serperRes = await fetchSerper('/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
@@ -901,6 +920,12 @@ app.post('/search/batch', async (req: Request, res: Response) => {
           writeEvent(skip); failed++
         }
         break
+      }
+      if (err instanceof CircuitOpenError) {
+        const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: err.message, code: 'CIRCUIT_OPEN' }
+        writeEvent(evt)
+        failed++
+        continue
       }
       const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: err.message || 'Search failed', code: 'SEARCH_FAILED' }
       writeEvent(evt)
@@ -1011,7 +1036,7 @@ app.post('/jobs', async (req: Request, res: Response) => {
         const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
         if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
       }
-      const serperRes = await fetch('https://google.serper.dev/search', {
+      const serperRes = await fetchSerper('/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
@@ -1093,6 +1118,7 @@ app.get('/health', (_req: Request, res: Response) => {
     serperApiConfigured:       !!SERPER_API_KEY,
     groqApiConfigured:         !!GROQ_API_KEY,
     receivingAddressConfigured: !!RECEIVING_ADDRESS,
+    serperCircuitBreaker:      getSerperBreakerState(),
   })
 })
 

@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../../src/lib/constants'
 import { consumePaymentPayload } from '../../src/lib/paymentIntegrity'
 import { normalizeOrganicResults, normalizeQueryMetadata } from '../../src/lib/serperNormalizer'
+import { fetchSerper, CircuitOpenError } from '../../src/lib/serperClient'
 import crypto from 'crypto'
 
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -136,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
         if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
       }
-      const serperRes = await fetch('https://google.serper.dev/search', {
+      const serperRes = await fetchSerper('/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
@@ -178,6 +179,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         failed++
         for (let j = i + 1; j < cleanQueries.length; j++) { writeEvent({ v: 1, type: 'error', requestId, index: j, query: cleanQueries[j], error: 'Skipped due to abort', code: 'SKIPPED' }); failed++ }
         break
+      }
+      if (err instanceof CircuitOpenError) {
+        writeEvent({ v: 1, type: 'error', requestId, index: i, query: q, error: err.message, code: 'CIRCUIT_OPEN' })
+        failed++
+        continue
       }
       writeEvent({ v: 1, type: 'error', requestId, index: i, query: q, error: err.message || 'Search failed', code: 'SEARCH_FAILED' })
       failed++

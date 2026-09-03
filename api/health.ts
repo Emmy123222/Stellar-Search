@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { getSerperBreakerState } from '../src/lib/serperClient'
 import { readServerConfig } from '../src/lib/config'
 import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
 
@@ -15,6 +16,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     serperApiConfigured: true,
     groqApiConfigured: !!config.groqApiKey,
     receivingAddressConfigured: true,
+    serperCircuitBreaker: getSerperBreakerState(),
     timestamp: new Date().toISOString(),
   })
 }
