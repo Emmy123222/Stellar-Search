@@ -538,6 +538,25 @@ app.use((req, res, next) => {
       if (!consumption.ok) {
         return res.status(402).json({ error: consumption.error });
       }
+      
+      try {
+        const payloadStr = Buffer.from(paymentHeader as string, 'base64').toString('utf8')
+        const payload = JSON.parse(payloadStr)
+        const settleRes = await facilitatorClient.settle(payload, { accepts: x402Accepts })
+        
+        if (!settleRes.success) {
+          return res.status(402).json({ error: `Settlement failed: ${settleRes.errorReason || settleRes.errorMessage || 'unknown'}` })
+        }
+        
+        if (settleRes.transaction) {
+          req.headers['x-payment-response'] = settleRes.transaction
+        }
+      } catch (err: any) {
+        if (err.message && (err.message.includes('fetch') || err.message.includes('timeout') || err.message.includes('network'))) {
+          return res.status(502).json({ error: 'Facilitator timeout or network error' })
+        }
+        return res.status(400).json({ error: 'Malformed payment payload' })
+      }
     }
   }
   next();

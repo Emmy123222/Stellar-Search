@@ -10,6 +10,7 @@ vi.hoisted(() => {
 vi.mock('@x402/express', () => ({
   paymentMiddlewareFromConfig: () => (_req: any, _res: any, next: any) => next(),
 }))
+// Using global mock for HTTPFacilitatorClient
 vi.mock('@x402/core/server', () => ({
   HTTPFacilitatorClient: class { constructor(_opts: any) {} },
 }))

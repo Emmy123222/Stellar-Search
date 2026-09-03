@@ -379,6 +379,48 @@ describe("api/search — Vercel x402 settlement (aligned with Express)", () => {
     expect(res._json.results[0].title).toBe('Valid Vercel Result')
     expect(res._json.results[0].url).toBe('https://vercel.com/docs')
   })
+
+  it('returns 402 if facilitator settlement fails', async () => {
+    global.fetch = vi.fn()
+    const fakeTx = Buffer.from(JSON.stringify({ shouldFail: true, transactionHash: 'fail' })).toString('base64')
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(req, res)
+    expect(res._status).toBe(402)
+    expect(res._json.error).toMatch(/Settlement failed: mock failure/)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('returns 502 if facilitator times out or network error', async () => {
+    global.fetch = vi.fn()
+    const fakeTx = Buffer.from(JSON.stringify({ shouldTimeout: true, transactionHash: 'timeout' })).toString('base64')
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(req, res)
+    expect(res._status).toBe(502)
+    expect(res._json.error).toMatch(/timeout or network error/)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+  
+  it('returns 400 if payment payload is malformed', async () => {
+    global.fetch = vi.fn()
+    const fakeTx = Buffer.from(JSON.stringify({ malformed: true, transactionHash: 'malformed' })).toString('base64')
+    const { req, res } = mockReqRes({
+      method: 'GET',
+      query: { q: 'stellar' },
+      headers: { 'x-payment': fakeTx },
+    })
+    await handler(req, res)
+    expect(res._status).toBe(400)
+    expect(res._json.error).toMatch(/Malformed/)
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
 })
 
 // ─── x402 payment verification tests (Issue #107) ─────────────────────────
