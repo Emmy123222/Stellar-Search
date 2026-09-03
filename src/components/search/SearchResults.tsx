@@ -679,7 +679,7 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
 
               <div className="flex items-center gap-2 mb-2">
                 <p className="font-mono text-xs truncate" style={{ color: 'rgba(0,245,255,0.35)' }}>
-                  {r.url}
+                  {r.url || 'No link available'}
                 </p>
                 {/* Copy URL button */}
                 <button
@@ -714,8 +714,27 @@ export function SearchResults({ results, query, isLoading, txHash, filters = {},
                         Copied!
                       </motion.div>
                     )}
-                  </AnimatePresence>
-                </button>
+                    
+                    {/* Tooltip */}
+                    <AnimatePresence>
+                      {copiedUrl === r.url && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 5, scale: 0.8 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 5, scale: 0.8 }}
+                          className="absolute -top-8 left-1/2 transform -translate-x-1/2 px-2 py-1 rounded-md text-[10px] font-medium whitespace-nowrap pointer-events-none"
+                          style={{
+                            background: 'rgba(0,0,0,0.9)',
+                            border: '1px solid rgba(0,255,0,0.3)',
+                            color: '#00ff00',
+                          }}
+                        >
+                          Copied!
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </button>
+                )}
               </div>
 
               <p className="text-white/55 text-xs leading-relaxed line-clamp-2">

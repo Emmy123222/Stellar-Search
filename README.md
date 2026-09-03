@@ -11,6 +11,10 @@
 
 StellarSearch is a pay-per-query web search API for autonomous AI agents. Every search costs **0.001 USDC**, settled on Stellar in ~5 seconds using the x402 protocol. No subscriptions, no API keys for the end user — agents pay per request and get real web search results back.
 
+**Security & Quality:**
+- Only secure `http`/`https` URLs are clickable to protect users.
+- Search result fields (titles, snippets, dates) are normalized consistently across Express and Vercel endpoints.
+
 ---
 
 ## Real stack (no mocks)
