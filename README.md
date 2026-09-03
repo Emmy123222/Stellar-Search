@@ -316,6 +316,18 @@ Paid MCP tools (`web_search`, `image_search`, `news_search`) emit **bounded** `n
 
 Cancellation (`notifications/cancelled`) and errors terminate progress cleanly **without false completion** — the tool returns `isError: true` and no additional progress after abort. Progress is never sent without a `progressToken`; free tools never emit progress.
 
+### MCP timeouts & cancellation propagation (#170)
+
+Every external network call the MCP server makes — StellarSearch endpoints, Horizon, `/health`, and Groq — receives an **`AbortSignal` with a tool-specific deadline** (see `TOOL_TIMEOUTS` in `mcp-server/index.ts`):
+
+| Tool | Deadline |
+|---|---:|
+| `web_search`, `image_search`, `news_search`, `ai_summarize` | 30 s |
+| `check_balance` (Horizon) | 15 s |
+| `get_search_stats` (`/health`) | 10 s |
+
+The deadline signal aborts when **either** the deadline elapses **or** the client cancels the tool call (`notifications/cancelled`), so a hung or cancelled request returns promptly with `isError: true` (`timed out` / `cancelled`) and **never** emits a delayed success result, receipt, or stray progress. Deadlines are released (`clear()`) on completion so successful calls never abort late.
+
 ### MCP resources & prompts (#326)
 
 Resources (no payment required):

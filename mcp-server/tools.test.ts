@@ -1,12 +1,14 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock MCP SDK before importing server
 const mockSetRequestHandler = vi.fn()
+const mockSetNotificationHandler = vi.fn()
 const mockConnect = vi.fn().mockResolvedValue(undefined)
 
 vi.mock('@modelcontextprotocol/sdk/server/index.js', () => ({
   Server: class {
     setRequestHandler = mockSetRequestHandler
+    setNotificationHandler = mockSetNotificationHandler
     connect = mockConnect
   },
 }))
@@ -21,6 +23,7 @@ const ListResourcesRequestSchemaMock = { name: 'ListResourcesRequestSchema' }
 const ReadResourceRequestSchemaMock = { name: 'ReadResourceRequestSchema' }
 const ListPromptsRequestSchemaMock = { name: 'ListPromptsRequestSchema' }
 const GetPromptRequestSchemaMock = { name: 'GetPromptRequestSchema' }
+const CancelledNotificationSchemaMock = { name: 'CancelledNotificationSchema' }
 
 vi.mock('@modelcontextprotocol/sdk/types.js', () => ({
   CallToolRequestSchema: CallToolRequestSchemaMock,
@@ -29,19 +32,41 @@ vi.mock('@modelcontextprotocol/sdk/types.js', () => ({
   ReadResourceRequestSchema: ReadResourceRequestSchemaMock,
   ListPromptsRequestSchema: ListPromptsRequestSchemaMock,
   GetPromptRequestSchema: GetPromptRequestSchemaMock,
+  CancelledNotificationSchema: CancelledNotificationSchemaMock,
 }))
+
+const groqCreateMock = vi.hoisted(() => vi.fn())
+
+groqCreateMock.mockResolvedValue({ choices: [{ message: { content: 'summary' } }] })
 
 vi.mock('groq-sdk', () => ({
   default: class {
-    chat = { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'summary' } }] }) } }
+    chat = { completions: { create: groqCreateMock } }
   },
 }))
 
 // Ensure env
 process.env.GROQ_API_KEY = 'gsk_test'
 process.env.SEARCH_API_URL = 'http://localhost:3001'
+process.env.MCP_ENABLE_RECEIPTS = '1'
 
 import { HORIZON_URL, USDC_ISSUER, STELLAR_NETWORK, AMOUNT_USDC } from '../src/lib/constants'
+
+const abortError = () => Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
+
+// Capture handler references at module load — mock call history is cleared per
+// test, but registrations only happen once (ESM module cache).
+let mcpMod: any
+let callToolHandler: Function | undefined
+let mcpCancelHandler: Function | undefined
+
+beforeAll(async () => {
+  mcpMod = await import('./index.js')
+  const call = mockSetRequestHandler.mock.calls.find((c: any) => c[0] === CallToolRequestSchemaMock)
+  callToolHandler = call?.[1]
+  const cancel = mockSetNotificationHandler.mock.calls.find((c: any) => c[0] === CancelledNotificationSchemaMock)
+  mcpCancelHandler = cancel?.[1]
+})
 
 describe('MCP server — alignment with Express/Vercel/browser constants', () => {
   it('MCP uses same AMOUNT_USDC as server (x402 settlement)', async () => {
@@ -104,5 +129,141 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
       // Fallback: ensure USDC issuer aligns
       expect(USDC_ISSUER).toBeDefined()
     }
+  })
+})
+
+describe('MCP deadlines & cancellation propagation (#170)', () => {
+  const getCallToolHandler = () => {
+    expect(callToolHandler).toBeDefined()
+    return { handler: callToolHandler as Function, mod: mcpMod }
+  }
+
+  // fetch mock that only settles when its signal aborts (hangs otherwise)
+  const hangUntilAbort = () =>
+    vi.fn().mockImplementation((_url: any, opts: any) => new Promise((_resolve, reject) => {
+      const signal = opts?.signal
+      if (!signal) return reject(new Error('no signal provided'))
+      if (signal.aborted) return reject(abortError())
+      signal.addEventListener('abort', () => reject(abortError()), { once: true })
+    }))
+
+  beforeEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+    mcpMod.clearMcpReceipts()
+  })
+
+  it('deadlineSignal aborts exactly when the deadline elapses', () => {
+    const { deadlineSignal } = mcpMod
+    vi.useFakeTimers()
+    try {
+      const parent = new AbortController()
+      const dl = deadlineSignal(parent.signal, 5000)
+      expect(dl.signal.aborted).toBe(false)
+      vi.advanceTimersByTime(4999)
+      expect(dl.signal.aborted).toBe(false)
+      vi.advanceTimersByTime(1)
+      expect(dl.signal.aborted).toBe(true)
+      expect(dl.timedOut()).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('deadlineSignal propagates client cancellation immediately (not a timeout)', () => {
+    const { deadlineSignal } = mcpMod
+    const parent = new AbortController()
+    const dl = deadlineSignal(parent.signal, 5000)
+    expect(dl.signal.aborted).toBe(false)
+    parent.abort()
+    expect(dl.signal.aborted).toBe(true)
+    expect(dl.timedOut()).toBe(false)
+    dl.clear()
+  })
+
+  it('deadlineSignal is already aborted when the parent is aborted up front', () => {
+    const { deadlineSignal } = mcpMod
+    const parent = new AbortController()
+    parent.abort()
+    const dl = deadlineSignal(parent.signal, 5000)
+    expect(dl.signal.aborted).toBe(true)
+    dl.clear()
+  })
+
+  it('deadlineSignal clear() cancels the pending timer', () => {
+    const { deadlineSignal } = mcpMod
+    vi.useFakeTimers()
+    try {
+      const parent = new AbortController()
+      const dl = deadlineSignal(parent.signal, 1000)
+      dl.clear()
+      vi.advanceTimersByTime(10_000)
+      expect(dl.signal.aborted).toBe(false)
+      expect(dl.timedOut()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('web_search injects a deadline-derived AbortSignal into the fetch call', async () => {
+    const { handler } = getCallToolHandler()
+    let capturedSignal: AbortSignal | undefined
+    global.fetch = vi.fn().mockImplementation(async (_url: string, opts: any) => {
+      capturedSignal = opts.signal
+      return { ok: true, json: async () => ({ results: [], count: 0, paidAmount: '0.001', currency: 'USDC', network: 'stellar:testnet', latencyMs: 1 }) }
+    })
+    const result: any = await handler({ params: { name: 'web_search', arguments: { query: 'stellar' } } })
+    expect(capturedSignal).toBeInstanceOf(AbortSignal)
+    expect(result.content[0].text).toContain('Results for')
+  })
+
+  it('web_search returns promptly with a timeout error when the deadline elapses', async () => {
+    const { handler, mod } = getCallToolHandler()
+    global.fetch = hangUntilAbort()
+    vi.useFakeTimers()
+    try {
+      const pending = handler({ params: { name: 'web_search', arguments: { query: 'stellar' } } })
+      vi.advanceTimersByTime(mod.TOOL_TIMEOUTS.webSearch)
+      const result: any = await pending
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain('timed out')
+      // No delayed success result or receipt after the deadline
+      expect(mod.mcpReceipts).toHaveLength(0)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a cancelled client connection aborts the in-flight call and emits no receipt', async () => {
+    const { handler, mod } = getCallToolHandler()
+    global.fetch = hangUntilAbort()
+
+    const pending = handler({
+      id: 'cancel-req-170',
+      params: { name: 'web_search', arguments: { query: 'stellar' }, _meta: { progressToken: 170 } },
+    })
+
+    // Simulate the MCP notifications/cancelled handler registered at startup
+    expect(mcpCancelHandler).toBeDefined()
+    await (mcpCancelHandler as Function)({ params: { requestId: 'cancel-req-170' } })
+
+    const result: any = await pending
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('cancelled')
+    // Cancellation must not record a paid receipt or emit delayed success
+    expect(mod.mcpReceipts).toHaveLength(0)
+  })
+
+  it('ai_summarize forwards the deadline signal to Groq', async () => {
+    const { handler } = getCallToolHandler()
+    let groqOpts: any
+    groqCreateMock.mockImplementation(async (_body: any, opts: any) => {
+      groqOpts = opts
+      return { choices: [{ message: { content: 'summary' } }] }
+    })
+    const result: any = await handler({ params: { name: 'ai_summarize', arguments: { text: 'hello' } } })
+    expect(groqOpts?.signal).toBeInstanceOf(AbortSignal)
+    expect(result.content[0].text).toBe('summary')
   })
 })
