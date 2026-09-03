@@ -7,7 +7,13 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
   applyServerlessHeaders(res)
   const config = readServerConfig()
 
-  res.json({
+  // This runtime reports configuration facts only. It deliberately does NOT
+  // report totalQueries / totalUsdcSettled / avgLatencyMs / uptime: a Vercel
+  // function is stateless and scales to zero, so an in-memory counter would
+  // describe one warm instance rather than the deployment. Declaring the gap
+  // (#226) stops the UI and the MCP stats tool from rendering the absence as
+  // a real zero. See src/lib/serverHealth.ts.
+  const body: ServerHealthResponse = {
     status: 'ok',
     network: config.stellarNetwork,
     pricePerQuery: `${config.amountUsdc} USDC`,
@@ -18,5 +24,8 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     receivingAddressConfigured: true,
     serperCircuitBreaker: getSerperBreakerState(),
     timestamp: new Date().toISOString(),
-  })
+    ...declareStatsUnsupported(SERVERLESS_STATS_UNAVAILABLE_REASON),
+  }
+
+  res.json(body)
 }

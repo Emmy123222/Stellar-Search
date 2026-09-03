@@ -51,6 +51,11 @@ process.env.SEARCH_API_URL = 'http://localhost:3001'
 process.env.MCP_ENABLE_RECEIPTS = '1'
 
 import { HORIZON_URL, USDC_ISSUER, STELLAR_NETWORK, AMOUNT_USDC } from '../src/lib/constants'
+import {
+  SERVERLESS_STATS_UNAVAILABLE_REASON,
+  declareStatsSupported,
+  declareStatsUnsupported,
+} from '../src/lib/serverHealth'
 
 const abortError = () => Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
 

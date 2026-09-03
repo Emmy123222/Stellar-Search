@@ -148,4 +148,3 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: osv-results.sarif
->>>>>>> 7804e9c (feat(ci): generate CycloneDX SBOM and gate dependency vulnerabilities)

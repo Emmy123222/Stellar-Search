@@ -93,12 +93,15 @@ export interface SearchReceipt {
   network: string
 }
 
-export interface ApiStat {
-  totalQueries: number
-  totalUsdcSettled: string
-  avgLatencyMs: number
-  uptime: string
-}
+/**
+ * The activity counters a `/health` response may carry.
+ *
+ * Every field is optional on the wire: only a runtime that actually measures
+ * them reports them, and it declares which ones it does not (#226). Read these
+ * through `resolveStat` in `src/lib/serverHealth.ts` so an unmeasured field is
+ * never mistaken for a real zero.
+ */
+export type ApiStat = Partial<HealthStats> & HealthStatsDeclaration
 
 export interface ImageResult {
   id: string

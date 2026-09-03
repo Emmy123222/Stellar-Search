@@ -50,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json(errorBody)
   }
 
-  const { q, count = '5', freshness } = req.query as Record<string, string>
+  const { q } = req.query as Record<string, string>
 
   const validation = validateQuery(q)
   if (!validation.ok) {
@@ -58,6 +58,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json(errorBody)
   }
   const cleanQ = validation.cleanQ
+
+  // ─── Parameter validation (#188) ─────────────────────────────────────────
+  // Runs BEFORE the 402 challenge and the replay check, matching Express:
+  // a request the server would refuse anyway never reaches the payment
+  // adapter, so the caller is neither charged nor handed a payment challenge.
+  const validatedCount = validateCount(req.query.count, SEARCH_COUNT)
+  if (!validatedCount.ok) {
+    const errorBody: ApiErrorResponse = { error: validatedCount.error }
+    return res.status(400).json(errorBody)
+  }
+  const validatedFreshness = validateFreshness(req.query.freshness)
+  if (!validatedFreshness.ok) {
+    const errorBody: ApiErrorResponse = { error: validatedFreshness.error }
+    return res.status(400).json(errorBody)
+  }
+  const count = validatedCount.value
+  const tbs = validatedFreshness.value ? FRESHNESS_TBS[validatedFreshness.value] : undefined
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -133,6 +150,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
     }
+    if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetchSerper('/search', {
       method:  'POST',
