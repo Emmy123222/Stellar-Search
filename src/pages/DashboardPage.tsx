@@ -127,6 +127,20 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
     prevConfigRef.current = config
   }, [config, sessionCapInput, dailyCapInput])
 
+  // Filter States
+  const [dateFilter, setDateFilter] = useState<DateFilterOption>('all')
+  const [customStartDate, setCustomStartDate] = useState<string>('')
+  const [customEndDate, setCustomEndDate] = useState<string>('')
+  const [networkFilter, setNetworkFilter] = useState<string>('all')
+  const [directionFilter, setDirectionFilter] = useState<DirectionFilterOption>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilterOption>('all')
+  const [endpointFilter, setEndpointFilter] = useState<string>('all')
+  const [filterText, setFilterText] = useState<string>('')
+
+  // Accessible View Mode for Chart
+  const [chartViewMode, setChartViewMode] = useState<'chart' | 'table'>('chart')
+  const [chartSortOrder, setChartSortOrder] = useState<'asc' | 'desc'>('asc')
+
   useEffect(() => {
     const raw = localStorage.getItem('stellarsearch_receipts')
     if (raw) {
@@ -190,22 +204,237 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
 
   const networkLabel = IS_MAINNET ? 'STELLAR MAINNET' : 'STELLAR TESTNET'
 
+  // Reset all filters
+  const handleResetFilters = useCallback(() => {
+    setDateFilter('all')
+    setCustomStartDate('')
+    setCustomEndDate('')
+    setNetworkFilter('all')
+    setDirectionFilter('all')
+    setStatusFilter('all')
+    setEndpointFilter('all')
+    setFilterText('')
+  }, [])
+
+  const hasActiveFilters = useMemo(() => {
+    return (
+      dateFilter !== 'all' ||
+      networkFilter !== 'all' ||
+      directionFilter !== 'all' ||
+      statusFilter !== 'all' ||
+      endpointFilter !== 'all' ||
+      filterText.trim().length > 0
+    )
+  }, [dateFilter, networkFilter, directionFilter, statusFilter, endpointFilter, filterText])
+
+  // Helper date checker
+  const matchesDate = useCallback(
+    (timestamp: string) => {
+      if (dateFilter === 'all') return true
+      const date = new Date(timestamp)
+      const now = new Date()
+
+      if (dateFilter === 'today') {
+        return (
+          date.getDate() === now.getDate() &&
+          date.getMonth() === now.getMonth() &&
+          date.getFullYear() === now.getFullYear()
+        )
+      }
+      if (dateFilter === '7d') {
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        return date >= sevenDaysAgo
+      }
+      if (dateFilter === '30d') {
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        return date >= thirtyDaysAgo
+      }
+      if (dateFilter === 'custom') {
+        const start = customStartDate ? new Date(customStartDate) : null
+        const end = customEndDate ? new Date(customEndDate) : null
+        if (start && date < start) return false
+        if (end) {
+          end.setHours(23, 59, 59, 999)
+          if (date > end) return false
+        }
+        return true
+      }
+      return true
+    },
+    [dateFilter, customStartDate, customEndDate]
+  )
+
+  // Filtered Receipts
+  const filteredReceipts = useMemo(() => {
+    return receipts.filter((r) => {
+      if (!matchesDate(r.timestamp)) return false
+
+      if (networkFilter !== 'all' && r.network !== networkFilter) return false
+
+      if (endpointFilter !== 'all') {
+        const qLower = r.query.toLowerCase()
+        if (endpointFilter === 'news' && !qLower.startsWith('/news') && !qLower.includes('news:'))
+          return false
+        if (
+          endpointFilter === 'images' &&
+          !qLower.startsWith('/images') &&
+          !qLower.includes('image:')
+        )
+          return false
+        if (
+          endpointFilter === 'search' &&
+          (qLower.startsWith('/news') || qLower.startsWith('/images'))
+        )
+          return false
+      }
+
+      if (filterText.trim()) {
+        const search = filterText.toLowerCase()
+        const matchQuery = r.query.toLowerCase().includes(search)
+        const matchHash = r.txHash.toLowerCase().includes(search)
+        if (!matchQuery && !matchHash) return false
+      }
+
+      return true
+    })
+  }, [receipts, matchesDate, networkFilter, endpointFilter, filterText])
+
+  // Filtered Transactions
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((tx) => {
+      if (!matchesDate(tx.timestamp)) return false
+
+      if (statusFilter !== 'all' && statusFilter !== 'confirmed') return false
+
+      if (endpointFilter !== 'all') {
+        if (endpointFilter !== 'payment' && endpointFilter !== 'create_account') {
+          if (tx.type !== endpointFilter) return false
+        } else if (tx.type !== endpointFilter) {
+          return false
+        }
+      }
+
+      if (directionFilter !== 'all') {
+        // Assume default payments are out unless indicated otherwise
+        const isIncoming = tx.type === 'create_account'
+        if (directionFilter === 'in' && !isIncoming) return false
+        if (directionFilter === 'out' && isIncoming) return false
+      }
+
+      if (filterText.trim()) {
+        const search = filterText.toLowerCase()
+        const matchHash = tx.hash.toLowerCase().includes(search)
+        const matchMemo = (tx.memo || '').toLowerCase().includes(search)
+        const matchType = tx.type.toLowerCase().includes(search)
+        if (!matchHash && !matchMemo && !matchType) return false
+      }
+
+      return true
+    })
+  }, [transactions, matchesDate, statusFilter, endpointFilter, directionFilter, filterText])
+
+  // Chart Data
   const chartData = useMemo(() => {
-    const usdcTxs = transactions.filter(tx => tx.asset === 'USDC')
-    const sortedTxs = [...usdcTxs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-    
+    const usdcTxs = filteredTransactions.filter((tx) => tx.asset === 'USDC')
+    const sortedTxs = [...usdcTxs].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )
+
     const grouped = sortedTxs.reduce((acc, tx) => {
-      const date = new Date(tx.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      const date = new Date(tx.timestamp).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+      })
       if (!acc[date]) acc[date] = 0
       acc[date] += parseFloat(tx.amount)
       return acc
     }, {} as Record<string, number>)
 
-    return Object.entries(grouped).map(([date, amount]: [string, number]) => ({
+    const items = Object.entries(grouped).map(([date, amount]: [string, number]) => ({
       date,
-      amount: parseFloat(amount.toFixed(2))
+      amount: parseFloat(amount.toFixed(4)),
     }))
-  }, [transactions])
+
+    if (chartSortOrder === 'desc') {
+      return [...items].reverse()
+    }
+    return items
+  }, [filteredTransactions, chartSortOrder])
+
+  // Export JSON
+  const handleExportJSON = () => {
+    const exportData = {
+      schemaVersion: '1.0.0',
+      exportedAt: new Date().toISOString(),
+      metadata: {
+        accountPublicKey: publicKey,
+        network: STELLAR_NETWORK,
+        filtersApplied: {
+          dateFilter,
+          customStartDate,
+          customEndDate,
+          networkFilter,
+          directionFilter,
+          statusFilter,
+          endpointFilter,
+          filterText,
+        },
+        totalReceipts: filteredReceipts.length,
+        totalTransactions: filteredTransactions.length,
+      },
+      receipts: filteredReceipts,
+      transactions: filteredTransactions,
+    }
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `stellar-search-audit-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Export CSV
+  const handleExportCSV = () => {
+    const csvRows: string[] = []
+
+    // Header Metadata
+    csvRows.push(`# StellarSearch Export — Generated ${new Date().toISOString()}`)
+    csvRows.push(`# Account: ${publicKey || 'Disconnected'} | Network: ${STELLAR_NETWORK}`)
+    csvRows.push('')
+
+    // Receipts Section
+    csvRows.push('--- SEARCH RECEIPTS ---')
+    csvRows.push('Timestamp,Query,Amount,Currency,Network,TransactionHash')
+    for (const r of filteredReceipts) {
+      const cleanQuery = `"${r.query.replace(/"/g, '""')}"`
+      csvRows.push(
+        `${r.timestamp},${cleanQuery},${r.amount},USDC,${r.network},${r.txHash}`
+      )
+    }
+
+    csvRows.push('')
+    // Transactions Section
+    csvRows.push('--- HORIZON TRANSACTIONS ---')
+    csvRows.push('ID,Timestamp,Type,Amount,Asset,Memo,TransactionHash')
+    for (const tx of filteredTransactions) {
+      const cleanMemo = tx.memo ? `"${tx.memo.replace(/"/g, '""')}"` : ''
+      csvRows.push(
+        `${tx.id},${tx.timestamp},${tx.type},${tx.amount},${tx.asset},${cleanMemo},${tx.hash}`
+      )
+    }
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `stellar-search-audit-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const receiptSummary = useMemo(() => {
     let confirmed = 0
@@ -228,17 +457,32 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-10 space-y-8">
-
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+      >
         <div>
-          <span className="font-display text-xs text-neon-cyan/50 tracking-widest">LIVE BLOCKCHAIN DATA</span>
+          <span className="font-display text-xs text-neon-cyan/50 tracking-widest">
+            LIVE BLOCKCHAIN DATA
+          </span>
           <h1 className="font-display text-3xl text-white mt-1">DASHBOARD</h1>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${IS_MAINNET ? 'bg-neon-amber' : 'bg-neon-green'}`} />
-            <span className={`font-display text-xs tracking-wider ${IS_MAINNET ? 'text-neon-amber/60' : 'text-neon-green/60'}`}>{networkLabel}</span>
+            <div
+              className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                IS_MAINNET ? 'bg-neon-amber' : 'bg-neon-green'
+              }`}
+            />
+            <span
+              className={`font-display text-xs tracking-wider ${
+                IS_MAINNET ? 'text-neon-amber/60' : 'text-neon-green/60'
+              }`}
+            >
+              {networkLabel}
+            </span>
           </div>
           <button
             onClick={handleRefresh}
@@ -257,10 +501,15 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
           className="rounded-2xl p-5"
-          style={{ background: 'rgba(6,13,20,0.7)', border: '1px solid rgba(0,245,255,0.12)' }}
+          style={{
+            background: 'rgba(6,13,20,0.7)',
+            border: '1px solid rgba(0,245,255,0.12)',
+          }}
         >
           <div className="flex items-center justify-between mb-4">
-            <span className="font-display text-xs text-white/30 tracking-widest">YOUR STELLAR ACCOUNT</span>
+            <span className="font-display text-xs text-white/30 tracking-widest">
+              YOUR STELLAR ACCOUNT
+            </span>
             <a
               href={explorerAccountUrl(publicKey)}
               target="_blank"
@@ -273,22 +522,54 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
 
           <div className="grid sm:grid-cols-3 gap-4">
             <div>
-              <p className="font-display text-xs text-white/30 mb-1" style={{ fontSize: '10px' }}>PUBLIC KEY</p>
-              <p className="font-mono text-xs text-white/60 break-all leading-relaxed">{publicKey}</p>
-            </div>
-            <div className="py-3 px-4 rounded-xl text-center"
-              style={{ background: 'rgba(255,184,0,0.05)', border: '1px solid rgba(255,184,0,0.15)' }}>
-              <p className="font-display text-xs text-white/30 mb-1" style={{ fontSize: '10px' }}>USDC BALANCE</p>
-              <p className="font-display text-2xl text-neon-amber">{usdcBalance}</p>
-              <p className="font-display text-white/25 mt-1" style={{ fontSize: '9px' }}>
-                {Math.floor(parseFloat(usdcBalance) / parseFloat(AMOUNT_USDC)).toLocaleString()} queries remaining
+              <p
+                className="font-display text-xs text-white/30 mb-1"
+                style={{ fontSize: '10px' }}
+              >
+                PUBLIC KEY
+              </p>
+              <p className="font-mono text-xs text-white/60 break-all leading-relaxed">
+                {publicKey}
               </p>
             </div>
-            <div className="py-3 px-4 rounded-xl text-center"
-              style={{ background: 'rgba(0,245,255,0.05)', border: '1px solid rgba(0,245,255,0.15)' }}>
-              <p className="font-display text-xs text-white/30 mb-1" style={{ fontSize: '10px' }}>XLM BALANCE</p>
+            <div
+              className="py-3 px-4 rounded-xl text-center"
+              style={{
+                background: 'rgba(255,184,0,0.05)',
+                border: '1px solid rgba(255,184,0,0.15)',
+              }}
+            >
+              <p
+                className="font-display text-xs text-white/30 mb-1"
+                style={{ fontSize: '10px' }}
+              >
+                USDC BALANCE
+              </p>
+              <p className="font-display text-2xl text-neon-amber">{usdcBalance}</p>
+              <p className="font-display text-white/25 mt-1" style={{ fontSize: '9px' }}>
+                {Math.floor(
+                  parseFloat(usdcBalance) / parseFloat(AMOUNT_USDC)
+                ).toLocaleString()}{' '}
+                queries remaining
+              </p>
+            </div>
+            <div
+              className="py-3 px-4 rounded-xl text-center"
+              style={{
+                background: 'rgba(0,245,255,0.05)',
+                border: '1px solid rgba(0,245,255,0.15)',
+              }}
+            >
+              <p
+                className="font-display text-xs text-white/30 mb-1"
+                style={{ fontSize: '10px' }}
+              >
+                XLM BALANCE
+              </p>
               <p className="font-display text-2xl text-neon-cyan">{xlmBalance}</p>
-              <p className="font-display text-white/25 mt-1" style={{ fontSize: '9px' }}>for network fees</p>
+              <p className="font-display text-white/25 mt-1" style={{ fontSize: '9px' }}>
+                for network fees
+              </p>
             </div>
           </div>
         </motion.div>
@@ -297,9 +578,14 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="rounded-2xl p-8 text-center"
-          style={{ background: 'rgba(6,13,20,0.5)', border: '1px solid rgba(255,255,255,0.06)' }}
+          style={{
+            background: 'rgba(6,13,20,0.5)',
+            border: '1px solid rgba(255,255,255,0.06)',
+          }}
         >
-          <p className="font-display text-white/30 text-sm">Connect your Freighter wallet to see live account data</p>
+          <p className="font-display text-white/30 text-sm">
+            Connect your Freighter wallet to see live account data
+          </p>
         </motion.div>
       )}
 
@@ -465,54 +751,136 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
           className="rounded-2xl p-5"
-          style={{ background: 'rgba(6,13,20,0.7)', border: '1px solid rgba(255,184,0,0.15)' }}
+          style={{
+            background: 'rgba(6,13,20,0.7)',
+            border: '1px solid rgba(255,184,0,0.15)',
+          }}
         >
-          <div className="flex items-center gap-2 mb-6">
-            <BarChart2 className="w-4 h-4 text-neon-amber/40" />
-            <span className="font-display text-xs text-white/30 tracking-widest">USDC SPENT OVER TIME</span>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-neon-amber/40" />
+              <span className="font-display text-xs text-white/30 tracking-widest">
+                USDC SPENT OVER TIME
+              </span>
+            </div>
+
+            {/* View Mode Toggle */}
+            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-lg border border-white/10">
+              <button
+                onClick={() => setChartViewMode('chart')}
+                aria-label="View as visual chart"
+                className={`px-2.5 py-1 rounded text-xs font-display transition-colors ${
+                  chartViewMode === 'chart'
+                    ? 'bg-neon-amber/20 text-neon-amber border border-neon-amber/40'
+                    : 'text-white/40 hover:text-white'
+                }`}
+              >
+                CHART VIEW
+              </button>
+              <button
+                onClick={() => setChartViewMode('table')}
+                aria-label="View as accessible tabular data"
+                className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-display transition-colors ${
+                  chartViewMode === 'table'
+                    ? 'bg-neon-amber/20 text-neon-amber border border-neon-amber/40'
+                    : 'text-white/40 hover:text-white'
+                }`}
+              >
+                <TableIcon className="w-3 h-3" />
+                <span>TABLE VIEW</span>
+              </button>
+            </div>
           </div>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis 
-                  dataKey="date" 
-                  stroke="rgba(255,255,255,0.2)" 
-                  fontSize={10} 
-                  tickLine={false} 
-                  axisLine={false} 
-                  fontFamily="monospace"
-                />
-                <YAxis 
-                  stroke="rgba(255,255,255,0.2)" 
-                  fontSize={10} 
-                  tickLine={false} 
-                  axisLine={false} 
-                  tickFormatter={(val: number | string) => `$${val}`}
-                  fontFamily="monospace"
-                />
-                <Tooltip 
-                  cursor={{ fill: 'rgba(255,184,0,0.05)' }}
-                  contentStyle={{ 
-                    backgroundColor: 'rgba(6,13,20,0.9)', 
-                    border: '1px solid rgba(255,184,0,0.2)',
-                    borderRadius: '8px',
-                    fontFamily: 'monospace',
-                    fontSize: '12px'
-                  }}
-                  itemStyle={{ color: '#ffb800' }}
-                  labelStyle={{ color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}
-                />
-                <Bar 
-                  dataKey="amount" 
-                  fill="#ffb800" 
-                  radius={[4, 4, 0, 0]} 
-                  maxBarSize={40}
-                  animationDuration={1500}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+
+          {chartViewMode === 'chart' ? (
+            <div className="h-64 w-full" aria-hidden="true">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="rgba(255,255,255,0.05)"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="date"
+                    stroke="rgba(255,255,255,0.2)"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    fontFamily="monospace"
+                  />
+                  <YAxis
+                    stroke="rgba(255,255,255,0.2)"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(val: number | string) => `$${val}`}
+                    fontFamily="monospace"
+                  />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(255,184,0,0.05)' }}
+                    contentStyle={{
+                      backgroundColor: 'rgba(6,13,20,0.9)',
+                      border: '1px solid rgba(255,184,0,0.2)',
+                      borderRadius: '8px',
+                      fontFamily: 'monospace',
+                      fontSize: '12px',
+                    }}
+                    itemStyle={{ color: '#ffb800' }}
+                    labelStyle={{ color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}
+                  />
+                  <Bar
+                    dataKey="amount"
+                    fill="#ffb800"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={40}
+                    animationDuration={1500}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            /* Accessible Table View (Issue #344) */
+            <div className="overflow-x-auto">
+              <table
+                className="w-full text-left text-xs font-mono"
+                aria-label="USDC Spent Over Time Summary Table"
+              >
+                <caption className="sr-only">
+                  USDC Spent Over Time summarized by date
+                </caption>
+                <thead>
+                  <tr className="border-b border-white/10 text-white/40">
+                    <th scope="col" className="py-2.5 px-3">
+                      <button
+                        onClick={() =>
+                          setChartSortOrder(chartSortOrder === 'asc' ? 'desc' : 'asc')
+                        }
+                        className="flex items-center gap-1 hover:text-white"
+                        aria-label={`Sort by Date, currently ${chartSortOrder}ending`}
+                      >
+                        <span>DATE</span>
+                        <ArrowUpDown className="w-3 h-3" />
+                      </button>
+                    </th>
+                    <th scope="col" className="py-2.5 px-3 text-right">
+                      AMOUNT (USDC)
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-white/70">
+                  {chartData.map((row) => (
+                    <tr key={row.date} className="hover:bg-white/5">
+                      <td className="py-2.5 px-3">{row.date}</td>
+                      <td className="py-2.5 px-3 text-right text-neon-amber font-semibold">
+                        {row.amount.toFixed(4)} USDC
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </motion.div>
       )}
 
@@ -700,7 +1068,10 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
         className="rounded-2xl overflow-hidden"
-        style={{ background: 'rgba(6,13,20,0.7)', border: '1px solid rgba(0,245,255,0.1)' }}
+        style={{
+          background: 'rgba(6,13,20,0.7)',
+          border: '1px solid rgba(0,245,255,0.1)',
+        }}
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between p-5 border-b border-white/5 gap-3">
           <div className="flex items-center gap-2">
@@ -762,11 +1133,24 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
         </div>
 
         <div className="divide-y divide-white/4">
-          {receipts.length === 0 ? (
+          {filteredReceipts.length === 0 ? (
             <div className="text-center py-10">
               <Search className="w-8 h-8 text-white/10 mx-auto mb-3" />
-              <p className="font-display text-xs text-white/20 tracking-widest">NO SEARCH RECEIPTS YET</p>
-              <p className="text-white/25 text-sm mt-2">Perform a search to see your payment history</p>
+              <p className="font-display text-xs text-white/20 tracking-widest">
+                NO SEARCH RECEIPTS MATCHING CRITERIA
+              </p>
+              {hasActiveFilters ? (
+                <button
+                  onClick={handleResetFilters}
+                  className="mt-3 px-3 py-1 text-xs text-neon-cyan border border-neon-cyan/30 rounded-lg hover:bg-neon-cyan/10"
+                >
+                  Clear Filters
+                </button>
+              ) : (
+                <p className="text-white/25 text-sm mt-2">
+                  Perform a search to see your payment history
+                </p>
+              )}
             </div>
           ) : (
             receipts.map((receipt, i) => {
@@ -905,9 +1289,24 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
       {/* Network info */}
       <div className="grid sm:grid-cols-3 gap-3">
         {[
-          { label: 'Network',          value: IS_MAINNET ? 'Stellar Mainnet' : 'Stellar Testnet',  sub: STELLAR_NETWORK, color: IS_MAINNET ? '#ffb800' : '#00f5ff' },
-          { label: 'Price per query',  value: `${AMOUNT_USDC} USDC`,       sub: `≈ $${AMOUNT_USDC} USD`,    color: '#ffb800' },
-          { label: 'Settlement',       value: '~5 seconds',       sub: 'Stellar finality', color: '#39ff14' },
+          {
+            label: 'Network',
+            value: IS_MAINNET ? 'Stellar Mainnet' : 'Stellar Testnet',
+            sub: STELLAR_NETWORK,
+            color: IS_MAINNET ? '#ffb800' : '#00f5ff',
+          },
+          {
+            label: 'Price per query',
+            value: `${AMOUNT_USDC} USDC`,
+            sub: `≈ $${AMOUNT_USDC} USD`,
+            color: '#ffb800',
+          },
+          {
+            label: 'Settlement',
+            value: '~5 seconds',
+            sub: 'Stellar finality',
+            color: '#39ff14',
+          },
         ].map(({ label, value, sub, color }) => (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
