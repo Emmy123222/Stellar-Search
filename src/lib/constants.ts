@@ -3,11 +3,76 @@
  * Centralized configuration for the Stellar environment.
  */
 
-import { readBrowserConfig } from './config'
+import { StrKey } from '@stellar/stellar-sdk'
 
-// Browser code only receives VITE_* values through this typed view.
-const browserConfig = readBrowserConfig()
-export const STELLAR_NETWORK = browserConfig.stellarNetwork
+// Use process.env for Node.js and import.meta.env for Vite
+const getEnv = (key: string, fallback: string) => {
+  if (typeof process !== 'undefined' && process.env && process.env[key]) {
+    return process.env[key]
+  }
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[`VITE_${key}`]) {
+    // @ts-ignore
+    return import.meta.env[`VITE_${key}`]
+  }
+  return fallback
+}
+
+export const VALID_STELLAR_NETWORKS = ['stellar:testnet', 'stellar:mainnet'] as const
+export type StellarNetwork = (typeof VALID_STELLAR_NETWORKS)[number]
+
+export const isValidStellarNetwork = (value: string | undefined): value is StellarNetwork =>
+  typeof value === 'string' && VALID_STELLAR_NETWORKS.includes(value as StellarNetwork)
+
+export const isValidStellarReceivingAddress = (value: string | undefined): boolean => {
+  if (typeof value !== 'string') {
+    return false
+  }
+
+  const trimmedValue = value.trim()
+  if (!trimmedValue) {
+    return false
+  }
+
+  return (
+    StrKey.isValidEd25519PublicKey(trimmedValue) ||
+    /^G[A-Z2-7]{55}$/.test(trimmedValue)
+  )
+}
+
+const redactStellarValue = (value: string | undefined): string => {
+  if (!value) {
+    return 'missing'
+  }
+
+  const trimmedValue = value.trim()
+  if (trimmedValue.length <= 8) {
+    return `${trimmedValue.slice(0, 2)}...`
+  }
+
+  return `${trimmedValue.slice(0, 4)}...${trimmedValue.slice(-4)}`
+}
+
+export const assertValidStellarConfig = (
+  config: { STELLAR_NETWORK?: string; STELLAR_RECEIVING_ADDRESS?: string } = {},
+): void => {
+  const network = config.STELLAR_NETWORK ?? STELLAR_NETWORK
+  const receivingAddress = config.STELLAR_RECEIVING_ADDRESS ?? process.env.STELLAR_RECEIVING_ADDRESS ?? ''
+
+  if (!isValidStellarNetwork(network)) {
+    throw new Error(
+      `Invalid STELLAR_NETWORK "${redactStellarValue(network)}". Expected one of: ${VALID_STELLAR_NETWORKS.join(', ')}.`,
+    )
+  }
+
+  if (!isValidStellarReceivingAddress(receivingAddress)) {
+    throw new Error(
+      `Invalid STELLAR_RECEIVING_ADDRESS "${redactStellarValue(receivingAddress)}". Expected a valid Stellar public key for ${network}.`,
+    )
+  }
+}
+
+export const STELLAR_NETWORK = getEnv('STELLAR_NETWORK', 'stellar:testnet')
 export const IS_MAINNET = STELLAR_NETWORK === 'stellar:mainnet'
 export const EXPECTED_WALLET_NETWORK = IS_MAINNET ? 'PUBLIC' : 'TESTNET'
 

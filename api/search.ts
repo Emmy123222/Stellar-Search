@@ -1,7 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { 
-  USDC_CONTRACT_MAINNET,
-  USDC_CONTRACT_TESTNET,
+import {
+  STELLAR_NETWORK,
+  USDC_CONTRACT,
+  AMOUNT_STROOPS,
+  AMOUNT_USDC,
+  assertValidStellarConfig,
 } from '../src/lib/constants'
 import { consumePaymentPayload, decodePaymentReceipt } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults } from '../src/lib/serperNormalizer'
@@ -13,19 +16,14 @@ import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
 
 // ─── Config ───────────────────────────────────────────────────────────────
-let config
-try {
-  config = readServerConfig()
-} catch (error) {
-  console.error(formatConfigurationError(error))
-  throw error
-}
-const RECEIVING_ADDRESS = config.receivingAddress
-const NETWORK           = config.stellarNetwork
-const SERPER_API_KEY    = config.serperApiKey
-const AMOUNT_STROOPS    = config.amountStroops
-const AMOUNT_USDC       = config.amountUsdc
-const USDC_CONTRACT     = NETWORK === 'stellar:mainnet' ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_TESTNET
+const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS ?? ''
+const NETWORK           = (process.env.STELLAR_NETWORK ?? STELLAR_NETWORK) as 'stellar:testnet' | 'stellar:mainnet'
+const SERPER_API_KEY    = process.env.SERPER_API_KEY!
+
+assertValidStellarConfig({
+  STELLAR_NETWORK: NETWORK,
+  STELLAR_RECEIVING_ADDRESS: RECEIVING_ADDRESS,
+})
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyServerlessHeaders(res)

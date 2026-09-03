@@ -372,13 +372,19 @@ async function deliverWebhookWithRetry(
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────
-const RECEIVING_ADDRESS = config.receivingAddress
-const FACILITATOR_URL   = config.facilitatorUrl
-const NETWORK           = config.stellarNetwork
-const SERPER_API_KEY    = config.serperApiKey
-const GROQ_API_KEY      = config.groqApiKey
-const AMOUNT_USDC       = config.amountUsdc
-const AMOUNT_STROOPS    = config.amountStroops
+const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS ?? ''
+const FACILITATOR_URL   = process.env.FACILITATOR_URL   || 'https://www.x402.org/facilitator'
+const NETWORK           = (process.env.STELLAR_NETWORK ?? STELLAR_NETWORK) as 'stellar:testnet' | 'stellar:mainnet'
+const SERPER_API_KEY    = process.env.SERPER_API_KEY!
+const GROQ_API_KEY      = process.env.GROQ_API_KEY!
+
+assertValidStellarConfig({
+  STELLAR_NETWORK: NETWORK,
+  STELLAR_RECEIVING_ADDRESS: RECEIVING_ADDRESS,
+})
+
+if (!SERPER_API_KEY)    console.warn('⚠  SERPER_API_KEY not set')
+if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
 const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
