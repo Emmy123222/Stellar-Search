@@ -42,6 +42,7 @@ import {
   normalizeImageResults,
   normalizeNewsResults,
 } from '../src/lib/serperNormalizer.js'
+import { validateQuery, MAX_QUERY_LENGTH } from '../src/lib/validateQuery.js'
 import type {
   SearchResponse,
   ImageSearchResponse,
@@ -431,6 +432,7 @@ const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }];
 // Apply middleware to all routes, not just /search
 
 // ─── Payment Logging Middleware ──────────────────────────────────────────
+const paidRoutes = ['/search', '/images', '/news'];
 app.use((req, res, next) => {
   if (req.path === "/search") {
     const { q } = req.query as Record<string, string>;

@@ -3,6 +3,8 @@ import Groq from 'groq-sdk'
 import { readServerConfig } from '../../src/lib/config'
 import { applyServerlessHeaders } from '../../src/lib/serverlessHeaders'
 
+import { applyServerlessCors } from '../../server/corsConfig'
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyServerlessHeaders(res)
   if (req.method !== 'POST') {

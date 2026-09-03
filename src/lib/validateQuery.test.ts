@@ -31,6 +31,10 @@ describe('validateQuery — x402 paid route input validation', () => {
     expect(validateQuery('  hello world  ')).toEqual({ ok: true, cleanQ: 'hello world' })
   })
 
+  it('rejects multiple query parameters (array)', () => {
+    expect(validateQuery(['hello', 'world'])).toEqual({ ok: false, error: 'Multiple query parameters not allowed' })
+  })
+
   it('rejects missing q (undefined)', () => {
     expect(validateQuery(undefined)).toEqual({ ok: false, error: 'Missing required parameter: q' })
   })

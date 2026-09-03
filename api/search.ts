@@ -224,7 +224,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const queryMeta = normalizeQueryMetadata(data, cleanQ)
 
     const responseBody: SearchResponse = {
-      query:      q.trim(),
+      query:      cleanQ,
       results,
       count:      results.length,
       network:    NETWORK,
