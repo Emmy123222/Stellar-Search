@@ -21,6 +21,9 @@
     "sbom": "cyclonedx-npm --package-lock-only --output-reproducible --output-format JSON --output-file sbom.cyclonedx.json",
     "sbom:view": "cyclonedx-npm --package-lock-only --output-format JSON",
     "server": "tsx server/index.ts",
+    "start": "tsx server/index.ts",
+    "docker:build": "docker build -t stellar-search .",
+    "docker:run": "docker run -p 3001:3001 --env-file .env stellar-search",
     "mcp": "tsx mcp-server/index.ts",
     "dev:all": "concurrently \"npm run server\" \"npm run dev\"",
     "search:cli": "tsx scripts/test-search.ts",
@@ -56,6 +59,7 @@
     "react-i18next": "^17.0.12",
     "recharts": "^3.10.1",
     "sonner": "^2.0.8",
+    "tsx": "^4.7.0",
     "winston": "^3.19.0"
   },
   "devDependencies": {
@@ -87,7 +91,6 @@
     "postcss": "^8.4.35",
     "supertest": "^7.2.2",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.12",
     "typescript": "^6.0.0",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"

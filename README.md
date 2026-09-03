@@ -706,6 +706,33 @@ runtime's suite stays with that runtime:
 
 ---
 
+## Docker Deployment
+
+StellarSearch includes a production-ready, multi-stage `Dockerfile` with non-root security and container healthchecking.
+
+### Build and Run with Docker
+
+```bash
+# Build production container image
+npm run docker:build
+# Or directly with Docker CLI:
+docker build -t stellar-search .
+
+# Run container with environment variables
+npm run docker:run
+# Or directly with Docker CLI:
+docker run -d --name stellar-search -p 3001:3001 --env-file .env stellar-search
+```
+
+### Container Specifications
+- **Multi-Stage Build**: Separates build tools (`node:20-alpine AS builder`) from the lightweight production runtime (`node:20-alpine AS runner`).
+- **Non-Root User**: Runs under the unprivileged `nodejs` user (`UID:GID 1001`) for enhanced security.
+- **Port**: Listens on port `3001` (configurable via `PORT` environment variable).
+- **Healthcheck**: Automated container healthcheck runs every 30s probing `http://localhost:${PORT}/health`.
+- **Signal Handling**: Listens for `SIGTERM` and `SIGINT` signals to gracefully drain in-flight connections before shutdown.
+
+---
+
 ## Internationalization (#345)
 
 English is the complete, always-available fallback locale, via [i18next](https://www.i18next.com) + `react-i18next`. Setup lives in `src/i18n/`:

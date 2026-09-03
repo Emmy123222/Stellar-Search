@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.git
+.github
+.husky
+.agents
+.gemini
+*.log
+.env
+.env.*
+.DS_Store
+.vite
+create_issues.py
