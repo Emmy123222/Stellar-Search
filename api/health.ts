@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { readServerConfig } from '../src/lib/config'
+import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
+  applyServerlessHeaders(res)
   const config = readServerConfig()
 
   res.json({
