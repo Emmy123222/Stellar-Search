@@ -73,6 +73,30 @@ const providerGate = new ConcurrencyGate(Number(process.env.PROVIDER_CONCURRENCY
 const PORT = config.port
 const RATE_LIMIT_PER_MINUTE = config.rateLimitPerMinute
 
+// ─── Trust proxy (per-deployment) ──────────────────────────────────────────
+// Behind Vercel, nginx, a load balancer, etc., req.ip reflects the nearest
+// proxy unless Express is told how many trusted hops sit in front of it.
+// Without this, express-rate-limit keys every client to the proxy's IP (so
+// distinct clients share one bucket) while untrusted X-Forwarded-For values
+// let a single client masquerade as many IPs.
+//
+// Values (TRUST_PROXY_HOPS):
+//   unset/0        → do NOT trust any proxy (Express default). Safe for direct,
+//                    single-process deployments.
+//   <n> e.g. 1     → trust exactly <n> hops. Set this to the number of reverse
+//                    proxies in front of the app (Vercel typically 1).
+//   true           → trust all proxies (only for opaque, controlled networks).
+function resolveTrustProxy(): boolean | number {
+  const raw = process.env.TRUST_PROXY_HOPS
+  if (raw === undefined || raw === '') return false
+  if (raw.toLowerCase() === 'true') return true
+  const hops = parseInt(raw, 10)
+  return Number.isFinite(hops) && hops > 0 ? hops : false
+}
+
+const TRUST_PROXY = resolveTrustProxy()
+app.set('trust proxy', TRUST_PROXY)
+
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: RATE_LIMIT_PER_MINUTE,

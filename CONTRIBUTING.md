@@ -1,8 +1,5 @@
 # Contributing to Stellar Search
 
-<<<<<<< HEAD
-Thanks for contributing to StellarSearch. This guide covers the local setup, the wallet and Stellar testnet requirements, and the conventions used for pull requests.
-=======
 Thank you for taking the time to contribute! StellarSearch is an open-source, pay-per-query web search API built on the Stellar blockchain using the x402 payment protocol. Every improvement — from a one-line typo fix to a full feature implementation — is welcome.
 
 This document covers everything you need to go from zero to a merged pull request.
@@ -64,7 +61,6 @@ Serper.dev  ──── real Google results ────►  Browser
 | `serper.dev` | Real-time Google search results |
 
 ---
->>>>>>> 7804e9c (feat(ci): generate CycloneDX SBOM and gate dependency vulnerabilities)
 
 ## Prerequisites
 
@@ -113,6 +109,57 @@ Install or prepare the following before you begin:
    ```
 
 6. Open [http://localhost:5173](http://localhost:5173) in your browser. The backend runs at [http://localhost:3001](http://localhost:3001). Check its health endpoint at [http://localhost:3001/health](http://localhost:3001/health).
+
+```bash
+# Required for x402 payment flow
+STELLAR_RECEIVING_ADDRESS=GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+STELLAR_NETWORK=stellar:testnet
+VITE_STELLAR_NETWORK=stellar:testnet
+FACILITATOR_URL=https://www.x402.org/facilitator
+
+# Server
+PORT=3001
+
+# Hops between clients and the backend (0 = no proxy, 1 = Vercel/nginx)
+TRUST_PROXY_HOPS=0
+
+# Frontend — points the React app at your local backend
+VITE_SERVER_URL=http://localhost:3001
+```
+
+> **Trusting proxies (Vercel / nginx / load balancers).** `express-rate-limit`
+> keys clients by `req.ip`. Behind a proxy, `req.ip` is the proxy's IP unless the
+> app is told how many hops to trust — otherwise distinct clients share one bucket
+> and, without validation, spoofed `X-Forwarded-For` headers could be honored.
+> Set `TRUST_PROXY_HOPS` explicitly per deployment:
+>
+> | Value | Behavior |
+> |---|---|
+> | unset / `0` | Trust no proxy (default). `req.ip` ignores `X-Forwarded-For` entirely — safe directly or in single-process setups. |
+> | `1`, `2`, … | Trust exactly that many hops (e.g. `1` for Vercel). Distinct real clients get separate rate-limit buckets. |
+> | `true` | Trust all proxies — only for opaque, fully-controlled networks. |
+>
+> This is wired in `server/index.ts` via `app.set('trust proxy', …)`.
+
+### 4. Set up Freighter (for payment flow work)
+
+1. Install [Freighter](https://freighter.app) browser extension.
+2. Create a new wallet (or import one).
+3. Switch to **Testnet**: Settings → Network → Testnet.
+4. Get a funded testnet account at [Stellar Lab](https://laboratory.stellar.org/#account-creator?network=test).
+5. Add the USDC trustline and claim testnet USDC from the faucet.
+
+> If you are **not** working on the wallet or payment flow, you can skip step 4 entirely — the frontend works without a wallet for most UI changes.
+
+### 5. Start the development servers
+
+```bash
+# Terminal 1 — Express backend (port 3001)
+npm run server
+
+# Terminal 2 — Vite frontend (port 5173)
+npm run dev
+```
 
 You can also start both processes together with:
 
@@ -194,9 +241,8 @@ Before requesting review:
 - Keep secrets, `.env` files, generated output, and unrelated changes out of the PR.
 - Confirm that the change works on Stellar Testnet when it touches wallet or payment behavior.
 
-<<<<<<< HEAD
 Please keep reviews constructive and update the PR when feedback is addressed.
-=======
+
 2. Open a PR against `main` on GitHub.
 
 3. Fill in the PR template:
@@ -427,6 +473,7 @@ node scripts/check-vulnerabilities.mjs osv-results.json  # enforce the gate
 | `global is not defined` | Stellar SDK needs `globalThis` polyfill | Already handled in `vite.config.ts` — do not remove the `define` block |
 | Buffer errors in browser | `buffer` package not aliased | `resolve.alias` in `vite.config.ts` handles this |
 | CORS errors in dev | Frontend calling server directly | Use the Vite proxy (`/search`, `/ai`, `/health` already proxied) |
+| All users share one rate-limit bucket / spoofed IPs bypass limits | `TRUST_PROXY_HOPS` not set behind Vercel/nginx | Set `TRUST_PROXY_HOPS=1` (or your proxy hop count); see *Trusting proxies* above |
 
 ### Stellar / Horizon
 
@@ -454,4 +501,3 @@ All contributors are welcome to add themselves to a `CONTRIBUTORS` list. When yo
 ---
 
 *StellarSearch — Stellar Hackathon 2026 · Agents on Stellar*
->>>>>>> 7804e9c (feat(ci): generate CycloneDX SBOM and gate dependency vulnerabilities)
