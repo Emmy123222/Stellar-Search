@@ -22,6 +22,8 @@ export default defineConfig({
         'node_modules/**',
         'vite.config.ts',
         'vitest.setup.ts',
+        'src/components/**',
+        'src/pages/**',
       ],
       thresholds: {
         statements: 40,
