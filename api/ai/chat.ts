@@ -23,28 +23,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const groqApiKey = readServerConfig().groqApiKey
   if (!groqApiKey) return res.status(503).json({ error: 'AI assistant is not configured.' })
   const groq = new Groq({ apiKey: groqApiKey })
+  const messages = body.messages as ChatMessage[]
+  const wantsStream = body.stream === true || (req.headers.accept || '').includes('text/event-stream')
 
-  try {
-    const stream = await streamChatCompletion(
-      groq,
-      {
-        messages: messages!,
-        model,
-      },
-      controller.signal
-    )
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices?.[0]?.delta?.content
-      if (delta) sendEvent('delta', { content: delta })
-    }
-    sendEvent('done', { model })
-    res.end()
-  } catch (err: any) {
-    if (controller.signal.aborted) return res.end()
-    console.error('[groq stream error]', err?.message)
-    const formatted = formatAiError(err)
-    sendEvent('error', { error: formatted.message })
-    res.end()
+  if (!wantsStream) {
+    try { return res.json(await executeChatCompletion(groq, { messages, model: body.model })) }
+    catch (error) { return res.status(500).json({ error: formatAiError(error).message }) }
   }
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  const controller = new AbortController()
+  if (typeof (req as { on?: Function }).on === 'function') (req as { on: Function }).on('close', () => controller.abort())
+  const send = (event: string, data: Record<string, unknown>) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  try {
+    const stream = await streamChatCompletion(groq, { messages, model: body.model }, controller.signal)
+    for await (const chunk of stream) {
+      const content = chunk.choices?.[0]?.delta?.content
+      if (content) send('delta', { content })
+    }
+    send('done', {})
+  } catch (error) {
+    if (!controller.signal.aborted) send('error', { error: formatAiError(error).message })
+  } finally { res.end() }
 }
