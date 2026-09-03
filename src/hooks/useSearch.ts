@@ -47,14 +47,20 @@ function loadPaymentDeps() {
 const SERVER_URL = (path: string) => resolveApiUrl(path)
 
 // Soroban RPC URLs
-const SOROBAN_RPC_TESTNET = 'https://soroban-testnet.stellar.org'
-const SOROBAN_RPC_MAINNET = 'https://soroban-rpc.mainnet.stellar.org' // Or another public RPC
-const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET
+const SOROBAN_RPC_TESTNET = "https://soroban-testnet.stellar.org";
+const SOROBAN_RPC_MAINNET = "https://soroban-rpc.mainnet.stellar.org"; // Or another public RPC
+const SOROBAN_RPC_URL = IS_MAINNET ? SOROBAN_RPC_MAINNET : SOROBAN_RPC_TESTNET;
 
 import type { SearchResult, SearchReceipt, SearchResponse, PaymentStep, SearchSession, SearchMode } from '../types'
 import { classifySearchError } from '../types'
 
-export type { SearchResult, SearchReceipt, PaymentStep, SearchSession }
+export type {
+  SearchResult,
+  SearchReceipt,
+  PaymentStep,
+  SearchSession,
+  SearchParamsOptions,
+};
 
 // Cross-tab / cross-event-race search mutex.
 //
@@ -125,8 +131,13 @@ function releaseSearchLock(id: string): void {
  */
 export function useSearch(walletAddress: string | null = null) {
   const [session, setSession] = useState<SearchSession>({
-    query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
-  })
+    query: "",
+    results: [],
+    txHash: null,
+    paidAmount: null,
+    status: "idle",
+    suggestions: [],
+  });
 
   // Synchronous same-tab guard. React state (`session.status`) updates are
   // batched/async, so a double Enter or double click can both pass the
@@ -153,14 +164,18 @@ export function useSearch(walletAddress: string | null = null) {
       }
       inFlightRef.current = true
 
-      let freshness = ''
-      let count = countOverride
+      let freshness = "";
+      let count = countOverride;
 
-      if (typeof freshnessOrCount === 'string') {
-        freshness = freshnessOrCount
-      } else if (typeof freshnessOrCount === 'number') {
-        count = freshnessOrCount
+      if (typeof freshnessOrCount === "string") {
+        freshness = freshnessOrCount;
+      } else if (typeof freshnessOrCount === "number") {
+        count = freshnessOrCount;
       }
+
+      const locale = localeOptions.locale || "en-US";
+      const country = localeOptions.country || "us";
+      const language = localeOptions.language || "en";
 
       setSession({
         query,
@@ -171,10 +186,10 @@ export function useSearch(walletAddress: string | null = null) {
         results: [],
         txHash: null,
         paidAmount: null,
-        status: 'searching',
+        status: "searching",
         step: 1,
         suggestions: [],
-      })
+      });
 
       const t0 = Date.now()
       const endpoint = mode === 'web' ? '/search' : mode === 'images' ? '/images' : '/news'
@@ -224,31 +239,14 @@ export function useSearch(walletAddress: string | null = null) {
         console.log('✅ Network verified:', net.network)
       }
 
-      // Step 2 — build the signer
-      const passphrase = IS_MAINNET ? Networks.PUBLIC : Networks.TESTNET
-      const signer = {
-        address: walletAddress,
-        signAuthEntry: async (
-          xdr: string,
-          opts?: { networkPassphrase?: string }
-        ): Promise<{ signedAuthEntry: string; signerAddress: string }> => {
-          console.log('🔑 Calling Freighter signAuthEntry...')
+      const advance = (step: PaymentStep) =>
+        setSession((prev: SearchSession) => ({ ...prev, step }));
 
-          const result = await signAuthEntry(xdr, {
-            networkPassphrase: opts?.networkPassphrase ?? passphrase,
-          })
+      try {
+        if (!walletAddress)
+          throw new Error("Connect your Freighter wallet first.");
 
-          if (result.error) throw new Error(result.error.message)
-          if (!result.signedAuthEntry) throw new Error('Freighter returned no signedAuthEntry')
-
-          console.log('✅ Freighter signed. Type:', typeof result.signedAuthEntry)
-
-          const raw = result.signedAuthEntry
-          const signedAuthEntry = typeof raw === 'string'
-            ? raw
-            : Buffer.from(raw as unknown as Uint8Array).toString('base64')
-
-          console.log('✅ signedAuthEntry base64 length:', signedAuthEntry.length)
+        console.log("🔍 Starting search with wallet:", walletAddress);
 
           return { signedAuthEntry, signerAddress: walletAddress }
         },
@@ -323,8 +321,45 @@ export function useSearch(walletAddress: string | null = null) {
         throw new Error(`Payment failed: server returned ${paidRes.status} — ${text}`)
       }
 
-      const data = (await paidRes.json()) as SearchResponse
-      console.log('✅ Search complete!')
+        // Flow step 2 — parse the PAYMENT-REQUIRED header
+        advance(2);
+        console.log("💰 402 received, parsing payment requirements...");
+        const paymentRequired = httpClient.getPaymentRequiredResponse((name) =>
+          firstRes.headers.get(name),
+        );
+        console.log("💰 Payment requirements:", paymentRequired);
+
+        // Flow step 3 — createPaymentPayload() triggers the Freighter popup (signs auth entry)
+        advance(3);
+        console.log(
+          "🔐 Triggering Freighter popup via createPaymentPayload...",
+        );
+        const paymentPayload =
+          await client.createPaymentPayload(paymentRequired);
+        console.log("✅ Freighter approved, payload created");
+
+        const paymentHeaders =
+          httpClient.encodePaymentSignatureHeader(paymentPayload);
+        console.log("✅ Payment headers encoded");
+
+        // Flow step 4 — retry with X-PAYMENT header
+        advance(4);
+        console.log("🔄 Retrying with payment...");
+        const paidResPromise = fetch(`${SERVER_URL}/search?${params}`, {
+          headers: paymentHeaders,
+        });
+
+        // Flow step 5 — facilitator settles on Stellar while the retry is in flight
+        advance(5);
+        const paidRes = await paidResPromise;
+        console.log("📡 Paid response status:", paidRes.status);
+
+        if (!paidRes.ok) {
+          const text = await paidRes.text();
+          throw new Error(
+            `Payment failed: server returned ${paidRes.status} — ${text}`,
+          );
+        }
 
       const validTxHash = isValidTxHash(data.txHash) ? data.txHash : null
 
@@ -389,14 +424,16 @@ export function useSearch(walletAddress: string | null = null) {
             network: data.network || STELLAR_NETWORK || 'stellar:testnet',
             status: 'unverified',
           }
-
-          // Keep only last 50 receipts
-          const updated = [newReceipt, ...receipts].slice(0, 50)
-          localStorage.setItem('stellarsearch_receipts', JSON.stringify(updated))
-          console.log('📄 Receipt persisted')
-        } catch (e) {
-          console.warn('Failed to persist receipt:', e)
         }
+      } catch (err: any) {
+        console.error("❌ Search failed:", err);
+        const msg = err.message || "Search failed.";
+        toast.error("Search Payment Failed", { description: msg });
+        setSession((prev: SearchSession) => ({
+          ...prev,
+          status: "error",
+          error: msg,
+        }));
       }
 
     } catch (err: any) {

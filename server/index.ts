@@ -697,6 +697,9 @@ app.get('/search', async (req: Request, res: Response) => {
       currency: "USDC",
       txHash,
       latencyMs,
+      locale: normalizedLocale,
+      country: normalizedCountry,
+      language: normalizedLanguage,
       suggestions,
     };
 
@@ -1157,9 +1160,17 @@ app.post("/search/batch", async (req: Request, res: Response) => {
         failed++
         continue
       }
-      const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: err.message || 'Search failed', code: 'SEARCH_FAILED' }
-      writeEvent(evt)
-      failed++
+      const evt: BatchJsonlErrorEvent = {
+        v: 1,
+        type: "error",
+        requestId,
+        index: i,
+        query: q,
+        error: err.message || "Search failed",
+        code: "SEARCH_FAILED",
+      };
+      writeEvent(evt);
+      failed++;
     }
   }
 

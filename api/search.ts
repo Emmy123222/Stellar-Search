@@ -88,6 +88,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const normalizedFreshness = freshnessValidation.value;
 
+  const localeResult = validateLocalization({ locale, country, language });
+  if (!localeResult.ok) {
+    const errorBody: ApiErrorResponse = { error: localeResult.error };
+    return res.status(400).json(errorBody);
+  }
+  const {
+    locale: normalizedLocale,
+    country: normalizedCountry,
+    language: normalizedLanguage,
+  } = localeResult.values;
+
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
     req.headers["payment-signature"] ||

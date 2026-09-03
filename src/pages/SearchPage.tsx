@@ -70,7 +70,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
       <StatsGrid />
 
       <AnimatePresence>
-        {session.status === 'idle' && (
+        {session.status === "idle" && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -80,14 +80,18 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
             <motion.div
               className="relative w-20 h-20 mx-auto mb-5"
               animate={{ rotate: [0, 360] }}
-              transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
             >
               <div className="absolute inset-0 rounded-full border border-neon-cyan/20" />
               <div className="absolute inset-2 rounded-full border border-neon-cyan/40" />
               <div className="absolute inset-0 flex items-center justify-center">
                 <div
                   className="w-8 h-8 rounded-full flex items-center justify-center"
-                  style={{ background: 'rgba(0,245,255,0.15)', border: '1px solid rgba(0,245,255,0.5)', boxShadow: '0 0 10px rgba(0,245,255,0.3)' }}
+                  style={{
+                    background: "rgba(0,245,255,0.15)",
+                    border: "1px solid rgba(0,245,255,0.5)",
+                    boxShadow: "0 0 10px rgba(0,245,255,0.3)",
+                  }}
                 >
                   <Search className="w-4 h-4 text-neon-cyan" />
                 </div>
@@ -96,16 +100,29 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
             <h1 className="font-display text-4xl sm:text-5xl text-white leading-tight">
               SEARCH
-              <span className="text-neon-cyan" style={{ textShadow: '0 0 20px rgba(0,245,255,0.8)' }}>.</span>
+              <span
+                className="text-neon-cyan"
+                style={{ textShadow: "0 0 20px rgba(0,245,255,0.8)" }}
+              >
+                .
+              </span>
               PAY
-              <span className="text-neon-cyan" style={{ textShadow: '0 0 20px rgba(0,245,255,0.8)' }}>.</span>
+              <span
+                className="text-neon-cyan"
+                style={{ textShadow: "0 0 20px rgba(0,245,255,0.8)" }}
+              >
+                .
+              </span>
               GET
             </h1>
 
             <p className="text-white/45 text-lg max-w-md mx-auto leading-relaxed">
-              Real web search for AI agents.{' '}
-              <span className="text-neon-cyan font-medium">{AMOUNT_USDC} USDC</span> per query settled on Stellar via x402.
-              Powered by <span className="text-neon-amber font-medium">Serper.dev</span> +{' '}
+              Real web search for AI agents.{" "}
+              <span className="text-neon-cyan font-medium">
+                {AMOUNT_USDC} USDC
+              </span>{" "}
+              per query settled on Stellar via x402. Powered by{" "}
+              <span className="text-neon-amber font-medium">Serper.dev</span> +{" "}
               <span className="text-neon-green font-medium">Groq AI</span>.
             </p>
 
@@ -115,7 +132,11 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-display text-sm tracking-wider text-neon-cyan"
-                style={{ border: '1px solid rgba(0,245,255,0.4)', background: 'rgba(0,245,255,0.08)', boxShadow: '0 0 20px rgba(0,245,255,0.15)' }}
+                style={{
+                  border: "1px solid rgba(0,245,255,0.4)",
+                  background: "rgba(0,245,255,0.08)",
+                  boxShadow: "0 0 20px rgba(0,245,255,0.15)",
+                }}
               >
                 <Zap className="w-4 h-4" />
                 {t('connectCta')}
@@ -237,5 +258,5 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         )}
       </AnimatePresence>
     </div>
-  )
+  );
 }
