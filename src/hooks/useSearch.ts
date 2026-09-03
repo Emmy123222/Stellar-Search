@@ -451,7 +451,7 @@ export function useSearch(walletAddress: string | null = null) {
         suggestions: mode === 'web' ? '1' : '0',
       })
       if (freshness) {
-        params.set('freshness', freshness)
+        params.set("freshness", freshness);
       }
 
     const advance = (step: PaymentStep) =>
@@ -539,13 +539,15 @@ export function useSearch(walletAddress: string | null = null) {
         })
       }
 
-      // Flow step 2 — parse the PAYMENT-REQUIRED header
-      advance(2)
-      console.log('💰 402 received, parsing payment requirements...')
-      const paymentRequired = httpClient.getPaymentRequiredResponse(
-        (name) => firstRes.headers.get(name)
-      )
-      console.log('💰 Payment requirements:', paymentRequired)
+        // Step 1 — verify Freighter is on correct network
+        const net = await getNetworkDetails();
+        if (net.error) throw new Error(net.error.message);
+        if (net.network !== EXPECTED_WALLET_NETWORK) {
+          throw new Error(
+            `Switch Freighter to ${EXPECTED_WALLET_NETWORK}. Currently: ${net.network}`,
+          );
+        }
+        console.log("✅ Network verified:", net.network);
 
       // Preflight — verify account, expected network (checked above), USDC trustline,
       // spendable amount, and signer availability before triggering the Freighter signing popup.
@@ -561,8 +563,9 @@ export function useSearch(walletAddress: string | null = null) {
       const paymentPayload = await client.createPaymentPayload(paymentRequired)
       console.log('✅ Freighter approved, payload created')
 
-      const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload)
-      console.log('✅ Payment headers encoded')
+            const result = await signAuthEntry(xdr, {
+              networkPassphrase: opts?.networkPassphrase ?? passphrase,
+            });
 
       // Flow step 4 — retry with X-PAYMENT header
       advance(4)
@@ -571,15 +574,59 @@ export function useSearch(walletAddress: string | null = null) {
         headers: paymentHeaders,
       })
 
-      // Flow step 5 — facilitator settles on Stellar while the retry is in flight
-      advance(5)
-      const paidRes = await paidResPromise
-      console.log('📡 Paid response status:', paidRes.status)
+            console.log(
+              "✅ Freighter signed. Type:",
+              typeof result.signedAuthEntry,
+            );
 
-      if (!paidRes.ok) {
-        const text = await paidRes.text()
-        throw new Error(`Payment failed: server returned ${paidRes.status} — ${text}`)
-      }
+            const raw = result.signedAuthEntry;
+            const signedAuthEntry =
+              typeof raw === "string"
+                ? raw
+                : Buffer.from(raw as unknown as Uint8Array).toString("base64");
+
+            console.log(
+              "✅ signedAuthEntry base64 length:",
+              signedAuthEntry.length,
+            );
+
+            return { signedAuthEntry, signerAddress: walletAddress };
+          },
+        };
+
+        // Step 3 — build the x402 client with correct .register() chain
+        const client = new x402Client().register(
+          "stellar:*",
+          new ExactStellarScheme(signer, { url: SOROBAN_RPC_URL }),
+        );
+        const httpClient = new x402HTTPClient(client);
+        console.log("✅ x402 client built");
+
+        // Flow step 1 — initial request, expect 402
+        advance(1);
+        console.log("🚀 Initial request:", `${SERVER_URL}/search?${params}`);
+        const firstRes = await fetch(`${SERVER_URL}/search?${params}`, {
+          headers: {
+            "X-Idempotency-Key": idempotencyKey,
+            "x-wallet-address": walletAddress,
+          },
+        });
+        console.log("📡 Status:", firstRes.status);
+
+        if (firstRes.status !== 402) {
+          if (!firstRes.ok) throw new Error(`Server error ${firstRes.status}`);
+          const data = await firstRes.json();
+          return setSession({
+            query,
+            results: data.results ?? [],
+            txHash: null,
+            paidAmount: null,
+            status: "complete",
+            step: 6,
+            durationMs: Date.now() - t0,
+            suggestions: data.suggestions ?? [],
+          });
+        }
 
         // Flow step 2 — parse the PAYMENT-REQUIRED header
         advance(2);

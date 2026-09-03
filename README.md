@@ -170,6 +170,9 @@ To guarantee that each payment identifier authorizes **exactly one provider call
 
 - **Payload Invalidation:** Extracts transaction hashes (or SHA-256 fallback hashes of payment headers) and invalidates consumed payloads for a 300-second window.
 - **Concurrency Throttling:** Rapid parallel requests using identical payment payloads are throttled so only one search query proceeds; concurrent duplicates immediately receive HTTP 402 (`Payment payload already consumed`).
+- **Idempotency Keys:** Clients can send `Idempotency-Key` or `X-Idempotency-Key` together with a payer identifier and request params. Repeated in-flight or completed requests for the same logical search return the original response instead of triggering a second settlement.
+
+Requests bound to the same payer and query parameters must reuse the same idempotency key. The server hashes the route, payer, supplied key, and normalized params to generate a stable idempotent entry, preserving x402 settlement semantics while preventing duplicate charges from browser or proxy retries.
 
 ### Serper circuit breaker (#120)
 
