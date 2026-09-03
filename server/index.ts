@@ -13,13 +13,10 @@
  *   groq-sdk       — Groq AI (Llama 3)
  */
 
-import crypto from 'crypto'
 import express, { Request, Response } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import helmet from 'helmet'
-import path from 'path'
-import fs from 'fs'
 import rateLimit from 'express-rate-limit'
 import { buildCorsOptions, getCorsStartupMessage } from './corsConfig.js'
 import Groq from 'groq-sdk'
@@ -32,19 +29,17 @@ import {
   STELLAR_NETWORK,
   AMOUNT_USDC,
   AMOUNT_STROOPS,
-  USDC_CONTRACT,
   USDC_CONTRACT
 } from '../src/lib/constants'
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
 import { fetchSerper, CircuitOpenError, getSerperBreakerState } from '../src/lib/serperClient.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
-import { validateQuery } from '../src/lib/queryValidator.js'
 import {
   normalizeOrganicResults,
   normalizeImageResults,
   normalizeNewsResults,
+  normalizeQueryMetadata,
 } from '../src/lib/serperNormalizer.js'
-import { validateQuery, MAX_QUERY_LENGTH } from '../src/lib/validateQuery.js'
 import type {
   SearchResponse,
   ImageSearchResponse,
@@ -58,13 +53,21 @@ import type {
   BatchJsonlDoneEvent,
   SearchJob,
   JobStatus,
-  PricingInfo,
 } from '../src/types/index.js'
 import { buildReconciliationRecord, type ReconciliationRoute } from '../src/lib/reconciliation.js'
 import { appendReconciliationRecord } from './reconciliationStore.js'
 import { ConcurrencyGate } from './concurrency.js'
+import { getReadiness } from './readiness.js'
 
-dotenv.config();
+dotenv.config()
+
+let config
+try {
+  config = readServerConfig()
+} catch (error) {
+  console.error(formatConfigurationError(error))
+  throw error
+}
 
 const app  = express()
 const providerGate = new ConcurrencyGate(Number(process.env.PROVIDER_CONCURRENCY_LIMIT ?? 16))
@@ -95,43 +98,16 @@ function resolveTrustProxy(): boolean | number {
 const TRUST_PROXY = resolveTrustProxy()
 app.set('trust proxy', TRUST_PROXY)
 
-// ─── Method handling helpers ─────────────────────────────────────────────
-// Centralises OPTIONS preflight and 405 responses so every Express endpoint
-// advertises the correct Allow header and returns a consistent error body.
-// These keep Express, Vercel, browser, and MCP behaviour aligned.
-
-/** Build a comma-separated Allow header from a list of methods. */
-function allowHeader(...methods: string[]): string {
-  return [...new Set(['OPTIONS', ...methods])].join(', ')
-}
-
-/** Respond with 405 + Allow header + common error body. */
-function methodNotAllowed(res: Response, allow: string): void {
-  res.setHeader('Allow', allow)
-  res.status(405).json({ error: 'Method not allowed' })
-}
-
-// Separate rate limit budgets for each route type
-const RATE_LIMIT_PAID_PER_MINUTE = parseInt(process.env.RATE_LIMIT_PAID_PER_MINUTE || '30', 10)
-const RATE_LIMIT_AI_PER_MINUTE = parseInt(process.env.RATE_LIMIT_AI_PER_MINUTE || '60', 10)
-const RATE_LIMIT_HEALTH_PER_MINUTE = parseInt(process.env.RATE_LIMIT_HEALTH_PER_MINUTE || '1000', 10)
-
-// Rate limiter for paid search routes (/search, /images, /news)
-const paidSearchLimiter = rateLimit({
+const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: RATE_LIMIT_PAID_PER_MINUTE,
+  max: RATE_LIMIT_PER_MINUTE,
   standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req: Request) => {
-    return req.ip || 'unknown'
-  },
+  legacyHeaders: true,
   handler: (_req: Request, res: Response) => {
-    res.setHeader("Retry-After", "60");
-    res
-      .status(429)
-      .json({ error: "Too many requests, please try again later." });
+    res.setHeader('Retry-After', '60')
+    res.status(429).json({ error: 'Too many requests, please try again later.' })
   },
-});
+})
 
 // ─── Security Headers & Middleware ────────────────────────────────────────
 app.use(async (_req, res, next) => {
@@ -153,19 +129,19 @@ app.use(
         defaultSrc: ["'self'"],
         connectSrc: [
           "'self'",
-          "https://horizon-testnet.stellar.org",
-          "https://horizon.stellar.org",
-          "https://soroban-testnet.stellar.org",
-          "https://soroban-rpc.mainnet.stellar.org",
-          "https://google.serper.dev",
-          "https://www.x402.org",
-          "https://channels.openzeppelin.com",
-          "http://localhost:*",
-          "ws://localhost:*",
+          'https://horizon-testnet.stellar.org',
+          'https://horizon.stellar.org',
+          'https://soroban-testnet.stellar.org',
+          'https://soroban-rpc.mainnet.stellar.org',
+          'https://google.serper.dev',
+          'https://www.x402.org',
+          'https://channels.openzeppelin.com',
+          'http://localhost:*',
+          'ws://localhost:*',
         ],
         scriptSrc: ["'self'", "'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https:"],
+        imgSrc: ["'self'", 'data:', 'https:'],
       },
     },
     crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -174,12 +150,6 @@ app.use(
 app.use(cors(buildCorsOptions()))
 app.use(express.json())
 app.use(limiter)
-app.use((req: Request, res: Response, next: express.NextFunction) => {
-  const requestId = (req.get('x-request-id') as string | undefined) || crypto.randomUUID()
-  ;(req as Request & { id?: string }).id = requestId
-  res.setHeader('X-Request-Id', requestId)
-  next()
-})
 
 // Machine-readable x402 service discovery. Keep this before payment middleware:
 // discovery is public, while the resource templates it advertises are paid.
@@ -188,199 +158,105 @@ app.get('/.well-known/x402', (req: Request, res: Response) => {
   return res.json(getX402DiscoveryMetadata({ origin: requestOrigin(req) }))
 })
 
-// ─── Feature Flag Validation ─────────────────────────────────────────────
-// Get server-side feature flags
-const featureFlags = getServerFeatureFlags()
-
-// Log feature flag configuration at startup
-console.log('🚀 Feature Flags Configuration:')
-console.log(`   Payment: ${featureFlags.paymentEnabled ? '✅' : '❌'}`)
-console.log(`   AI: ${featureFlags.aiEnabled ? '✅' : '❌'}`)
-console.log(`   Search Modes: ${featureFlags.searchModeEnabled ? '✅' : '❌'}`)
-console.log(`   Integrations: ${featureFlags.integrationEnabled ? '✅' : '❌'}`)
-
-// Middleware to validate feature flags for specific routes
-const validateFeatureFlag = (feature: keyof typeof featureFlags) => {
-  return (req: Request, res: Response, next: Function) => {
-    if (!featureFlags[feature]) {
-      const featureName = feature.replace('Enabled', '').toLowerCase()
-      return res.status(404).json({
-        error: `Feature "${featureName}" is disabled`,
-        message: 'This feature has been disabled via feature flags',
-        feature: featureName,
-      })
-    }
-    next()
-  }
-}
-
-// ─── Metrics Middleware ─────────────────────────────────────────────────────
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const t0 = Date.now()
-  metrics.setInFlight(1)
-
-  res.on('finish', () => {
-    const duration = Date.now() - t0
-    const route = req.route?.path || req.path
-    let errorType: string | undefined
-    if (res.statusCode >= 500) errorType = 'internal_error'
-    else if (res.statusCode === 400) errorType = 'validation'
-    else if (res.statusCode === 402) errorType = 'payment_error'
-    metrics.recordRequest(route, req.method, res.statusCode, duration, errorType)
-    metrics.setInFlight(-1)
-  })
-
-  next()
-})
-
 // ─── In-memory stats ──────────────────────────────────────────────────────
-// Latencies are now tracked via bounded metrics (circular buffers) in server/metrics.ts
-// to avoid unbounded in-memory arrays and to expose p50/p95/p99 per phase.
 const stats = {
   totalQueries: 0,
   totalUsdcSettled: 0,
+  latencies: [] as number[],
   startTime: Date.now(),
-};
-
-// ─── Batch idempotency & async job stores (issues #324, #325) ────────────
-export const MAX_BATCH_SIZE = 10;
-export const MAX_BATCH_TOTAL_USDC = 0.01;
-export const MAX_JOB_WEBHOOK_ATTEMPTS = 5;
-export const WEBHOOK_RETRY_BASE_MS = 1000;
-
-// Batch idempotency cache: key -> { expiresAt, resultSummary }
-export const batchIdempotencyStore = new Map<
-  string,
-  { expiresAt: number; requestId: string }
->();
-// Job store: jobId -> SearchJob
-export const jobStore = new Map<string, SearchJob>();
-// Job idempotency: key -> jobId
-export const jobIdempotencyStore = new Map<
-  string,
-  { jobId: string; expiresAt: number }
->();
-// Recent receipts for MCP resources (opted-in, in-memory capped at 50)
-export const recentReceipts: Array<{
-  id: string;
-  query: string;
-  txHash: string | null;
-  amount: string;
-  currency: string;
-  network: string;
-  timestamp: string;
-  latencyMs: number;
-  count: number;
-}> = [];
-
-export function resetBatchJobStores(): void {
-  batchIdempotencyStore.clear();
-  jobStore.clear();
-  jobIdempotencyStore.clear();
-  recentReceipts.length = 0;
 }
 
-export function addRecentReceipt(
-  receipt: (typeof recentReceipts)[number],
-): void {
-  recentReceipts.unshift(receipt);
-  if (recentReceipts.length > 50) recentReceipts.pop();
+// ─── Batch idempotency & async job stores (issues #324, #325) ────────────
+export const MAX_BATCH_SIZE = 10
+export const MAX_BATCH_TOTAL_USDC = 0.01
+export const MAX_JOB_WEBHOOK_ATTEMPTS = 5
+export const WEBHOOK_RETRY_BASE_MS = 1000
+
+// Batch idempotency cache: key -> { expiresAt, resultSummary }
+export const batchIdempotencyStore = new Map<string, { expiresAt: number; requestId: string }>()
+// Job store: jobId -> SearchJob
+export const jobStore = new Map<string, SearchJob>()
+// Job idempotency: key -> jobId
+export const jobIdempotencyStore = new Map<string, { jobId: string; expiresAt: number }>()
+// Recent receipts for MCP resources (opted-in, in-memory capped at 50)
+export const recentReceipts: Array<{ id: string; query: string; txHash: string | null; amount: string; currency: string; network: string; timestamp: string; latencyMs: number; count: number }> = []
+
+export function resetBatchJobStores(): void {
+  batchIdempotencyStore.clear()
+  jobStore.clear()
+  jobIdempotencyStore.clear()
+  recentReceipts.length = 0
+}
+
+export function addRecentReceipt(receipt: typeof recentReceipts[number]): void {
+  recentReceipts.unshift(receipt)
+  if (recentReceipts.length > 50) recentReceipts.pop()
 }
 
 function cleanupBatchIdempotency(now = Date.now()): void {
-  for (const [k, v] of batchIdempotencyStore.entries())
-    if (v.expiresAt <= now) batchIdempotencyStore.delete(k);
-  for (const [k, v] of jobIdempotencyStore.entries())
-    if (v.expiresAt <= now) jobIdempotencyStore.delete(k);
+  for (const [k, v] of batchIdempotencyStore.entries()) if (v.expiresAt <= now) batchIdempotencyStore.delete(k)
+  for (const [k, v] of jobIdempotencyStore.entries()) if (v.expiresAt <= now) jobIdempotencyStore.delete(k)
 }
 
 // ─── Webhook SSRF protection & signing (issue #324) ─────────────────────
-const BLOCKED_HOSTNAMES = new Set([
-  "localhost",
-  "127.0.0.1",
-  "0.0.0.0",
-  "::1",
-  "[::1]",
-]);
+const BLOCKED_HOSTNAMES = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]'])
 
 export function isPrivateIp(hostname: string): boolean {
-  if (BLOCKED_HOSTNAMES.has(hostname.toLowerCase())) return true;
+  if (BLOCKED_HOSTNAMES.has(hostname.toLowerCase())) return true
   // 10.0.0.0/8
-  if (/^10\.\d+\.\d+\.\d+$/.test(hostname)) return true;
+  if (/^10\.\d+\.\d+\.\d+$/.test(hostname)) return true
   // 192.168.0.0/16
-  if (/^192\.168\.\d+\.\d+$/.test(hostname)) return true;
+  if (/^192\.168\.\d+\.\d+$/.test(hostname)) return true
   // 172.16.0.0/12
-  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(hostname)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(hostname)) return true
   // 169.254.0.0/16 link-local
-  if (/^169\.254\.\d+\.\d+$/.test(hostname)) return true;
+  if (/^169\.254\.\d+\.\d+$/.test(hostname)) return true
   // fc00::/7 private, fe80::/10 link-local
-  if (
-    hostname.includes(":") &&
-    (/^fc/i.test(hostname) || /^fd/i.test(hostname) || /^fe80/i.test(hostname))
-  )
-    return true;
-  return false;
+  if (hostname.includes(':') && (/^fc/i.test(hostname) || /^fd/i.test(hostname) || /^fe80/i.test(hostname))) return true
+  return false
 }
 
-export function validateWebhookUrl(
-  urlStr: string,
-): { ok: true } | { ok: false; error: string } {
-  let parsed: URL;
+export function validateWebhookUrl(urlStr: string): { ok: true } | { ok: false; error: string } {
+  let parsed: URL
   try {
-    parsed = new URL(urlStr);
+    parsed = new URL(urlStr)
   } catch {
-    return { ok: false, error: "Invalid webhook URL" };
+    return { ok: false, error: 'Invalid webhook URL' }
   }
-  if (parsed.protocol !== "https:") {
-    return { ok: false, error: "Webhook URL must be https" };
+  if (parsed.protocol !== 'https:') {
+    return { ok: false, error: 'Webhook URL must be https' }
   }
   if (isPrivateIp(parsed.hostname)) {
-    return {
-      ok: false,
-      error: "Webhook URL points to private or blocked host (SSRF protection)",
-    };
+    return { ok: false, error: 'Webhook URL points to private or blocked host (SSRF protection)' }
   }
-  if (parsed.username || parsed.password)
-    return { ok: false, error: "Webhook URL must not contain credentials" };
-  return { ok: true };
+  if (parsed.username || parsed.password) return { ok: false, error: 'Webhook URL must not contain credentials' }
+  return { ok: true }
 }
 
 export function signWebhookPayload(payload: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(payload).digest("hex");
+  return crypto.createHmac('sha256', secret).update(payload).digest('hex')
 }
 
-export function verifyWebhookSignature(
-  payload: string,
-  signature: string,
-  secret: string,
-  maxAgeMs = 5 * 60 * 1000,
-  timestampHeader?: string,
-): boolean {
-  const expected = signWebhookPayload(payload, secret);
+export function verifyWebhookSignature(payload: string, signature: string, secret: string, maxAgeMs = 5 * 60 * 1000, timestampHeader?: string): boolean {
+  const expected = signWebhookPayload(payload, secret)
   // timing-safe compare
-  if (expected.length !== signature.length) return false;
+  if (expected.length !== signature.length) return false
   try {
-    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature)))
-      return false;
-  } catch {
-    return false;
-  }
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return false
+  } catch { return false }
   if (timestampHeader) {
-    const ts = parseInt(timestampHeader, 10);
-    if (!Number.isFinite(ts)) return false;
-    const age = Date.now() - ts;
-    if (age < 0 || age > maxAgeMs) return false;
+    const ts = parseInt(timestampHeader, 10)
+    if (!Number.isFinite(ts)) return false
+    const age = Date.now() - ts
+    if (age < 0 || age > maxAgeMs) return false
   }
-  return true;
+  return true
 }
 
-async function deliverWebhookWithRetry(
-  job: SearchJob,
-  maxAttempts = MAX_JOB_WEBHOOK_ATTEMPTS,
-): Promise<void> {
-  if (!job.webhookUrl || !job.webhookSecret) return;
+async function deliverWebhookWithRetry(job: SearchJob, maxAttempts = MAX_JOB_WEBHOOK_ATTEMPTS): Promise<void> {
+  if (!job.webhookUrl || !job.webhookSecret) return
   const payloadObj = {
-    event: "job.completed",
+    event: 'job.completed',
     jobId: job.id,
     status: job.status,
     query: job.query,
@@ -390,301 +266,150 @@ async function deliverWebhookWithRetry(
     paymentVerified: job.verified,
     timestamp: new Date().toISOString(),
     nonce: crypto.randomUUID(),
-  };
-  const payload = JSON.stringify(payloadObj);
-  const timestamp = String(Date.now());
-  const signature = signWebhookPayload(
-    `${timestamp}.${payload}`,
-    job.webhookSecret,
-  );
+  }
+  const payload = JSON.stringify(payloadObj)
+  const timestamp = String(Date.now())
+  const signature = signWebhookPayload(`${timestamp}.${payload}`, job.webhookSecret)
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 5000)
       const res = await fetch(job.webhookUrl, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
-          "X-Webhook-Signature": signature,
-          "X-Webhook-Timestamp": timestamp,
-          "X-Webhook-Attempt": String(attempt),
-          "X-Job-Id": job.id,
-          "User-Agent": "StellarSearch-Webhook/1.0",
+          'Content-Type': 'application/json',
+          'X-Webhook-Signature': signature,
+          'X-Webhook-Timestamp': timestamp,
+          'X-Webhook-Attempt': String(attempt),
+          'X-Job-Id': job.id,
+          'User-Agent': 'StellarSearch-Webhook/1.0',
         },
         body: payload,
         signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      if (res.ok) return;
+      })
+      clearTimeout(timeout)
+      if (res.ok) return
       // 4xx except 429 should not retry
       if (res.status >= 400 && res.status < 500 && res.status !== 429) {
-        console.warn(`[webhook] non-retryable ${res.status} for job ${job.id}`);
-        return;
+        console.warn(`[webhook] non-retryable ${res.status} for job ${job.id}`)
+        return
       }
     } catch (err: any) {
-      console.warn(
-        `[webhook] attempt ${attempt} failed for job ${job.id}: ${err.message}`,
-      );
+      console.warn(`[webhook] attempt ${attempt} failed for job ${job.id}: ${err.message}`)
     }
     if (attempt < maxAttempts) {
-      const backoff =
-        WEBHOOK_RETRY_BASE_MS * Math.pow(2, attempt - 1) +
-        Math.floor(Math.random() * 200);
-      await new Promise((r) => setTimeout(r, backoff));
+      const backoff = WEBHOOK_RETRY_BASE_MS * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200)
+      await new Promise((r) => setTimeout(r, backoff))
     }
   }
-  console.error(`[webhook] exhausted retries for job ${job.id}`);
+  console.error(`[webhook] exhausted retries for job ${job.id}`)
 }
 
-// ─── Search result cache (issue #21) ─────────────────────────────────────
-const searchCache = new LRUCache<string, unknown>({ max: 100, ttl: 60_000 })
-
 // ─── Config ───────────────────────────────────────────────────────────────
-const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS ?? ''
-const FACILITATOR_URL   = process.env.FACILITATOR_URL   || 'https://www.x402.org/facilitator'
-const NETWORK           = (process.env.STELLAR_NETWORK ?? STELLAR_NETWORK) as 'stellar:testnet' | 'stellar:mainnet'
-const SERPER_API_KEY    = process.env.SERPER_API_KEY!
-const GROQ_API_KEY      = process.env.GROQ_API_KEY!
-
-assertValidStellarConfig({
-  STELLAR_NETWORK: NETWORK,
-  STELLAR_RECEIVING_ADDRESS: RECEIVING_ADDRESS,
-})
-
-if (!SERPER_API_KEY)    console.warn('⚠  SERPER_API_KEY not set')
-if (!GROQ_API_KEY)      console.warn('⚠  GROQ_API_KEY not set')
+const RECEIVING_ADDRESS = config.receivingAddress
+const FACILITATOR_URL   = config.facilitatorUrl
+const NETWORK           = config.stellarNetwork
+const SERPER_API_KEY    = config.serperApiKey
+const GROQ_API_KEY      = config.groqApiKey
+const AMOUNT_USDC       = config.amountUsdc
+const AMOUNT_STROOPS    = config.amountStroops
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
-const groq = new Groq({ apiKey: GROQ_API_KEY })
+const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
 
 // ─── x402 payment guard on /search ───────────────────────────────────────
 // paymentMiddlewareFromConfig is the recommended API per official Stellar docs.
 // It uses the Coinbase public facilitator (no API key needed for testnet).
-const x402Accepts = [
-  {
-    scheme: "exact",
-    price: parseFloat(AMOUNT_USDC),
-    amount: AMOUNT_STROOPS,
-    network: NETWORK,
-    payTo: RECEIVING_ADDRESS,
-  },
-];
+const x402Accepts = [{
+  scheme:  'exact',
+  price:   parseFloat(AMOUNT_USDC),
+  amount:  AMOUNT_STROOPS,
+  network: NETWORK,
+  payTo:   RECEIVING_ADDRESS,
+}]
 
 const x402Routes = {
-  "GET /search": {
+  'GET /search': {
     accepts: x402Accepts,
     description: `StellarSearch: pay-per-query web search — ${AMOUNT_USDC} USDC on Stellar`,
   },
-  "GET /images": {
+  'GET /images': {
     accepts: x402Accepts,
     description: `StellarSearch: pay-per-query image search — ${AMOUNT_USDC} USDC on Stellar`,
   },
-  "GET /news": {
+  'GET /news': {
     accepts: x402Accepts,
     description: `StellarSearch: pay-per-query news search — ${AMOUNT_USDC} USDC on Stellar`,
   },
-  "POST /search/batch": {
-    accepts: [
-      {
-        scheme: "exact",
-        price: parseFloat(AMOUNT_USDC) * MAX_BATCH_SIZE,
-        amount: String(parseInt(AMOUNT_STROOPS) * MAX_BATCH_SIZE),
-        network: NETWORK,
-        payTo: RECEIVING_ADDRESS,
-      },
-    ],
+  'POST /search/batch': {
+    accepts: [{
+      scheme: 'exact',
+      price: parseFloat(AMOUNT_USDC) * MAX_BATCH_SIZE,
+      amount: String(parseInt(AMOUNT_STROOPS) * MAX_BATCH_SIZE),
+      network: NETWORK,
+      payTo: RECEIVING_ADDRESS,
+    }],
     description: `StellarSearch: batch web search (up to ${MAX_BATCH_SIZE}) — ${AMOUNT_USDC} USDC per query on Stellar, JSONL streaming`,
   },
-  "POST /jobs": {
+  'POST /jobs': {
     accepts: x402Accepts,
     description: `StellarSearch: async paid search job — ${AMOUNT_USDC} USDC on Stellar, webhook callback`,
   },
-};
-
-const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR_URL });
-const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }];
-
-// ─── Facilitator Compatibility Startup Validation ─────────────────────────
-const initialFacilitatorValidation = validateFacilitatorConfig({
-  facilitatorUrl: FACILITATOR_URL,
-  network: NETWORK,
-  scheme: 'exact',
-  asset: USDC_CONTRACT,
-})
-
-if (!initialFacilitatorValidation.valid) {
-  console.error('\n❌ Facilitator configuration is incompatible with selected Stellar network:')
-  initialFacilitatorValidation.errors.forEach(err => console.error(`   - ${err}`))
-} else {
-  console.log(`\n✓ Facilitator compatibility verified: ${FACILITATOR_URL} on ${NETWORK} (scheme: exact)`)
 }
 
-// ─── Facilitator Readiness Middleware for Paid Routes ─────────────────────
-const paidRoutePaths = ['/search', '/api/search', '/images', '/api/images', '/news', '/api/news']
+const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR_URL })
+const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }]
 
-app.use((req, res, next) => {
-  if (paidRoutePaths.includes(req.path)) {
-    const currentValidation = validateFacilitatorConfig({
-      facilitatorUrl: process.env.FACILITATOR_URL || FACILITATOR_URL,
-      network: process.env.STELLAR_NETWORK || NETWORK,
-      scheme: 'exact',
-      asset: ((process.env.STELLAR_NETWORK || NETWORK) === 'stellar:mainnet')
-        ? USDC_CONTRACT_MAINNET
-        : USDC_CONTRACT_TESTNET,
-    })
-
-    if (!currentValidation.valid) {
-      return res.status(503).json({
-        error: 'Payment facilitator configuration is incompatible with the selected Stellar network',
-        code: 'FACILITATOR_NETWORK_INCOMPATIBLE',
-        details: currentValidation.errors,
-        action: 'Ensure FACILITATOR_URL matches STELLAR_NETWORK (e.g. use testnet facilitator for stellar:testnet and mainnet facilitator for stellar:mainnet).',
-        network: currentValidation.network,
-        facilitator: currentValidation.facilitatorUrl,
-      })
-    }
-  }
-  next()
-})
+// Apply middleware to all routes, not just /search
 
 // ─── Payment Logging Middleware ──────────────────────────────────────────
-const paidRoutes = ['/search', '/images', '/news'];
 app.use((req, res, next) => {
-  if (req.path === "/search") {
+  if (req.path === '/search') {
     const { q } = req.query as Record<string, string>;
-    const truncatedQ = q ? String(q).substring(0, 50) : "";
+    const truncatedQ = q ? String(q).substring(0, 50) : '';
 
-    res.on("finish", () => {
-      let paymentStatus = "error";
-      if (res.statusCode === 200) paymentStatus = "paid";
-      else if (res.statusCode === 402) paymentStatus = "402";
+    res.on('finish', () => {
+      let paymentStatus = 'error';
+      if (res.statusCode === 200) paymentStatus = 'paid';
+      else if (res.statusCode === 402) paymentStatus = '402';
 
-      logger.info("Payment attempt", {
+      logger.info('Payment attempt', {
         timestamp: new Date().toISOString(),
         ip: privacySafeIp(req.ip),
         query: privacySafeQuery(truncatedQ),
         paymentStatus: paymentStatus,
-      })
-    })
+      });
+    });
   }
-  next()
-})
-
-// ─── Shared parameter validation for paid routes (#188) ──────────────────
-// Registered BEFORE the x402 middleware on purpose: a malformed `count` or
-// `freshness` is rejected with 400 without ever consulting the payment
-// adapter, the facilitator, or Serper. That keeps a caller from being
-// charged — or from being handed a 402 challenge — for a request the server
-// was always going to refuse.
-
-interface PaidRouteParamSpec {
-  bounds: CountBounds
-  /** `/images` has no Serper date filter, so `freshness` is not accepted there. */
-  supportsFreshness: boolean
-  /** GET routes carry params in the query string, POST routes in the JSON body. */
-  source: 'query' | 'body'
-}
-
-const PAID_ROUTE_PARAMS: Record<string, PaidRouteParamSpec> = {
-  'GET /search':        { bounds: SEARCH_COUNT, supportsFreshness: true,  source: 'query' },
-  'GET /images':        { bounds: IMAGES_COUNT, supportsFreshness: false, source: 'query' },
-  'GET /news':          { bounds: NEWS_COUNT,   supportsFreshness: true,  source: 'query' },
-  'POST /search/batch': { bounds: SEARCH_COUNT, supportsFreshness: true,  source: 'body'  },
-  'POST /jobs':         { bounds: SEARCH_COUNT, supportsFreshness: true,  source: 'body'  },
-}
-
-export interface ValidatedPaidParams {
-  /** Forwarded to Serper as `num`. */
-  count: number
-  freshness?: Freshness
-  /** Serper `tbs` date filter; undefined when no freshness was requested. */
-  tbs?: string
-}
-
-/** Reads the params a paid route validated for this request. */
-function paidParams(req: Request, bounds: CountBounds): ValidatedPaidParams {
-  // The middleware below always populates this for the routes in the table;
-  // the fallback only guards a handler being exercised in isolation.
-  return ((req as any).validatedParams as ValidatedPaidParams | undefined) ?? { count: bounds.default }
-}
-
-app.use((req, res, next) => {
-  const spec = PAID_ROUTE_PARAMS[`${req.method} ${req.path}`]
-  if (!spec) return next()
-
-  const raw = (spec.source === 'body' ? req.body : req.query) ?? {}
-
-  const count = validateCount((raw as Record<string, unknown>).count, spec.bounds)
-  if (!count.ok) {
-    const errorBody: ApiErrorResponse = { error: count.error }
-    return res.status(400).json(errorBody)
-  }
-
-  const params: ValidatedPaidParams = { count: count.value }
-
-  if (spec.supportsFreshness) {
-    const freshness = validateFreshness((raw as Record<string, unknown>).freshness)
-    if (!freshness.ok) {
-      const errorBody: ApiErrorResponse = { error: freshness.error }
-      return res.status(400).json(errorBody)
-    }
-    if (freshness.value) {
-      params.freshness = freshness.value
-      params.tbs = FRESHNESS_TBS[freshness.value]
-    }
-  }
-
-  ;(req as any).validatedParams = params
-  next()
-})
+  next();
+});
 
 app.use(paymentMiddlewareFromConfig(x402Routes, facilitatorClient, schemes))
 
 // ─── Payment Replay Protection Middleware ─────────────────────────────────
 app.use((req, res, next) => {
-  const paidRoutes = ["/search", "/images", "/news"];
+  const paidRoutes = ['/search', '/images', '/news']
   if (paidRoutes.includes(req.path)) {
-    // If payment is disabled, skip payment validation
-    if (!featureFlags.paymentEnabled) {
-      return next()
-    }
-    
     const paymentHeader =
-      req.headers["payment-signature"] ||
-      req.headers["x-payment"] ||
-      req.headers["X-PAYMENT"] ||
-      req.headers["x-payment-response"] ||
-      req.headers["authorization"];
+      req.headers['payment-signature'] ||
+      req.headers['x-payment'] ||
+      req.headers['X-PAYMENT'] ||
+      req.headers['x-payment-response'] ||
+      req.headers['authorization']
 
     if (paymentHeader) {
-      const consumption = consumePaymentPayload(paymentHeader);
+      const consumption = consumePaymentPayload(paymentHeader)
       if (!consumption.ok) {
-        return res.status(402).json({ error: consumption.error });
+        return res.status(402).json({ error: consumption.error })
       }
-      
-      try {
-        const payloadStr = Buffer.from(paymentHeader as string, 'base64').toString('utf8')
-        const payload = JSON.parse(payloadStr)
-        const settleRes = await facilitatorClient.settle(payload, { accepts: x402Accepts })
-        
-        if (!settleRes.success) {
-          return res.status(402).json({ error: `Settlement failed: ${settleRes.errorReason || settleRes.errorMessage || 'unknown'}` })
-        }
-        
-        if (settleRes.transaction) {
-          req.headers['x-payment-response'] = settleRes.transaction
-        }
-      } catch (err: any) {
-        if (err.message && (err.message.includes('fetch') || err.message.includes('timeout') || err.message.includes('network'))) {
-          return res.status(502).json({ error: 'Facilitator timeout or network error' })
-        }
-        return res.status(400).json({ error: 'Malformed payment payload' })
-      }
+      // Captured for reconciliation — links this request to the settled
+      // payment identifier without ever touching query content.
+      ;(req as any).paymentId = consumption.paymentId
     }
   }
-  next();
-});
+  next()
+})
 
 // Builds and persists a ReconciliationRecord for a paid route. Never throws —
 // a logging failure must not affect the response already sent to the client.
@@ -719,22 +444,14 @@ function recordReconciliation(params: {
 export { validateQuery, MAX_QUERY_LENGTH }
 
 // ─── GET /search ──────────────────────────────────────────────────────────
-app.get('/search', validateFeatureFlag('paymentEnabled'), async (req: Request, res: Response) => {
-  const { q, count = '5', freshness } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) {
-    const errorBody: ApiErrorResponse = { error: v.error }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-
-  const validSafeSearch = ['strict', 'moderate', 'off'].includes(safeSearch) ? safeSearch : 'moderate'
-
-  const t0 = Date.now()
+app.get('/search', async (req: Request, res: Response) => {
+  const requestId = randomUUID()
+  let providerDelivered = false
+  let resultCount = 0
+  let txHash: string | null = null
 
   try {
-    const { q } = req.query as Record<string, string>
+    const { q, count = '5', freshness } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -743,119 +460,116 @@ app.get('/search', validateFeatureFlag('paymentEnabled'), async (req: Request, r
     }
     const cleanQ = v.cleanQ
 
-    // `count`/`freshness` were validated up front by the paid-route
-    // middleware (#188), so no clamping or enum lookup is needed here.
-    const { count, tbs } = paidParams(req, SEARCH_COUNT)
-
     const t0 = Date.now()
 
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
-      num: count,
+      num: Math.min(parseInt(count) || 5, 20),
     }
-    if (tbs) requestBody.tbs = tbs
+
+    // Add freshness filter if provided (Serper supports date filters)
+    if (freshness) {
+      const dateFilters: Record<string, string> = {
+        'pd': 'qdr:d',  // past day
+        'pw': 'qdr:w',  // past week
+        'pm': 'qdr:m',  // past month
+      }
+      if (dateFilters[freshness]) {
+        requestBody.tbs = dateFilters[freshness]
+      }
+    }
 
     const serperRes = await fetchSerper('/search', {
       method: 'POST',
       headers: {
-        "X-API-KEY": SERPER_API_KEY,
-        "Content-Type": "application/json",
+        'X-API-KEY': SERPER_API_KEY,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-    });
+    })
 
     if (!serperRes.ok) {
-      const err = await serperRes.text();
-      console.error("[serper]", serperRes.status, err);
-      const errorBody: ApiErrorResponse = {
-        error: `Serper.dev API error: ${serperRes.status}`,
-      };
-      return res.status(502).json(errorBody);
+      const err = await serperRes.text()
+      console.error('[serper]', serperRes.status, err)
+      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
+      return res.status(502).json(errorBody)
     }
 
-    const data: unknown = await serperRes.json();
-    const latencyMs = Date.now() - t0;
+    const data: unknown = await serperRes.json()
+    const latencyMs = Date.now() - t0
 
-    stats.totalQueries++;
-    stats.totalUsdcSettled += 0.001;
-    stats.latencies.push(latencyMs);
-    if (stats.latencies.length > 200) stats.latencies.shift();
+    stats.totalQueries++
+    stats.totalUsdcSettled += 0.001
+    stats.latencies.push(latencyMs)
+    if (stats.latencies.length > 200) stats.latencies.shift()
 
     const results = normalizeOrganicResults(data)
+    const queryMeta = normalizeQueryMetadata(data, cleanQ)
 
-    const txHash = (req.headers['x-payment-response'] as string) || null
-
-    const receipt = {
-      version: '1.0',
-      amount: AMOUNT_USDC,
-      asset: 'USDC',
-      network: NETWORK,
-      payer: getPayer(req),
-      payee: RECEIVING_ADDRESS || 'unknown',
-      timestamp: new Date().toISOString(),
-      transactionHash: txHash || 'unknown',
-    }
+    // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
+    txHash = (req.headers['x-payment-response'] as string) || null
 
     // ── Optional AI suggestions via Groq ──────────────────────────────────
-    let suggestions: string[] = [];
-    if (req.query.suggestions === "1" && results.length > 0) {
+    let suggestions: string[] = []
+    if (req.query.suggestions === '1' && results.length > 0) {
       try {
-        const topSnippets = results
-          .slice(0, 3)
-          .map((r) => r.description)
-          .join(" | ");
+        const topSnippets = results.slice(0, 3).map((r) => r.description).join(' | ')
         const suggCompletion = await groq.chat.completions.create({
-          model: "llama-3.3-70b-versatile",
+          model: 'llama-3.3-70b-versatile',
           messages: [
             {
-              role: "system",
-              content:
-                "You are a search assistant. Given a query and top result snippets, return exactly 3 related search queries the user might want to explore next. Output only a JSON array of 3 strings, no explanation.",
+              role: 'system',
+              content: 'You are a search assistant. Given a query and top result snippets, return exactly 3 related search queries the user might want to explore next. Output only a JSON array of 3 strings, no explanation.',
             },
             {
               role: 'user',
-              content: `Query: "${cleanQ}"\nTop results: ${topSnippets}`,
+              content: `Query: "${queryMeta.executedQuery}"\nTop results: ${topSnippets}`,
             },
           ],
           max_tokens: 120,
           temperature: 0.7,
-        });
-        const raw = suggCompletion.choices[0]?.message?.content || "[]";
-        const match = raw.match(/\[[\s\S]*\]/);
+        })
+        const raw = suggCompletion.choices[0]?.message?.content || '[]'
+        const match = raw.match(/\[[\s\S]*\]/)
         if (match) {
-          const parsed = JSON.parse(match[0]);
+          const parsed = JSON.parse(match[0])
           if (Array.isArray(parsed)) {
             suggestions = parsed
-              .filter(
-                (s: unknown): s is string =>
-                  typeof s === "string" && s.trim().length > 0,
-              )
+              .filter((s: unknown): s is string => typeof s === 'string' && s.trim().length > 0)
               .map((s: string) => s.trim())
-              .slice(0, 3);
+              .slice(0, 3)
           }
         }
       } catch (err: any) {
-        console.warn("[suggestions] Groq error:", err.message);
+        console.warn('[suggestions] Groq error:', err.message)
       }
     }
 
     const responseBody: SearchResponse = {
-      query: cleanQ,
-      safeSearch: validSafeSearch,
+      query: queryMeta.executedQuery,
+      originalQuery: queryMeta.originalQuery,
+      executedQuery: queryMeta.executedQuery,
+      suggestedQuery: queryMeta.suggestedQuery,
+      isCorrected: queryMeta.isCorrected,
       results,
       count: results.length,
-      diagnostics,
       network: NETWORK,
       paidAmount: AMOUNT_USDC,
-      currency: "USDC",
+      currency: 'USDC',
       txHash,
       latencyMs,
-      locale: normalizedLocale,
-      country: normalizedCountry,
-      language: normalizedLanguage,
       suggestions,
-    };
+    }
 
+    // Record opted-in receipt (cap 50, in-memory)
+    try {
+      addRecentReceipt({ id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+    } catch {
+      // ignore receipt recording failure
+    }
+
+    providerDelivered = true
+    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     if (err instanceof CircuitOpenError) {
@@ -865,28 +579,22 @@ app.get('/search', validateFeatureFlag('paymentEnabled'), async (req: Request, r
       return res.status(503).json(errorBody)
     }
     console.error('[search error]', err.message)
-    const credit = issueCreditForFailure(req, '/search', cleanQ, `Search failed: ${err.message}`)
-    const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.', credit }
+    const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.' }
     return res.status(500).json(errorBody)
+  } finally {
+    recordReconciliation({ req, route: '/search', requestId, providerDelivered, resultCount, txHash })
   }
-});
+})
 
 // ─── GET /images ──────────────────────────────────────────────────────────
-app.get('/images', validateFeatureFlag('searchModeEnabled'), async (req: Request, res: Response) => {
-  const { q, count = '10' } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) {
-    const errorBody: ApiErrorResponse = { error: v.error }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-  const validSafeSearch = ['strict', 'moderate', 'off'].includes(safeSearch) ? safeSearch : 'moderate'
-
-  const t0 = Date.now()
+app.get('/images', async (req: Request, res: Response) => {
+  const requestId = randomUUID()
+  let providerDelivered = false
+  let resultCount = 0
+  let txHash: string | null = null
 
   try {
-    const { q } = req.query as Record<string, string>
+    const { q, count = '10' } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -895,57 +603,52 @@ app.get('/images', validateFeatureFlag('searchModeEnabled'), async (req: Request
     }
     const cleanQ = v.cleanQ
 
-    // Images have no date filter, so only `count` is validated (1..10).
-    const { count } = paidParams(req, IMAGES_COUNT)
-
     const t0 = Date.now()
 
     const serperRes = await fetchSerper('/images', {
       method: 'POST',
       headers: {
-        "X-API-KEY": SERPER_API_KEY,
-        "Content-Type": "application/json",
+        'X-API-KEY': SERPER_API_KEY,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         q: cleanQ,
-        num: count,
+        num: Math.min(parseInt(count) || 10, 10),
       }),
-    });
+    })
 
     if (!serperRes.ok) {
-      const err = await serperRes.text();
-      console.error("[serper images]", serperRes.status, err);
-      const errorBody: ApiErrorResponse = {
-        error: `Serper.dev API error: ${serperRes.status}`,
-      };
-      return res.status(502).json(errorBody);
+      const err = await serperRes.text()
+      console.error('[serper images]', serperRes.status, err)
+      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
+      return res.status(502).json(errorBody)
     }
 
-    const data: unknown = await serperRes.json();
-    const latencyMs = Date.now() - t0;
+    const data: unknown = await serperRes.json()
+    const latencyMs = Date.now() - t0
 
-    stats.totalQueries++;
-    stats.totalUsdcSettled += parseFloat(AMOUNT_USDC);
-    stats.latencies.push(latencyMs);
-    if (stats.latencies.length > 200) stats.latencies.shift();
+    stats.totalQueries++
+    stats.totalUsdcSettled += parseFloat(AMOUNT_USDC)
+    stats.latencies.push(latencyMs)
+    if (stats.latencies.length > 200) stats.latencies.shift()
 
-    const results = normalizeImageResults(data);
+    const results = normalizeImageResults(data)
 
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    txHash = (req.headers['x-payment-response'] as string) || null
 
     const responseBody: ImageSearchResponse = {
       query: cleanQ,
-      safeSearch: validSafeSearch,
       results,
       count: results.length,
-      diagnostics,
       network: NETWORK,
       paidAmount: AMOUNT_USDC,
-      currency: "USDC",
+      currency: 'USDC',
       txHash,
       latencyMs,
-    };
+    }
 
+    providerDelivered = true
+    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     if (err instanceof CircuitOpenError) {
@@ -955,27 +658,22 @@ app.get('/images', validateFeatureFlag('searchModeEnabled'), async (req: Request
       return res.status(503).json(errorBody)
     }
     console.error('[images error]', err.message)
-    const credit = issueCreditForFailure(req, '/images', cleanQ, `Image search failed: ${err.message}`)
-    const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.', credit }
+    const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.' }
     return res.status(500).json(errorBody)
+  } finally {
+    recordReconciliation({ req, route: '/images', requestId, providerDelivered, resultCount, txHash })
   }
-});
+})
 
 // ─── GET /news ────────────────────────────────────────────────────────────
-app.get('/news', validateFeatureFlag('searchModeEnabled'), async (req: Request, res: Response) => {
-  const { q, count = '10', freshness } = req.query as Record<string, string>
-
-  const v = validateQuery(q)
-  if (!v.ok) {
-    const errorBody: ApiErrorResponse = { error: v.error }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-
-  const t0 = Date.now()
+app.get('/news', async (req: Request, res: Response) => {
+  const requestId = randomUUID()
+  let providerDelivered = false
+  let resultCount = 0
+  let txHash: string | null = null
 
   try {
-    const { q } = req.query as Record<string, string>
+    const { q, count = '10', freshness } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -984,58 +682,65 @@ app.get('/news', validateFeatureFlag('searchModeEnabled'), async (req: Request, 
     }
     const cleanQ = v.cleanQ
 
-    const { count, tbs } = paidParams(req, NEWS_COUNT)
-
     const t0 = Date.now()
 
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
-      num: count,
+      num: Math.min(parseInt(count) || 10, 20),
     }
-    if (tbs) requestBody.tbs = tbs
+
+    if (freshness) {
+      const dateFilters: Record<string, string> = {
+        'pd': 'qdr:d',
+        'pw': 'qdr:w',
+        'pm': 'qdr:m',
+      }
+      if (dateFilters[freshness]) {
+        requestBody.tbs = dateFilters[freshness]
+      }
+    }
 
     const serperRes = await fetchSerper('/news', {
       method: 'POST',
       headers: {
-        "X-API-KEY": SERPER_API_KEY,
-        "Content-Type": "application/json",
+        'X-API-KEY': SERPER_API_KEY,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-    });
+    })
 
     if (!serperRes.ok) {
-      const err = await serperRes.text();
-      console.error("[serper news]", serperRes.status, err);
-      const errorBody: ApiErrorResponse = {
-        error: `Serper.dev API error: ${serperRes.status}`,
-      };
-      return res.status(502).json(errorBody);
+      const err = await serperRes.text()
+      console.error('[serper news]', serperRes.status, err)
+      const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
+      return res.status(502).json(errorBody)
     }
 
-    const data: unknown = await serperRes.json();
-    const latencyMs = Date.now() - t0;
+    const data: unknown = await serperRes.json()
+    const latencyMs = Date.now() - t0
 
-    stats.totalQueries++;
-    stats.totalUsdcSettled += parseFloat(AMOUNT_USDC);
-    stats.latencies.push(latencyMs);
-    if (stats.latencies.length > 200) stats.latencies.shift();
+    stats.totalQueries++
+    stats.totalUsdcSettled += parseFloat(AMOUNT_USDC)
+    stats.latencies.push(latencyMs)
+    if (stats.latencies.length > 200) stats.latencies.shift()
 
-    const results = normalizeNewsResults(data);
+    const results = normalizeNewsResults(data)
 
-    const txHash = (req.headers['x-payment-response'] as string) || null
+    txHash = (req.headers['x-payment-response'] as string) || null
 
     const responseBody: NewsSearchResponse = {
       query: cleanQ,
       results,
       count: results.length,
-      diagnostics,
       network: NETWORK,
       paidAmount: AMOUNT_USDC,
-      currency: "USDC",
+      currency: 'USDC',
       txHash,
       latencyMs,
-    };
+    }
 
+    providerDelivered = true
+    resultCount = results.length
     return res.json(responseBody)
   } catch (err: any) {
     if (err instanceof CircuitOpenError) {
@@ -1045,216 +750,146 @@ app.get('/news', validateFeatureFlag('searchModeEnabled'), async (req: Request, 
       return res.status(503).json(errorBody)
     }
     console.error('[news error]', err.message)
-    const credit = issueCreditForFailure(req, '/news', cleanQ, `News search failed: ${err.message}`)
-    const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.', credit }
+    const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.' }
     return res.status(500).json(errorBody)
+  } finally {
+    recordReconciliation({ req, route: '/news', requestId, providerDelivered, resultCount, txHash })
   }
-});
+})
 
 // ─── POST /search/batch — JSON Lines streaming (issue #325) ───────────────
 // Bounded batch endpoint: versioned JSONL events (quote, settlement, result, error, done)
 // Handles idempotency, aggregate spending limits, disconnect abort, partial completion.
-app.post("/search/batch", async (req: Request, res: Response) => {
-  const requestId = crypto.randomUUID();
-  const tBatchStart = Date.now();
+app.post('/search/batch', async (req: Request, res: Response) => {
+  const requestId = crypto.randomUUID()
+  const tBatchStart = Date.now()
 
   // Idempotency: header or body key, valid for 24h
-  const idempotencyKey =
-    (req.headers["idempotency-key"] as string) ||
-    (req.body as any)?.idempotencyKey;
+  const idempotencyKey = (req.headers['idempotency-key'] as string) || (req.body as any)?.idempotencyKey
   if (idempotencyKey) {
-    cleanupBatchIdempotency();
-    const existing = batchIdempotencyStore.get(idempotencyKey);
+    cleanupBatchIdempotency()
+    const existing = batchIdempotencyStore.get(idempotencyKey)
     if (existing && existing.expiresAt > Date.now()) {
-      return res
-        .status(409)
-        .json({
-          error: "Idempotent batch already processed",
-          requestId: existing.requestId,
-          idempotencyKey,
-        });
+      return res.status(409).json({ error: 'Idempotent batch already processed', requestId: existing.requestId, idempotencyKey })
     }
   }
 
-  const { queries } = (req.body || {}) as { queries?: unknown }
-  // Validated up front by the paid-route middleware (#188).
-  const { count: parsedCount, tbs } = paidParams(req, SEARCH_COUNT)
+  const { queries, count: rawCount, freshness } = (req.body || {}) as { queries?: unknown; count?: unknown; freshness?: string }
 
   if (!Array.isArray(queries) || queries.length === 0) {
-    return res.status(400).json({ error: "queries array required (1..10)" });
+    return res.status(400).json({ error: 'queries array required (1..10)' })
   }
   if (queries.length > MAX_BATCH_SIZE) {
-    return res
-      .status(400)
-      .json({
-        error: `Batch too large: max ${MAX_BATCH_SIZE} queries, got ${queries.length}`,
-      });
+    return res.status(400).json({ error: `Batch too large: max ${MAX_BATCH_SIZE} queries, got ${queries.length}` })
   }
-  const totalAmount = (parseFloat(AMOUNT_USDC) * queries.length).toFixed(3);
+  const totalAmount = (parseFloat(AMOUNT_USDC) * queries.length).toFixed(3)
   if (parseFloat(totalAmount) > MAX_BATCH_TOTAL_USDC) {
-    return res
-      .status(400)
-      .json({
-        error: `Aggregate spending limit exceeded: ${totalAmount} USDC > ${MAX_BATCH_TOTAL_USDC} USDC`,
-      });
+    return res.status(400).json({ error: `Aggregate spending limit exceeded: ${totalAmount} USDC > ${MAX_BATCH_TOTAL_USDC} USDC` })
   }
-  const cleanQueries: string[] = [];
+  const cleanQueries: string[] = []
   for (const q of queries) {
-    const v = validateQuery(q);
-    if (!v.ok)
-      return res
-        .status(400)
-        .json({
-          error: `Invalid query "${String(q).slice(0, 30)}": ${v.error}`,
-          index: queries.indexOf(q),
-        });
-    cleanQueries.push(v.cleanQ);
+    const v = validateQuery(q)
+    if (!v.ok) return res.status(400).json({ error: `Invalid query "${String(q).slice(0, 30)}": ${v.error}`, index: queries.indexOf(q) })
+    cleanQueries.push(v.cleanQ)
   }
+  const parsedCount = Math.min(Math.max(parseInt(String(rawCount ?? '5')) || 5, 1), 20)
 
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
-  let paymentId: string | null
-  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
-  let verified: boolean
-  if (paymentHeader) {
-    const consumption = consumePaymentPayload(paymentHeader)
-    if (!consumption.ok) {
-      return res.status(402).json({ error: consumption.error })
-    }
-    paymentId = consumption.paymentId
-    verified = true
-    try {
-      const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
-      const parsed = JSON.parse(decoded)
-      txHash = parsed.transactionHash || parsed.txHash || txHash
-    } catch (err) {
-      void err
-    }
-  } else {
-    // No payment: return 402 with quote so caller can pay and retry with Idempotency-Key
-    const quoteEvent: BatchJsonlQuoteEvent = {
-      v: 1, type: 'quote', requestId, totalQueries: cleanQueries.length,
-      pricePerQuery: AMOUNT_USDC, totalAmount, currency: 'USDC', network: NETWORK, payTo: RECEIVING_ADDRESS, idempotencyKey,
-    }
+  if (!paymentHeader) {
     res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify({
       x402Version: 2,
       error: 'Payment required for batch',
       resource: { url: `${req.protocol}://${req.get('host')}${req.originalUrl}`, description: `Batch search ${cleanQueries.length} x ${AMOUNT_USDC} USDC`, mimeType: 'application/x-ndjson' },
       accepts: [{ scheme: 'exact', network: NETWORK, amount: String(parseInt(AMOUNT_STROOPS) * cleanQueries.length), asset: USDC_CONTRACT, payTo: RECEIVING_ADDRESS, maxTimeoutSeconds: 300, extra: { areFeesSponsored: true } }],
     })).toString('base64'))
-    return res.status(402).json({ error: 'Payment required', quote: quoteEvent })
+    return res.status(402).json({ error: 'Payment required' })
+  }
+
+  const consumption = consumePaymentPayload(paymentHeader)
+  if (!consumption.ok) {
+    return res.status(402).json({ error: consumption.error })
+  }
+  const paymentId = consumption.paymentId
+  const verified = true
+  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
+  try {
+    const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
+    const parsed = JSON.parse(decoded)
+    txHash = parsed.transactionHash || parsed.txHash || txHash
+  } catch {
+    // ignore header parse error
   }
 
   if (idempotencyKey) {
-    batchIdempotencyStore.set(idempotencyKey, {
-      requestId,
-      expiresAt: Date.now() + 24 * 3600 * 1000,
-    });
+    batchIdempotencyStore.set(idempotencyKey, { requestId, expiresAt: Date.now() + 24 * 3600 * 1000 })
   }
 
   // Prepare JSONL streaming response
-  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.setHeader("X-Request-Id", requestId);
-  res.flushHeaders?.();
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.setHeader('X-Request-Id', requestId)
+  res.flushHeaders?.()
 
-  let clientAborted = false;
-  const abortController = new AbortController();
-  req.on("close", () => {
+  let clientAborted = false
+  const abortController = new AbortController()
+  req.on('close', () => {
     if (!res.writableEnded) {
-      clientAborted = true;
-      abortController.abort();
+      clientAborted = true
+      abortController.abort()
     }
-  });
+  })
 
   const writeEvent = (evt: BatchJsonlEvent) => {
-    if (clientAborted || res.writableEnded) return false;
+    if (clientAborted || res.writableEnded) return false
     try {
-      res.write(JSON.stringify(evt) + "\n");
-      return true;
-    } catch {
-      return false;
-    }
-  };
+      res.write(JSON.stringify(evt) + '\n')
+      return true
+    } catch { return false }
+  }
 
   // Emit settlement event immediately after payment verification
-  const settlementEvent: BatchJsonlSettlementEvent = {
-    v: 1,
-    type: "settlement",
-    requestId,
-    paymentId,
-    txHash,
-    verified,
-    settledAt: new Date().toISOString(),
-  };
-  writeEvent(settlementEvent);
+  const settlementEvent: BatchJsonlSettlementEvent = { v: 1, type: 'settlement', requestId, paymentId, txHash, verified, settledAt: new Date().toISOString() }
+  writeEvent(settlementEvent)
 
   let succeeded = 0
   let failed = 0
 
   for (let i = 0; i < cleanQueries.length; i++) {
     if (clientAborted || abortController.signal.aborted) {
-      const errEvt: BatchJsonlErrorEvent = {
-        v: 1,
-        type: "error",
-        requestId,
-        index: i,
-        query: cleanQueries[i],
-        error: "Client disconnected",
-        code: "CLIENT_DISCONNECT",
-      };
-      writeEvent(errEvt);
-      failed++;
+      const errEvt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: cleanQueries[i], error: 'Client disconnected', code: 'CLIENT_DISCONNECT' }
+      writeEvent(errEvt)
+      failed++
       // remaining items marked skipped
       for (let j = i + 1; j < cleanQueries.length; j++) {
-        const skipEvt: BatchJsonlErrorEvent = {
-          v: 1,
-          type: "error",
-          requestId,
-          index: j,
-          query: cleanQueries[j],
-          error: "Skipped due to client disconnect",
-          code: "SKIPPED",
-        };
-        writeEvent(skipEvt);
-        failed++;
+        const skipEvt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: j, query: cleanQueries[j], error: 'Skipped due to client disconnect', code: 'SKIPPED' }
+        writeEvent(skipEvt)
+        failed++
       }
-      break;
+      break
     }
-    const q = cleanQueries[i];
-    const t0 = Date.now();
+    const q = cleanQueries[i]
+    const t0 = Date.now()
     try {
-      const requestBody: Record<string, unknown> = { q, num: parsedCount };
-      if (normalizedFreshness) {
-        const dateFilters: Record<string, string> = {
-          pd: "qdr:d",
-          pw: "qdr:w",
-          pm: "qdr:m",
-        };
-        requestBody.tbs = dateFilters[normalizedFreshness];
+      const requestBody: Record<string, unknown> = { q, num: parsedCount }
+      if (freshness) {
+        const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
+        if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
       }
       const serperRes = await fetchSerper('/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
         signal: abortController.signal as any,
-      });
+      })
       if (!serperRes.ok) {
-        const errText = await serperRes.text().catch(() => "");
-        console.error("[serper batch]", serperRes.status, errText);
-        const evt: BatchJsonlErrorEvent = {
-          v: 1,
-          type: "error",
-          requestId,
-          index: i,
-          query: q,
-          error: `Serper.dev API error: ${serperRes.status}`,
-          code: "UPSTREAM_ERROR",
-        };
-        writeEvent(evt);
-        failed++;
-        continue;
+        const errText = await serperRes.text().catch(() => '')
+        console.error('[serper batch]', serperRes.status, errText)
+        const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: `Serper.dev API error: ${serperRes.status}`, code: 'UPSTREAM_ERROR' }
+        writeEvent(evt)
+        failed++
+        continue
       }
       const data: unknown = await serperRes.json()
       const latencyMs = Date.now() - t0
@@ -1286,33 +921,16 @@ app.post("/search/batch", async (req: Request, res: Response) => {
       writeEvent(evt)
       succeeded++
     } catch (err: any) {
-      if (err?.name === "AbortError" || abortController.signal.aborted) {
-        const evt: BatchJsonlErrorEvent = {
-          v: 1,
-          type: "error",
-          requestId,
-          index: i,
-          query: q,
-          error: "Aborted due to client disconnect",
-          code: "ABORTED",
-        };
-        writeEvent(evt);
-        failed++;
+      if (err?.name === 'AbortError' || abortController.signal.aborted) {
+        const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: 'Aborted due to client disconnect', code: 'ABORTED' }
+        writeEvent(evt)
+        failed++
         // mark remaining as skipped
         for (let j = i + 1; j < cleanQueries.length; j++) {
-          const skip: BatchJsonlErrorEvent = {
-            v: 1,
-            type: "error",
-            requestId,
-            index: j,
-            query: cleanQueries[j],
-            error: "Skipped due to abort",
-            code: "SKIPPED",
-          };
-          writeEvent(skip);
-          failed++;
+          const skip: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: j, query: cleanQueries[j], error: 'Skipped due to abort', code: 'SKIPPED' }
+          writeEvent(skip); failed++
         }
-        break;
+        break
       }
       if (err instanceof CircuitOpenError) {
         const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: err.message, code: 'CIRCUIT_OPEN' }
@@ -1320,195 +938,123 @@ app.post("/search/batch", async (req: Request, res: Response) => {
         failed++
         continue
       }
-      const evt: BatchJsonlErrorEvent = {
-        v: 1,
-        type: "error",
-        requestId,
-        index: i,
-        query: q,
-        error: err.message || "Search failed",
-        code: "SEARCH_FAILED",
-      };
-      writeEvent(evt);
-      failed++;
+      const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: err.message || 'Search failed', code: 'SEARCH_FAILED' }
+      writeEvent(evt)
+      failed++
     }
   }
 
   const doneEvent: BatchJsonlDoneEvent = {
-    v: 1,
-    type: "done",
-    requestId,
-    succeeded,
-    failed,
+    v: 1, type: 'done', requestId, succeeded, failed,
     totalUsdcSpent: (succeeded * parseFloat(AMOUNT_USDC)).toFixed(3),
     aggregateLatencyMs: Date.now() - tBatchStart,
     completedAt: new Date().toISOString(),
-  };
-  if (!clientAborted) writeEvent(doneEvent);
-  res.end();
-});
+  }
+  if (!clientAborted) writeEvent(doneEvent)
+  res.end()
+})
 
 // ─── Async paid search jobs with webhooks (issue #324) ─────────────────
-app.post("/jobs", async (req: Request, res: Response) => {
-  cleanupBatchIdempotency();
-  const idempotencyKey =
-    (req.headers["idempotency-key"] as string) ||
-    (req.body as any)?.idempotencyKey;
+app.post('/jobs', async (req: Request, res: Response) => {
+  cleanupBatchIdempotency()
+  const idempotencyKey = (req.headers['idempotency-key'] as string) || (req.body as any)?.idempotencyKey
   if (idempotencyKey) {
-    const existing = jobIdempotencyStore.get(idempotencyKey);
+    const existing = jobIdempotencyStore.get(idempotencyKey)
     if (existing && existing.expiresAt > Date.now()) {
-      const existingJob = jobStore.get(existing.jobId);
+      const existingJob = jobStore.get(existing.jobId)
       if (existingJob) {
-        return res
-          .status(200)
-          .json({
-            jobId: existingJob.id,
-            statusUrl: existingJob.statusUrl,
-            paymentVerified: existingJob.verified,
-            job: existingJob,
-          });
+        return res.status(200).json({ jobId: existingJob.id, statusUrl: existingJob.statusUrl, paymentVerified: existingJob.verified, job: existingJob })
       }
     }
   }
 
-  const { query, webhookUrl, webhookSecret } = (req.body || {}) as { query?: unknown; webhookUrl?: string; webhookSecret?: string }
+  const { query, count = '5', freshness, webhookUrl, webhookSecret } = (req.body || {}) as { query?: unknown; count?: unknown; freshness?: string; webhookUrl?: string; webhookSecret?: string }
 
   const v = validateQuery(query)
   if (!v.ok) return res.status(400).json({ error: v.error })
   const cleanQ = v.cleanQ
-  // Validated up front by the paid-route middleware (#188).
-  const { count: safeCount, freshness, tbs } = paidParams(req, SEARCH_COUNT)
+  const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 20)
 
   // Webhook validation (SSRF + https)
   if (webhookUrl) {
-    const chk = validateWebhookUrl(webhookUrl);
-    if (!chk.ok) return res.status(400).json({ error: chk.error });
-    if (!webhookSecret || webhookSecret.length < 16)
-      return res
-        .status(400)
-        .json({
-          error: "webhookSecret required (min 16 chars) when webhookUrl is set",
-        });
+    const chk = validateWebhookUrl(webhookUrl)
+    if (!chk.ok) return res.status(400).json({ error: chk.error })
+    if (!webhookSecret || webhookSecret.length < 16) return res.status(400).json({ error: 'webhookSecret required (min 16 chars) when webhookUrl is set' })
   }
 
   // Payment verification via x402 header
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
-  let paymentId: string | null
-  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
-  let verified: boolean
   if (!paymentHeader) {
     // Return 402 with payment requirements and statusUrl hint
     const paymentRequired = {
       x402Version: 2,
-      error: "Payment required for async job",
-      resource: {
-        url: `${req.protocol}://${req.get("host")}${req.originalUrl}`,
-        description: `Async search job: ${AMOUNT_USDC} USDC on Stellar`,
-        mimeType: "application/json",
-      },
-      accepts: [
-        {
-          scheme: "exact",
-          network: NETWORK,
-          amount: AMOUNT_STROOPS,
-          asset: USDC_CONTRACT,
-          payTo: RECEIVING_ADDRESS,
-          maxTimeoutSeconds: 300,
-          extra: { areFeesSponsored: true },
-        },
-      ],
-    };
-    res.setHeader(
-      "PAYMENT-REQUIRED",
-      Buffer.from(JSON.stringify(paymentRequired)).toString("base64"),
-    );
-    return res
-      .status(402)
-      .json({
-        error: "Payment required",
-        hint: "Retry with X-Payment header containing signed Soroban auth",
-      });
+      error: 'Payment required for async job',
+      resource: { url: `${req.protocol}://${req.get('host')}${req.originalUrl}`, description: `Async search job: ${AMOUNT_USDC} USDC on Stellar`, mimeType: 'application/json' },
+      accepts: [{ scheme: 'exact', network: NETWORK, amount: AMOUNT_STROOPS, asset: USDC_CONTRACT, payTo: RECEIVING_ADDRESS, maxTimeoutSeconds: 300, extra: { areFeesSponsored: true } }],
+    }
+    res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(paymentRequired)).toString('base64'))
+    return res.status(402).json({ error: 'Payment required', hint: 'Retry with X-Payment header containing signed Soroban auth' })
   }
   const consumption = consumePaymentPayload(paymentHeader)
   if (!consumption.ok) return res.status(402).json({ error: consumption.error })
-  paymentId = consumption.paymentId
-  verified = true
-  txHash = (req.headers['x-payment-response'] as string) || null
+  const paymentId = consumption.paymentId
+  const verified = true
+  let txHash: string | null = (req.headers['x-payment-response'] as string) || null
   try {
     const decoded = Buffer.from(paymentHeader, 'base64').toString('utf8')
     const parsed = JSON.parse(decoded)
     txHash = parsed.transactionHash || parsed.txHash || txHash
-  } catch (err) {
-    void err
+  } catch {
+    // ignore parse error
   }
 
-  const jobId = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const statusUrl = `${req.protocol}://${req.get("host")}/jobs/${jobId}`;
+  const jobId = crypto.randomUUID()
+  const now = new Date().toISOString()
+  const statusUrl = `${req.protocol}://${req.get('host')}/jobs/${jobId}`
 
   const job: SearchJob = {
     id: jobId,
     query: cleanQ,
     count: safeCount,
     freshness,
-    status: "running" as JobStatus,
+    status: 'running' as JobStatus,
     createdAt: now,
     updatedAt: now,
     paymentId,
     txHash,
     verified,
     paidAmount: AMOUNT_USDC,
-    currency: "USDC",
+    currency: 'USDC',
     network: NETWORK,
     webhookUrl,
     webhookSecret,
     idempotencyKey,
     attempts: 0,
     statusUrl,
-  };
-  jobStore.set(jobId, job);
-  if (idempotencyKey)
-    jobIdempotencyStore.set(idempotencyKey, {
-      jobId,
-      expiresAt: Date.now() + 24 * 3600 * 1000,
-    });
+  }
+  jobStore.set(jobId, job)
+  if (idempotencyKey) jobIdempotencyStore.set(idempotencyKey, { jobId, expiresAt: Date.now() + 24 * 3600 * 1000 })
 
   // Immediate 202 response with statusUrl + verified payment state
-  res
-    .status(202)
-    .json({
-      jobId,
-      statusUrl,
-      paymentVerified: verified,
-      paymentId,
-      txHash,
-      status: job.status,
-    });
+  res.status(202).json({ jobId, statusUrl, paymentVerified: verified, paymentId, txHash, status: job.status })
 
   // Fire-and-forget execution (preserves verified x402 settlement, does not block 202)
-  (async () => {
-    const t0 = Date.now();
+  ;(async () => {
+    const t0 = Date.now()
     try {
-      const requestBody: Record<string, unknown> = {
-        q: cleanQ,
-        num: safeCount,
-      };
-      if (normalizedFreshness) {
-        const dateFilters: Record<string, string> = {
-          pd: "qdr:d",
-          pw: "qdr:w",
-          pm: "qdr:m",
-        };
-        requestBody.tbs = dateFilters[normalizedFreshness];
+      const requestBody: Record<string, unknown> = { q: cleanQ, num: safeCount }
+      if (freshness) {
+        const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
+        if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
       }
       const serperRes = await fetchSerper('/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
-      });
+      })
       if (!serperRes.ok) {
-        const errText = await serperRes.text().catch(() => "");
-        throw new Error(`Serper.dev API error: ${serperRes.status} ${errText}`);
+        const errText = await serperRes.text().catch(() => '')
+        throw new Error(`Serper.dev API error: ${serperRes.status} ${errText}`)
       }
       const data: unknown = await serperRes.json()
       const latencyMs = Date.now() - t0
@@ -1538,295 +1084,217 @@ app.post("/jobs", async (req: Request, res: Response) => {
       job.updatedAt = new Date().toISOString()
       jobStore.set(jobId, job)
     } catch (err: any) {
-      job.error = err.message || "Search failed";
-      job.status = "failed";
-      job.updatedAt = new Date().toISOString();
-      jobStore.set(jobId, job);
+      job.error = err.message || 'Search failed'
+      job.status = 'failed'
+      job.updatedAt = new Date().toISOString()
+      jobStore.set(jobId, job)
     }
     // Webhook delivery with retries, signed, replay-protected
     if (job.webhookUrl && job.webhookSecret) {
-      await deliverWebhookWithRetry(job);
+      await deliverWebhookWithRetry(job)
     }
-  })();
-});
-
-app.get("/jobs/:id", (req: Request, res: Response) => {
-  const job = jobStore.get(req.params.id);
-  if (!job) return res.status(404).json({ error: "Job not found" });
-  return res.json({
-    job,
-    paymentVerified: job.verified,
-    statusUrl: job.statusUrl,
-  });
-});
-
-app.get("/jobs", (_req: Request, res: Response) => {
-  const jobs = Array.from(jobStore.values())
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    )
-    .slice(0, 50);
-  return res.json({ jobs, count: jobs.length });
-});
-
-// ─── GET /credits/:creditId ───────────────────────────────────────────────
-// Auditable lookup for a credit issued after a paid search failed post-
-// settlement. Free — reading a credit's status is not itself a paid action.
-app.get('/credits/:creditId', (req: Request, res: Response) => {
-  const credit = getCredit(req.params.creditId)
-  if (!credit) {
-    const errorBody: ApiErrorResponse = { error: 'Credit not found' }
-    return res.status(404).json(errorBody)
-  }
-  return res.json(serializeCredit(credit))
+  })()
 })
 
-// ─── POST /credits/:creditId/redeem ────────────────────────────────────────
-// Redemption is idempotent (a redeemed credit cannot be redeemed twice) and
-// bounded (expires DEFAULT_CREDIT_VALIDITY_WINDOW_MS after issuance). This is
-// distinct from an on-chain refund: redeeming only marks the off-chain credit
-// as used, it does not itself move USDC — see README.md → "Failed-Search
-// Credits" for how a redeemed credit should be applied.
-app.post('/credits/:creditId/redeem', (req: Request, res: Response) => {
-  const result = redeemCredit(req.params.creditId)
-  if (!result.ok) {
-    const errorBody: ApiErrorResponse = { error: result.error }
-    const status = result.error === 'Credit not found' ? 404 : 409
-    return res.status(status).json(errorBody)
-  }
-  return res.json(serializeCredit(result.credit))
+app.get('/jobs/:id', (req: Request, res: Response) => {
+  const job = jobStore.get(req.params.id)
+  if (!job) return res.status(404).json({ error: 'Job not found' })
+  return res.json({ job, paymentVerified: job.verified, statusUrl: job.statusUrl })
+})
+
+app.get('/jobs', (_req: Request, res: Response) => {
+  const jobs = Array.from(jobStore.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 50)
+  return res.json({ jobs, count: jobs.length })
 })
 
 // ─── GET /health ──────────────────────────────────────────────────────────
-app.get("/health", (_req: Request, res: Response) => {
+app.get('/health', async (_req: Request, res: Response) => {
   const avg = stats.latencies.length
-    ? Math.round(
-        stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length,
-      )
-    : 0;
+    ? Math.round(stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length)
+    : 0
+  const orderedLatencies = [...stats.latencies].sort((a, b) => a - b)
+  const percentile = (fraction: number) => {
+    if (!orderedLatencies.length) return 0
+    return orderedLatencies[Math.min(orderedLatencies.length - 1, Math.ceil(orderedLatencies.length * fraction) - 1)]
+  }
+  const readiness = await getReadiness()
 
-  const up = Math.floor((Date.now() - stats.startTime) / 1000);
-  const uptime =
-    up < 60
-      ? `${up}s`
-      : up < 3600
-        ? `${Math.floor(up / 60)}m`
-        : `${Math.floor(up / 3600)}h`;
+  const up = Math.floor((Date.now() - stats.startTime) / 1000)
+  const uptime = up < 60 ? `${up}s` : up < 3600 ? `${Math.floor(up / 60)}m` : `${Math.floor(up / 3600)}h`
 
-  // Express holds the counters in the same process that serves the paid
-  // routes, so it measures every statistic and says so (#226). The declaration
-  // is what lets a consumer tell a real `totalQueries: 0` on a freshly started
-  // server apart from a runtime that never measured it at all.
-  const body: ServerHealthResponse = {
-    status:                    'ok',
+  res.json({
+    status:                    readiness.status,
     network:                   NETWORK,
     pricePerQuery:             '0.001 USDC',
     protocol:                  'x402',
-    facilitator:               process.env.FACILITATOR_URL || FACILITATOR_URL,
-    facilitatorCompatibility: {
-      compatible:  currentValidation.valid,
-      network:     currentValidation.network,
-      scheme:      currentValidation.scheme,
-      asset:       currentValidation.asset,
-      facilitator: currentValidation.facilitatorUrl,
-      errors:      currentValidation.errors,
-      warnings:    currentValidation.warnings,
-    },
+    facilitator:               FACILITATOR_URL,
     totalQueries:              stats.totalQueries,
     totalUsdcSettled:          stats.totalUsdcSettled.toFixed(4),
     avgLatencyMs:              avg,
+    latency: {
+      samples: orderedLatencies.length,
+      avgMs: avg,
+      p50Ms: percentile(0.5),
+      p95Ms: percentile(0.95),
+      p99Ms: percentile(0.99),
+    },
+    checks: readiness.checks,
+    readiness: {
+      cached: readiness.cached,
+      cacheAgeMs: readiness.cacheAgeMs,
+      timestamp: readiness.timestamp,
+    },
     uptime,
-    serperApiConfigured: !!SERPER_API_KEY,
-    groqApiConfigured: !!GROQ_API_KEY,
+    serperApiConfigured:       !!SERPER_API_KEY,
+    groqApiConfigured:         !!GROQ_API_KEY,
     receivingAddressConfigured: !!RECEIVING_ADDRESS,
     serperCircuitBreaker:      getSerperBreakerState(),
   })
 })
 
-// ─── GET /ai/models ───────────────────────────────────────────────────────
-app.get('/ai/models', (_req: Request, res: Response) => {
-  res.json({
-    models: AVAILABLE_MODELS,
-    default: DEFAULT_MODEL,
-  })
+// Readiness alias used by deployments and smoke checks. This endpoint always
+// returns the structured dependency result; consumers decide whether degraded
+// dependencies should stop traffic.
+app.get('/ready', async (_req: Request, res: Response) => {
+  res.json(await getReadiness())
 })
 
-// ─── GET /metrics ──────────────────────────────────────────────────────────
-const METRICS_TOKEN = process.env.METRICS_TOKEN
-
-function metricsAuth(req: Request, res: Response, next: NextFunction): void {
-  if (!METRICS_TOKEN) {
-    res.status(503).json({ error: 'Metrics endpoint not configured: METRICS_TOKEN not set' })
-    return
+// Public, bounded operational counters. No request data, credentials, wallet
+// addresses, or unbounded latency arrays are exposed.
+app.get('/metrics', (_req: Request, res: Response) => {
+  const orderedLatencies = [...stats.latencies].sort((a, b) => a - b)
+  const percentile = (fraction: number) => {
+    if (!orderedLatencies.length) return 0
+    return orderedLatencies[Math.min(orderedLatencies.length - 1, Math.ceil(orderedLatencies.length * fraction) - 1)]
   }
-  const authHeader = req.headers.authorization
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Authorization required' })
-    return
-  }
-  const token = authHeader.slice(7)
-  if (token !== METRICS_TOKEN) {
-    res.status(403).json({ error: 'Invalid token' })
-    return
-  }
-  next()
-}
-
-app.get('/metrics', metricsAuth, (req: Request, res: Response) => {
-  const accept = req.headers.accept || ''
-  if (accept.includes('application/json')) {
-    res.json(metrics.toJSON())
-    return
-  }
-  res.setHeader('Content-Type', 'text/plain; version=0.0.4')
-  res.send(metrics.toPrometheus())
+  res.setHeader('Cache-Control', 'no-store')
+  res.json({
+    phases: {
+      challenge: { requests: stats.totalQueries },
+      settlement: { totalUsdc: Number(stats.totalUsdcSettled.toFixed(4)) },
+      search: { completed: stats.totalQueries },
+    },
+    latency: {
+      samples: orderedLatencies.length,
+      p50Ms: percentile(0.5),
+      p95Ms: percentile(0.95),
+      p99Ms: percentile(0.99),
+    },
+  })
 })
 
 // ─── POST /ai/chat ────────────────────────────────────────────────────────
 // Streams responses as Server-Sent Events when the client sends
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
-// Supports model selection via { model } whitelist. Records phase timings with shared vocabulary.
+// (back-compat fallback for callers that don't support SSE).
 app.post('/ai/chat', async (req: Request, res: Response) => {
-  // Explicit method guard — unsupported methods receive 405 + Allow header
-  if (req.method !== 'POST') return methodNotAllowed(res, allowHeader('POST'))
+  if (!groq) {
+    return res.status(503).json({ error: 'AI assistant is not configured.' })
+  }
   const { messages, model: requestedModel } = req.body as {
-    messages: { role: "system" | "user" | "assistant"; content: string }[];
-    model?: string;
-  };
+    messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+    model?: string
+  }
 
   if (!messages?.length) {
-    return res.status(400).json({ error: "messages array required" });
+    return res.status(400).json({ error: 'messages array required' })
   }
 
   // Available models whitelist
   const AVAILABLE_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "mixtral-8x7b-32768",
-  ];
-
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
+    'mixtral-8x7b-32768',
+  ]
+  
   // Use requested model if valid, otherwise fall back to default
-  const model =
-    requestedModel && AVAILABLE_MODELS.includes(requestedModel)
-      ? requestedModel
-      : "llama-3.3-70b-versatile";
+  const model = requestedModel && AVAILABLE_MODELS.includes(requestedModel)
+    ? requestedModel
+    : 'llama-3.3-70b-versatile'
 
   const wantsStream =
-    (req.headers.accept || "").includes("text/event-stream") ||
+    (req.headers.accept || '').includes('text/event-stream') ||
     (req.body as any)?.stream === true ||
-    req.query.stream === "1";
+    req.query.stream === '1'
 
-  const rawGroqMessages = [
+  const groqMessages = [
     {
-      role: "system" as const,
+      role: 'system' as const,
       content:
-        "You are StellarSearch AI, a concise research assistant. Help users craft better search queries and understand results. Keep responses under 200 words.",
+        'You are StellarSearch AI, a concise research assistant. Help users craft better search queries and understand results. Keep responses under 200 words.',
     },
     ...messages,
-  ];
-
-  // Abort the Groq stream if the client disconnects mid-response.
-  const controller = new AbortController()
-  const onReqClose = () => controller.abort()
-  req.on('close', onReqClose)
-
-  const { truncatedMessages: groqMessages, wasTruncated } = enforceTokenBudget(rawGroqMessages)
+  ]
 
   if (!wantsStream) {
-    const tGroq0 = Date.now()
     try {
       const completion = await groq.chat.completions.create({
         model,
         messages: groqMessages,
-        max_tokens: 512,
+        max_tokens:  512,
         temperature: 0.7,
-      });
+      })
 
-      const content = completion.choices[0]?.message?.content || "No response.";
-      return res.json({ content, model: completion.model });
+      const content = completion.choices[0]?.message?.content || 'No response.'
+      return res.json({ content, model: completion.model })
     } catch (err: any) {
-      console.error("[groq error]", err.message);
-      return res.status(500).json({ error: `Groq AI error: ${err.message}` });
+      console.error('[groq error]', err.message)
+      return res.status(500).json({ error: `Groq AI error: ${err.message}` })
     }
   }
 
   // SSE path
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
   // Disable proxy buffering (e.g. nginx) so chunks flush immediately
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders?.();
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders?.()
 
   const sendEvent = (event: string, data: Record<string, unknown>) => {
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
+    res.write(`event: ${event}\n`)
+    res.write(`data: ${JSON.stringify(data)}\n\n`)
+  }
 
   // Abort the Groq stream if the client disconnects mid-response.
-  const controller = new AbortController();
-  req.on("close", () => controller.abort());
+  const controller = new AbortController()
+  req.on('close', () => controller.abort())
 
-  const tGroq0 = Date.now()
   try {
     const stream = await groq.chat.completions.create(
       {
         model,
         messages: groqMessages,
-        max_tokens: 512,
+        max_tokens:  512,
         temperature: 0.7,
         stream: true,
       },
       { signal: controller.signal },
-    );
+    )
 
     for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content;
-      if (delta) sendEvent("delta", { content: delta });
+      const delta = chunk.choices[0]?.delta?.content
+      if (delta) sendEvent('delta', { content: delta })
     }
-    sendEvent("done", { model });
-    res.end();
+    sendEvent('done', { model })
+    res.end()
   } catch (err: any) {
-    if (controller.signal.aborted) return res.end();
-    console.error("[groq stream error]", err.message);
-    sendEvent("error", { error: `Groq AI error: ${err.message}` });
-    res.end();
+    if (controller.signal.aborted) return res.end()
+    console.error('[groq stream error]', err.message)
+    sendEvent('error', { error: `Groq AI error: ${err.message}` })
+    res.end()
   }
-});
-
-// ─── GET /pricing — free pre-flight pricing info (no payment required) ─────
-app.get('/pricing', (_req: Request, res: Response) => {
-  const info: PricingInfo = {
-    version: '1.0.0',
-    endpoints: [
-      { method: 'GET',  path: '/search',        description: 'Web search' },
-      { method: 'GET',  path: '/images',        description: 'Image search' },
-      { method: 'GET',  path: '/news',          description: 'News search' },
-      { method: 'POST', path: '/search/batch',  description: 'Batch search (up to 10 queries, JSONL streaming)' },
-      { method: 'POST', path: '/jobs',          description: 'Async search job with webhook callback' },
-    ],
-    schemes: [{
-      network:        NETWORK,
-      scheme:         'exact',
-      assetContract:  USDC_CONTRACT,
-      amountStroops:  AMOUNT_STROOPS,
-      amountUsdc:     AMOUNT_USDC,
-      payTo:          RECEIVING_ADDRESS,
-      maxTimeoutSeconds: 300,
-    }],
-    facilitatorUrl: FACILITATOR_URL,
-    note: 'All paid endpoints require 0.001 USDC per query via x402 on Stellar. Batch requests scale linearly.',
-  }
-  res.json(info)
 })
 
+
+
+
 // ─── GET / ────────────────────────────────────────────────────────────────
-app.get("/", (_req: Request, res: Response) => {
+app.get('/', (_req: Request, res: Response) => {
   res.json({
-    name: "StellarSearch",
-    version: "1.0.0",
-    description: "Pay-per-query web search for AI agents via x402 on Stellar",
+    name:        'StellarSearch',
+    version:     '1.0.0',
+    description: 'Pay-per-query web search for AI agents via x402 on Stellar',
     endpoints: {
       'GET /search?q=<query>': '0.001 USDC via x402',
       'GET /images?q=<query>': '0.001 USDC via x402 — image results',
@@ -1835,62 +1303,28 @@ app.get("/", (_req: Request, res: Response) => {
       'POST /jobs':            '0.001 USDC via x402 — async job, returns 202 + statusUrl + verified payment state',
       'GET /jobs/:id':         'Job status + verified payment state (webhook signed, replay/SSRF protected)',
       'GET /jobs':             'List recent jobs (capped at 50)',
-      'GET /pricing':          'Free — pricing info, scheme, and valid endpoints',
       'POST /ai/chat':         'Groq AI — free',
       'GET /health':           'Live server stats',
-      'GET /credits/:creditId':        'Look up a failed-search credit — free',
-      'POST /credits/:creditId/redeem': 'Redeem a failed-search credit — free',
     },
     mcp: {
-      resources: [
-        "stellar-search://capabilities",
-        "stellar-search://schema/search",
-        "stellar-search://receipts/recent (opted-in)",
-      ],
-      prompts: [
-        "research_brief (no silent payment)",
-        "summarize_results",
-        "compare_sources",
-      ],
-      progress:
-        "notifications/progress bounded to 4 phases (challenge→signing→settlement→search), cancellation/error terminates cleanly without false completion",
+      resources: ['stellar-search://capabilities', 'stellar-search://schema/search', 'stellar-search://receipts/recent (opted-in)'],
+      prompts: ['research_brief (no silent payment)', 'summarize_results', 'compare_sources'],
+      progress: 'notifications/progress bounded to 4 phases (challenge→signing→settlement→search), cancellation/error terminates cleanly without false completion',
     },
-  });
-});
-
-// ─── Catch-all: unsupported methods → 405 with Allow header ──────────────
-// Placed after all route definitions. Express routes only register for the
-// explicit method (get/post), so any other method falls through to here.
-app.all('/search', (req: Request, res: Response) => {
-  methodNotAllowed(res, allowHeader('GET'))
-})
-app.all('/images', (req: Request, res: Response) => {
-  methodNotAllowed(res, allowHeader('GET'))
-})
-app.all('/news', (req: Request, res: Response) => {
-  methodNotAllowed(res, allowHeader('GET'))
-})
-app.all('/health', (req: Request, res: Response) => {
-  methodNotAllowed(res, allowHeader('GET'))
-})
-app.all('/ai/chat', (req: Request, res: Response) => {
-  methodNotAllowed(res, allowHeader('POST'))
-})
-app.all('/', (req: Request, res: Response) => {
-  methodNotAllowed(res, allowHeader('GET'))
+  })
 })
 
 // ─── Start ────────────────────────────────────────────────────────────────
-if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
-    console.log(`\n🚀 StellarSearch on http://localhost:${PORT}`);
-    console.log(`   Network:     ${NETWORK}`);
-    console.log(`   Facilitator: ${FACILITATOR_URL}`);
-    console.log(`   Serper:      ${SERPER_API_KEY ? "✓" : "✗ MISSING"}`);
-    console.log(`   Groq:        ${GROQ_API_KEY ? "✓" : "✗ MISSING"}`);
-    console.log(`   Receiving:   ${RECEIVING_ADDRESS || "✗ MISSING"}`);
-    console.log(`   ${getCorsStartupMessage()}\n`);
-  });
+    console.log(`\n🚀 StellarSearch on http://localhost:${PORT}`)
+    console.log(`   Network:     ${NETWORK}`)
+    console.log(`   Facilitator: ${FACILITATOR_URL}`)
+    console.log(`   Serper:      ${SERPER_API_KEY ? '✓' : '✗ MISSING'}`)
+    console.log(`   Groq:        ${GROQ_API_KEY  ? '✓' : '✗ MISSING'}`)
+    console.log(`   Receiving:   ${RECEIVING_ADDRESS || '✗ MISSING'}`)
+    console.log(`   ${getCorsStartupMessage()}\n`)
+  })
 }
 
-export default app;
+export default app

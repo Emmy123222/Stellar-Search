@@ -1,73 +1,31 @@
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Wallet,
-  ChevronDown,
-  ExternalLink,
-  Copy,
-  CheckCheck,
-  RefreshCw,
-  LogOut,
-  AlertCircle,
+  Wallet, ChevronDown, ExternalLink,
+  Copy, CheckCheck, RefreshCw, LogOut, AlertCircle,
 } from 'lucide-react'
-import type { WalletState, StellarTransaction, ResourceState } from '../../hooks/useFreighterWallet'
+import type { WalletState, StellarTransaction } from '../../hooks/useFreighterWallet'
 import {
-  truncateAddress,
-  truncateHash,
-  explorerAccountUrl,
-  explorerTxUrl,
-  formatTimeAgo,
-  IS_MAINNET,
-  EXPECTED_WALLET_NETWORK,
-  AMOUNT_USDC,
+  truncateAddress, truncateHash,
+  explorerAccountUrl, explorerTxUrl, formatTimeAgo,
+  IS_MAINNET, EXPECTED_WALLET_NETWORK, AMOUNT_USDC
 } from '../../lib/stellar'
-import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 interface Props {
   wallet: WalletState
   transactions: StellarTransaction[]
   txLoading: boolean
-  // Independent resource states — each exposes loading/error/lastUpdated
-  balance?: ResourceState
-  history?: ResourceState
-  connection?: ResourceState
-  // Backward-compatible flat props (optional)
-  balanceLoading?: boolean
-  balanceError?: string | null
-  balanceLastUpdated?: string | null
-  txError?: string | null
-  txLastUpdated?: string | null
   onConnect: () => void
   onDisconnect: () => void
   onRefresh: () => void
-  onRefreshBalances?: () => void
-  onRefreshHistory?: () => void
 }
 
 export function WalletPanel({
   wallet, transactions, txLoading,
-  balance, history, connection,
-  balanceLoading, balanceError, balanceLastUpdated,
-  txError, txLastUpdated,
   onConnect, onDisconnect, onRefresh,
-  onRefreshBalances, onRefreshHistory,
 }: Props) {
-  const { t } = useTranslation('wallet')
-  // Resolve independent resource states with backward-compatible fallbacks
-  const balanceState: ResourceState = balance ?? {
-    loading: balanceLoading ?? false,
-    error: balanceError ?? null,
-    lastUpdated: balanceLastUpdated ?? null,
-  }
-  // history.loading is txLoading for rendering consistency
-  const historyLoading = history?.loading ?? txLoading
-  const historyError = history?.error ?? txError ?? null
-  const historyLastUpdated = history?.lastUpdated ?? txLastUpdated ?? null
-  const connectionState: ResourceState | null = connection ?? null
   const [open, setOpen]     = useState(false)
   const [copied, setCopied] = useState(false)
-  const reducedMotion = useReducedMotion()
 
   const isWrongNetwork = wallet.connected && wallet.network !== EXPECTED_WALLET_NETWORK
 
@@ -85,23 +43,19 @@ export function WalletPanel({
         onClick={onConnect}
         disabled={wallet.loading}
         className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 font-display text-xs tracking-wider text-white/50 hover:border-neon-cyan/40 hover:text-neon-cyan transition-all disabled:opacity-50"
-        whileHover={{ scale: reducedMotion ? 1 : 1.02 }}
-        whileTap={{ scale: reducedMotion ? 1 : 0.98 }}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
       >
         {wallet.loading ? (
-          reducedMotion ? (
-            <div className="w-3.5 h-3.5 rounded-full border border-neon-cyan/40" />
-          ) : (
-            <motion.div
-              className="w-3.5 h-3.5 rounded-full border border-neon-cyan/40 border-t-neon-cyan"
-              animate={{ rotate: 360 }}
-              transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-            />
-          )
+          <motion.div
+            className="w-3.5 h-3.5 rounded-full border border-neon-cyan/40 border-t-neon-cyan"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+          />
         ) : (
           <Wallet className="w-3.5 h-3.5" />
         )}
-        {wallet.loading ? t('connecting') : t('connect')}
+        {wallet.loading ? 'CONNECTING...' : 'CONNECT FREIGHTER'}
       </motion.button>
     )
   }
@@ -113,20 +67,20 @@ export function WalletPanel({
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label={t('menuLabel')}
+        aria-label="Wallet menu"
         className={`flex items-center gap-2 px-4 py-2 rounded-lg border font-display text-xs tracking-wider transition-all ${
-          isWrongNetwork
-            ? 'border-red-500/50 bg-red-500/5 text-red-400'
+          isWrongNetwork 
+            ? 'border-red-500/50 bg-red-500/5 text-red-400' 
             : 'border-neon-cyan/30 bg-neon-cyan/5 text-neon-cyan'
         }`}
-        whileHover={{ scale: reducedMotion ? 1 : 1.02 }}
-        whileTap={{ scale: reducedMotion ? 1 : 0.98 }}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
       >
-        <div className={`w-2 h-2 rounded-full ${isWrongNetwork ? 'bg-red-500' : 'bg-neon-green'} ${reducedMotion ? '' : 'animate-pulse'}`} />
+        <div className={`w-2 h-2 rounded-full animate-pulse ${isWrongNetwork ? 'bg-red-500' : 'bg-neon-green'}`} />
         <span>{truncateAddress(wallet.publicKey!)}</span>
         <span className="text-white/30">·</span>
         <span className={isWrongNetwork ? 'text-red-300' : 'text-neon-amber'}>
-          {isWrongNetwork ? t('wrongNetwork') : `${wallet.usdcBalance} USDC`}
+          {isWrongNetwork ? 'WRONG NETWORK' : `${wallet.usdcBalance} USDC`}
         </span>
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </motion.button>
@@ -135,17 +89,16 @@ export function WalletPanel({
         {open && (
           <>
             <motion.div 
-              initial={{ opacity: reducedMotion ? 1 : 0 }} 
+              initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }} 
-              exit={{ opacity: reducedMotion ? 1 : 0 }} 
+              exit={{ opacity: 0 }} 
               className="fixed inset-0 z-40 bg-black/60 sm:hidden" 
               onClick={() => setOpen(false)} 
             />
             <motion.div
-              initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8, scale: reducedMotion ? 1 : 0.95 }}
+              initial={{ opacity: 0, y: 8, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8, scale: reducedMotion ? 1 : 0.95 }}
-              transition={reducedMotion ? { duration: 0 } : { type: 'spring', bounce: 0.2, duration: 0.3 }}
+              exit={{ opacity: 0, y: 8, scale: 0.95 }}
               className="fixed inset-x-0 bottom-0 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 z-50 rounded-t-2xl sm:rounded-xl overflow-hidden pb-4 sm:pb-0 w-full sm:w-[320px]"
               style={{
                 background: 'rgba(6,13,20,0.95)',
@@ -156,13 +109,11 @@ export function WalletPanel({
             {/* Header */}
             <div className="p-4 border-b border-white/5">
               <div className="flex items-center justify-between mb-2">
-                <span className="font-display text-xs text-white/30 tracking-widest">{t('panelLabel')}</span>
+                <span className="font-display text-xs text-white/30 tracking-widest">FREIGHTER WALLET</span>
                 <div className="flex items-center gap-2">
                   <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${isWrongNetwork ? 'bg-red-500' : 'bg-neon-green'}`} />
-                  <span className={`font-display text-[10px] tracking-widest uppercase ${isWrongNetwork ? 'text-red-400' : 'text-neon-green/85'}`}>
-                    {wallet.network} {isWrongNetwork && '(EXPECTED ' + EXPECTED_WALLET_NETWORK + ')'}
                   <span className={`font-display text-[10px] tracking-widest uppercase ${isWrongNetwork ? 'text-red-400' : 'text-neon-green/70'}`}>
-                    {wallet.network} {isWrongNetwork && t('expectedNetwork', { network: EXPECTED_WALLET_NETWORK })}
+                    {wallet.network} {isWrongNetwork && '(EXPECTED ' + EXPECTED_WALLET_NETWORK + ')'}
                   </span>
                 </div>
               </div>
@@ -177,7 +128,7 @@ export function WalletPanel({
                 >
                   {wallet.publicKey}
                 </a>
-                <button                onClick={copy} aria-label="Copy wallet address" className="min-w-11 min-h-11 flex items-center justify-center rounded text-white/45 hover:text-white/70 flex-shrink-0">
+                <button onClick={copy} className="p-1 rounded text-white/30 hover:text-white/60 flex-shrink-0">
                   {copied
                     ? <CheckCheck className="w-3.5 h-3.5 text-neon-green" />
                     : <Copy className="w-3.5 h-3.5" />
@@ -185,134 +136,64 @@ export function WalletPanel({
                 </button>
               </div>
 
-              {/* Connection error — independent from balance/history */}
+              {/* Balances */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="py-2 px-3 rounded-lg bg-white/5">
+                  <p className="font-display text-white/30" style={{ fontSize: '9px' }}>USDC BALANCE</p>
+                  <p className="font-display text-lg text-neon-amber mt-0.5">{wallet.usdcBalance}</p>
+                  <p className="font-display text-white/25 mt-0.5" style={{ fontSize: '9px' }}>
+                    ~{Math.floor(parseFloat(wallet.usdcBalance) / parseFloat(AMOUNT_USDC)).toLocaleString()} queries
+                  </p>
+                </div>
+                <div className="py-2 px-3 rounded-lg bg-white/5">
+                  <p className="font-display text-white/30" style={{ fontSize: '9px' }}>XLM BALANCE</p>
+                  <p className="font-display text-lg text-neon-cyan mt-0.5">{wallet.xlmBalance}</p>
+                  <p className="font-display text-white/25 mt-0.5" style={{ fontSize: '9px' }}>for gas fees</p>
+                </div>
+              </div>
+
               {wallet.error && (
                 <div className="mt-2 flex items-center gap-2 py-1.5 px-2 rounded bg-red-500/10 border border-red-500/20">
                   <AlertCircle className="w-3 h-3 text-red-400 flex-shrink-0" />
                   <p className="text-xs text-red-300">{wallet.error}</p>
                 </div>
               )}
-              {connectionState?.error && connectionState.error !== wallet.error && (
-                <div className="mt-2 flex items-center gap-2 py-1.5 px-2 rounded bg-red-500/10 border border-red-500/20">
-                  <AlertCircle className="w-3 h-3 text-red-400 flex-shrink-0" />
-                  <p className="text-xs text-red-300">Connection: {connectionState.error}</p>
-                </div>
-              )}
-
-              {/* Balances — independent resource */}
-              <div className="mt-3">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-display text-white/30 tracking-widest" style={{ fontSize: '9px' }}>BALANCES</span>
-                  <div className="flex items-center gap-2">
-                    {balanceState.lastUpdated && (
-                      <span className="font-display text-white/20" style={{ fontSize: '8px' }}>
-                        Updated {formatTimeAgo(balanceState.lastUpdated)}
-                      </span>
-                    )}
-                    <button
-                      onClick={onRefreshBalances ?? onRefresh}
-                      disabled={balanceState.loading}
-                      className="p-1 text-white/30 hover:text-neon-amber transition-colors disabled:opacity-50"
-                      aria-label="Refresh balances"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${balanceState.loading ? 'animate-spin' : ''}`} />
-                    </button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="py-2 px-3 rounded-lg bg-white/5 relative">
-                    <p className="font-display text-white/30" style={{ fontSize: '9px' }}>{t('usdcBalanceLabel')}</p>
-                    <div className="flex items-center gap-1.5">
-                      <p className="font-display text-lg text-neon-amber mt-0.5">{wallet.usdcBalance}</p>
-                      {balanceState.loading && (
-                        <motion.div className="w-3 h-3 rounded-full border border-neon-amber/30 border-t-neon-amber" animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }} />
-                      )}
-                    </div>
-                    <p className="font-display text-white/25 mt-0.5" style={{ fontSize: '9px' }}>
-                      {t('queriesRemaining', {
-                        count: Math.floor(parseFloat(wallet.usdcBalance) / parseFloat(AMOUNT_USDC)),
-                      })}
-                    </p>
-                  </div>
-                  <div className="py-2 px-3 rounded-lg bg-white/5 relative">
-                    <p className="font-display text-white/30" style={{ fontSize: '9px' }}>{t('xlmBalanceLabel')}</p>
-                    <div className="flex items-center gap-1.5">
-                      <p className="font-display text-lg text-neon-cyan mt-0.5">{wallet.xlmBalance}</p>
-                      {balanceState.loading && (
-                        <motion.div className="w-3 h-3 rounded-full border border-neon-cyan/30 border-t-neon-cyan" animate={{ rotate: 360 }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }} />
-                      )}
-                    </div>
-                    <p className="font-display text-white/25 mt-0.5" style={{ fontSize: '9px' }}>{t('gasFeesNote')}</p>
-                  </div>
-                </div>
-                {balanceState.error && (
-                  <div className="mt-2 flex items-center gap-2 py-1.5 px-2 rounded bg-amber-500/10 border border-amber-500/20">
-                    <AlertCircle className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                    <p className="text-xs text-amber-300">Balance: {balanceState.error}</p>
-                  </div>
-                )}
-              </div>
             </div>
 
-            {/* Transactions — independent resource */}
+            {/* Transactions */}
             <div className="p-3">
-              <div className="flex items-center justify-between mb-2">                  <span className="font-display text-white/55 tracking-widest" style={{ fontSize: '10px' }}>
-                  RECENT TRANSACTIONS
-                </span>                  <button
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-display text-white/30 tracking-widest" style={{ fontSize: '10px' }}>
-                    {t('recentTransactions')}
-                  </span>
-                  {historyLastUpdated && (
-                    <span className="font-display text-white/20" style={{ fontSize: '8px' }}>
-                      Updated {formatTimeAgo(historyLastUpdated)}
-                    </span>
-                  )}
-                </div>
+                <span className="font-display text-white/30 tracking-widest" style={{ fontSize: '10px' }}>
+                  RECENT TRANSACTIONS
+                </span>
                 <button
                   onClick={onRefresh}
                   disabled={txLoading}
-                  aria-label="Refresh transactions"
-                  className="min-w-11 min-h-11 flex items-center justify-center text-white/45 hover:text-neon-cyan transition-colors disabled:opacity-50"
+                  className="p-1 text-white/30 hover:text-neon-cyan transition-colors disabled:opacity-50"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${txLoading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3 h-3 ${txLoading ? 'animate-spin' : ''}`} />
                 </button>
               </div>
 
-              {historyError && (
-                <div className="mb-2 flex items-center gap-2 py-1.5 px-2 rounded bg-amber-500/10 border border-amber-500/20">
-                  <AlertCircle className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                  <p className="text-xs text-amber-300">History: {historyError}</p>
-                </div>
-              )}
-
-              {historyLoading ? (
+              {txLoading ? (
                 <div className="flex justify-center py-4">
-                  {reducedMotion ? (
-                    <div className="w-4 h-4 rounded-full border border-neon-cyan/30" />
-                  ) : (
-                    <motion.div
-                      className="w-4 h-4 rounded-full border border-neon-cyan/30 border-t-neon-cyan"
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-                    />
-                  )}
+                  <motion.div
+                    className="w-4 h-4 rounded-full border border-neon-cyan/30 border-t-neon-cyan"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                  />
                 </div>
-              ) : transactions.length === 0 ? (                    <p className="text-xs text-white/45 text-center py-3">No transactions yet</p>
               ) : transactions.length === 0 ? (
-                <p className="text-xs text-white/20 text-center py-3">{t('noTransactions')}</p>
+                <p className="text-xs text-white/20 text-center py-3">No transactions yet</p>
               ) : (
                 <div className="space-y-1.5 max-h-40 overflow-y-auto">
                   {transactions.map(tx => (
                     <div
-                      className={`w-1.5 h-1.5 rounded-full animate-pulse ${isWrongNetwork ? 'bg-red-500' : 'bg-neon-green'}`}
-                    />
-                    <span
-                      className={`font-display text-[10px] tracking-widest uppercase ${isWrongNetwork ? 'text-red-400' : 'text-neon-green/70'}`}
+                      key={tx.id}
+                      className="flex items-center justify-between py-1.5 px-2 rounded bg-white/3 hover:bg-white/5 transition-colors"
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="font-display text-xs text-white/65 capitalize">
+                        <p className="font-display text-xs text-white/50 capitalize">
                           {tx.type.replace('_', ' ')}
                         </p>
                         <div className="flex items-center gap-2 mt-0.5">
@@ -320,12 +201,12 @@ export function WalletPanel({
                             href={explorerTxUrl(tx.hash)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="font-mono text-white/50 hover:text-neon-cyan transition-colors flex items-center gap-1"
+                            className="font-mono text-white/25 hover:text-neon-cyan transition-colors flex items-center gap-1"
                             style={{ fontSize: '10px' }}
                           >
                             {truncateHash(tx.hash, 6)} <ExternalLink className="w-2 h-2" />
                           </a>
-                          <span className="text-white/50" style={{ fontSize: '10px' }}>
+                          <span className="text-white/20" style={{ fontSize: '10px' }}>
                             {formatTimeAgo(tx.timestamp)}
                           </span>
                         </div>
@@ -336,6 +217,8 @@ export function WalletPanel({
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
 
             {/* Actions */}
             <div className="p-3 pt-0 flex gap-2">
@@ -344,25 +227,25 @@ export function WalletPanel({
                   href="https://www.circle.com/en/usdc"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 py-2 min-h-11 rounded-lg border border-neon-amber/20 text-center font-display text-[10px] text-neon-amber/85 hover:bg-neon-amber/5 transition-colors uppercase tracking-widest"
+                  className="flex-1 py-2 rounded-lg border border-neon-amber/20 text-center font-display text-[10px] text-neon-amber/70 hover:bg-neon-amber/5 transition-colors uppercase tracking-widest"
                 >
-                  {t('buyUsdc')}
+                  Buy USDC ↗
                 </a>
               ) : (
                 <a
                   href="https://laboratory.stellar.org/#account-creator?network=test"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 py-2 min-h-11 rounded-lg border border-neon-cyan/20 text-center font-display text-[10px] text-neon-cyan/85 hover:bg-neon-cyan/5 transition-colors uppercase tracking-widest"
+                  className="flex-1 py-2 rounded-lg border border-neon-cyan/20 text-center font-display text-[10px] text-neon-cyan/70 hover:bg-neon-cyan/5 transition-colors uppercase tracking-widest"
                 >
-                  {t('fundTestnet')}
+                  Fund Testnet ↗
                 </a>
               )}
               <button
                 onClick={() => { onDisconnect(); setOpen(false) }}
                 className="flex items-center gap-1.5 py-2 px-3 rounded-lg border border-white/10 font-display text-xs text-white/30 hover:text-red-400 hover:border-red-500/30 transition-all"
               >
-                <LogOut className="w-3 h-3" /> {t('disconnect')}
+                <LogOut className="w-3 h-3" /> Disconnect
               </button>
             </div>
           </motion.div>

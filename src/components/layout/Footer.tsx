@@ -1,17 +1,14 @@
-import { useTranslation } from 'react-i18next'
 import { Zap } from 'lucide-react'
 import { STELLAR_EXPERT_URL, IS_MAINNET } from '../../lib/stellar'
 
+const LINKS = [
+  { label: 'x402.org',         href: 'https://x402.org' },
+  { label: 'Stellar Docs',     href: 'https://developers.stellar.org' },
+  { label: `${IS_MAINNET ? 'Mainnet' : 'Testnet'} Explorer`, href: STELLAR_EXPERT_URL },
+  { label: 'Freighter',        href: 'https://freighter.app' },
+]
+
 export function Footer() {
-  const { t } = useTranslation('common')
-
-  const links = [
-    { label: t('footer.links.x402'),        href: 'https://x402.org' },
-    { label: t('footer.links.stellarDocs'), href: 'https://developers.stellar.org' },
-    { label: t('footer.links.explorer', { network: IS_MAINNET ? 'Mainnet' : 'Testnet' }), href: STELLAR_EXPERT_URL },
-    { label: t('footer.links.freighter'),   href: 'https://freighter.app' },
-  ]
-
   return (
     <footer className="border-t border-white/4 py-5">
       <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -22,20 +19,18 @@ export function Footer() {
           >
             <Zap className="w-2.5 h-2.5 text-neon-cyan" />
           </div>
-          <span className="font-display text-xs text-white/45">
-            STELLARSEARCH · Stellar Hackathon 2026
           <span className="font-display text-xs text-white/20">
-            {t('footer.tagline')}
+            STELLARSEARCH · Stellar Hackathon 2026
           </span>
         </div>
         <div className="flex items-center gap-5">
-          {links.map(({ label, href }) => (
+          {LINKS.map(({ label, href }) => (
             <a
               key={label}
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-display text-xs text-white/55 hover:text-neon-cyan/80 transition-colors hidden sm:inline"
+              className="font-display text-xs text-white/20 hover:text-neon-cyan/60 transition-colors hidden sm:inline"
             >
               {label}
             </a>

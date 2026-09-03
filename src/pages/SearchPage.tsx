@@ -1,6 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useTranslation } from 'react-i18next'
 import { Search, Zap, AlertCircle } from 'lucide-react'
 import {
   SearchBar,
@@ -9,86 +7,51 @@ import {
   PaymentFlowVisualizer,
   StatsGrid,
   ZeroBalanceBanner,
-  SpellingCorrectionBanner,
-  ModeSelector,
-  ImageResults,
-  NewsResults,
 } from '../components'
 import type { SearchSession } from '../hooks/useSearch'
 import type { WalletState } from '../hooks/useFreighterWallet'
-import type { SearchMode } from '../types'
 import { AMOUNT_USDC } from '../lib/stellar'
-import { useState } from 'react'
 
 interface Props {
   wallet: WalletState
   onConnectWallet: () => void
   session: SearchSession
-  search: (query: string, freshnessOrCount?: string | number, count?: number, mode?: SearchMode) => Promise<void>
+  search: (query: string, count?: number) => Promise<void>
   reset: () => void
 }
 
 export function SearchPage({ wallet, onConnectWallet, session, search, reset }: Props) {
-  const reducedMotion = useReducedMotion()
-  const { t } = useTranslation('search')
-  const [dismissedSuggestion, setDismissedSuggestion] = useState(false)
-  const [searchMode, setSearchMode] = useState<SearchMode>('web')
-  const [activeFreshness, setActiveFreshness] = useState<string | undefined>(undefined)
-
-  // #150 — after an async search settles, move keyboard/screen-reader focus to
-  // the error alert (SearchResults moves focus to the results heading on
-  // success). Focus only moves on the transition into `error`; it is never
-  // stolen while typing, signing, or during manual navigation.
-  const errorRef       = useRef<HTMLDivElement>(null)
-  const prevStatusRef  = useRef(session.status)
-
-  useEffect(() => {
-    const prevStatus = prevStatusRef.current
-    prevStatusRef.current = session.status
-    if (prevStatus !== 'error' && session.status === 'error' && errorRef.current) {
-      errorRef.current.focus()
-    }
-  }, [session.status])
-  const handleSearch = (query: string, freshness?: string) => {
-    setDismissedSuggestion(false)
-    // Suggestions are alternate queries, not new filter selections. Keep the
-    // user's visible freshness filter when they choose one.
-    const nextFreshness = freshness ?? activeFreshness
-    if (freshness !== undefined) setActiveFreshness(freshness)
+  const handleSearch = (query: string) => {
     if (!wallet.connected) { onConnectWallet(); return }
-    search(query, nextFreshness, searchMode === 'web' ? 5 : 10, searchMode)
+    search(query)
   }
 
   const isSearching = session.status === 'searching'
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
+
       <StatsGrid />
 
       <AnimatePresence>
-        {session.status === "idle" && (
+        {session.status === 'idle' && (
           <motion.div
-            initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 20 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : -20 }}
-            transition={reducedMotion ? { duration: 0 } : { duration: 0.3 }}
+            exit={{ opacity: 0, y: -20 }}
             className="text-center space-y-4 py-8"
           >
             <motion.div
               className="relative w-20 h-20 mx-auto mb-5"
               animate={{ rotate: [0, 360] }}
-              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+              transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
             >
               <div className="absolute inset-0 rounded-full border border-neon-cyan/20" />
               <div className="absolute inset-2 rounded-full border border-neon-cyan/40" />
               <div className="absolute inset-0 flex items-center justify-center">
                 <div
                   className="w-8 h-8 rounded-full flex items-center justify-center"
-                  style={{
-                    background: "rgba(0,245,255,0.15)",
-                    border: "1px solid rgba(0,245,255,0.5)",
-                    boxShadow: "0 0 10px rgba(0,245,255,0.3)",
-                  }}
+                  style={{ background: 'rgba(0,245,255,0.15)', border: '1px solid rgba(0,245,255,0.5)', boxShadow: '0 0 10px rgba(0,245,255,0.3)' }}
                 >
                   <Search className="w-4 h-4 text-neon-cyan" />
                 </div>
@@ -97,29 +60,16 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
             <h1 className="font-display text-4xl sm:text-5xl text-white leading-tight">
               SEARCH
-              <span
-                className="text-neon-cyan"
-                style={{ textShadow: "0 0 20px rgba(0,245,255,0.8)" }}
-              >
-                .
-              </span>
+              <span className="text-neon-cyan" style={{ textShadow: '0 0 20px rgba(0,245,255,0.8)' }}>.</span>
               PAY
-              <span
-                className="text-neon-cyan"
-                style={{ textShadow: "0 0 20px rgba(0,245,255,0.8)" }}
-              >
-                .
-              </span>
+              <span className="text-neon-cyan" style={{ textShadow: '0 0 20px rgba(0,245,255,0.8)' }}>.</span>
               GET
             </h1>
 
             <p className="text-white/45 text-lg max-w-md mx-auto leading-relaxed">
-              Real web search for AI agents.{" "}
-              <span className="text-neon-cyan font-medium">
-                {AMOUNT_USDC} USDC
-              </span>{" "}
-              per query settled on Stellar via x402. Powered by{" "}
-              <span className="text-neon-amber font-medium">Serper.dev</span> +{" "}
+              Real web search for AI agents.{' '}
+              <span className="text-neon-cyan font-medium">{AMOUNT_USDC} USDC</span> per query settled on Stellar via x402.
+              Powered by <span className="text-neon-amber font-medium">Serper.dev</span> +{' '}
               <span className="text-neon-green font-medium">Groq AI</span>.
             </p>
 
@@ -129,14 +79,10 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-display text-sm tracking-wider text-neon-cyan"
-                style={{
-                  border: "1px solid rgba(0,245,255,0.4)",
-                  background: "rgba(0,245,255,0.08)",
-                  boxShadow: "0 0 20px rgba(0,245,255,0.15)",
-                }}
+                style={{ border: '1px solid rgba(0,245,255,0.4)', background: 'rgba(0,245,255,0.08)', boxShadow: '0 0 20px rgba(0,245,255,0.15)' }}
               >
                 <Zap className="w-4 h-4" />
-                {t('connectCta')}
+                CONNECT FREIGHTER TO SEARCH
               </motion.button>
             )}
           </motion.div>
@@ -147,18 +93,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         connected={wallet.connected}
         publicKey={wallet.publicKey}
         usdcBalance={wallet.usdcBalance}
-        accountExists={wallet.accountExists}
-        hasUsdcTrustline={wallet.hasUsdcTrustline}
-        accountStatus={wallet.accountStatus}
       />
-
-      <ModeSelector
-        mode={searchMode}
-        onChange={setSearchMode}
-        disabled={isSearching}
-      />
-
-      <AdvancedSearchBuilder onSearch={handleSearch} initialQuery={session.query} />
 
       <SearchBar
         onSearch={handleSearch}
@@ -166,169 +101,54 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         walletConnected={wallet.connected}
         usdcBalance={wallet.usdcBalance}
         walletNetwork={wallet.network}
-        query={session.query}
+        defaultQuery={session.query}
       />
+
+      <AnimatePresence>
+        {session.status === 'idle' && (
+          <SearchResults results={[]} query="" />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {session.status !== 'idle' && (
           <motion.div
             key="results-area"
-            initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 16 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}
             className="space-y-5"
           >
             <PaymentFlowVisualizer session={session} />
 
             {session.status === 'error' && (
-              <div
-                ref={errorRef}
-                role="alert"
-                tabIndex={-1}
-                className="flex items-center gap-3 p-4 rounded-xl border border-red-500/25 bg-red-500/5 focus:outline-none"
-              >
+              <div className="flex items-center gap-3 p-4 rounded-xl border border-red-500/25 bg-red-500/5">
                 <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm text-red-300">{session.error}</p>
-                  {session.errorCode && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (session.errorCode === 'wallet_required' || session.errorCode === 'network_mismatch') onConnectWallet()
-                        else if (session.errorCode === 'payment_rejected' || session.errorCode === 'provider_unavailable' || session.errorCode === 'request_failed') search(session.query, undefined, searchMode === 'web' ? 5 : 10, searchMode)
-                        else handleReset()
-                      }}
-                      className="mt-2 text-xs font-display tracking-wider text-neon-cyan hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-neon-cyan rounded"
-                    >
-                      {session.errorCode === 'wallet_required' ? 'CONNECT WALLET' :
-                       session.errorCode === 'network_mismatch' ? 'CHECK NETWORK' :
-                       session.errorCode === 'insufficient_balance' ? 'VIEW BALANCE' :
-                       session.errorCode === 'payment_rejected' ? 'RETRY PAYMENT' :
-                       session.errorCode === 'provider_unavailable' ? 'RETRY PROVIDER' : 'START NEW SEARCH'}
-                    </button>
-                  )}
-                </div>
+                <p className="text-sm text-red-300">{session.error}</p>
               </div>
             )}
 
-            {session.status === 'complete' && searchMode === 'web' && (
-              <SpellingCorrectionBanner
-                originalQuery={session.originalQuery}
-                executedQuery={session.executedQuery || session.query}
-                suggestedQuery={session.suggestedQuery}
-                isCorrected={session.isCorrected}
-                onSearch={handleSearch}
-                onDismiss={() => setDismissedSuggestion(true)}
-                isDismissed={dismissedSuggestion}
-              />
-            )}
-
-            {searchMode === 'web' && (session.status === 'complete' || session.status === 'searching') && (
-              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}>
-                <SearchResults results={session.results as any} query={session.query} isLoading={session.status === 'searching'} txHash={session.txHash} />
+            {(session.status === 'complete' || session.status === 'searching') && (
+              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+                <SearchResults results={session.results} query={session.query} isLoading={session.status === 'searching'} />
               </motion.div>
             )}
 
-            {searchMode === 'images' && (session.status === 'complete' || session.status === 'searching') && (
-              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}>
-                <ImageResults results={session.results as any} isLoading={session.status === 'searching'} />
-              </motion.div>
-            )}
-
-            {searchMode === 'news' && (session.status === 'complete' || session.status === 'searching') && (
-              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.15 }}>
-                <NewsResults results={session.results as any} isLoading={session.status === 'searching'} />
-              </motion.div>
-            )}
-
-            {session.status === 'complete' && session.suggestions && session.suggestions.length > 0 && searchMode === 'web' && (
-              <motion.div initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8 }} animate={{ opacity: 1, y: 0 }} transition={reducedMotion ? { duration: 0 } : { delay: 0.3 }}>
+            {session.status === 'complete' && session.suggestions.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
                 <SearchSuggestions onSelect={handleSearch} aiSuggestions={session.suggestions} />
               </motion.div>
             )}
 
             {(session.status === 'complete' || session.status === 'error') && (
-              <motion.div initial={{ opacity: reducedMotion ? 1 : 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
-                <button onClick={handleReset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
-                  {t('newSearch')}
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
+                <button onClick={reset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
+                  ← NEW SEARCH
                 </button>
               </motion.div>
             )}
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-function AdvancedSearchBuilder({ onSearch, initialQuery }: { onSearch: (q: string) => void; initialQuery?: string }) {
-  const [query, setQuery] = useState(initialQuery || '')
-  const [showOperators, setShowOperators] = useState(false)
-
-  const addToken = (token: string) => {
-    setQuery((prev) => {
-      const sep = prev.trim() ? ' ' : ''
-      return prev + sep + token
-    })
-  }
-
-  const handleSearch = () => {
-    const trimmed = query.trim()
-    if (!trimmed) return
-    if (trimmed.length > 500) {
-      alert('Query exceeds maximum length of 500 characters')
-      return
-    }
-    onSearch(trimmed)
-  }
-
-  return (
-    <div className="rounded-xl border border-neon-cyan/20 bg-white/[0.02] p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-display text-sm text-neon-cyan tracking-widest">ADVANCED SEARCH BUILDER</h3>
-        <button
-          onClick={() => setShowOperators(!showOperators)}
-          className="text-xs text-white/40 hover:text-neon-cyan transition-colors"
-        >
-          {showOperators ? 'Hide operators' : 'Show operators'}
-        </button>
-      </div>
-      <textarea
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        rows={3}
-        placeholder="Compose your query with operators..."
-        className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-white/80 focus:outline-none focus:border-neon-cyan/50 resize-y"
-      />
-      {showOperators && (
-        <div className="flex flex-wrap gap-2">
-          {[
-            { label: 'site:', token: 'site:' },
-            { label: 'filetype:', token: 'filetype:' },
-            { label: 'exclude (-word)', token: '-word' },
-            { label: 'exact phrase ("...")', token: '"..."' },
-            { label: 'inurl:', token: 'inurl:' },
-            { label: 'intitle:', token: 'intitle:' },
-          ].map((op) => (
-            <button
-              key={op.token}
-              onClick={() => addToken(op.token)}
-              className="px-2 py-1 rounded-md border border-white/10 text-xs text-white/60 hover:text-neon-cyan hover:border-neon-cyan/40 transition-colors"
-            >
-              {op.label}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-white/30">{query.length}/500</span>
-        <button
-          onClick={handleSearch}
-          className="px-4 py-2 rounded-lg font-display text-xs tracking-widest text-neon-cyan border border-neon-cyan/40 bg-neon-cyan/10 hover:bg-neon-cyan/20 transition-colors"
-        >
-          SEARCH WITH THIS QUERY
-        </button>
-      </div>
     </div>
   )
 }

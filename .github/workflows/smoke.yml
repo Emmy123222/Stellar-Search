@@ -36,21 +36,21 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install
         run: npm ci
 
       - name: Build check
-        run: npm run typecheck
+        run: npm run build
 
       - name: Start server (background)
         env:
           # Dummy keys to let health show configured vs reachable — smoke tests 402/CORS without needing real keys
           SERPER_API_KEY: dummy-serper-key-for-smoke-1234567890abcdef
           GROQ_API_KEY: gsk_dummy_key_for_smoke_test_only_1234567890
-          STELLAR_RECEIVING_ADDRESS: GBXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+          STELLAR_RECEIVING_ADDRESS: GBBD47IF6LWK7P7MDEVOSCWR7DPWUV3NY3DTQEVFL4NAT4AQHAZLLFLA
           STELLAR_NETWORK: stellar:testnet
           FACILITATOR_URL: https://www.x402.org/facilitator
           PORT: 3001
@@ -115,7 +115,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install
@@ -159,7 +159,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install

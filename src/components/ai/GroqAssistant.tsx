@@ -1,98 +1,76 @@
-import { resolveApiUrl } from '../../lib/config'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bot, Send, X, ChevronDown, Trash2, Download } from 'lucide-react'
+import { Bot, Send, X } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
-import { AiMarkdown } from './AiMarkdown'
 
 interface Message {
   role: 'system' | 'user' | 'assistant'
   content: string
-  model?: string // Add model info to messages
-  isError?: boolean // Flag to identify network/provider failures
 }
 
 interface LastSearch {
-  query: string;
-  results: SearchResult[];
+  query: string
+  results: SearchResult[]
 }
 
 interface Props {
-  lastSearch?: LastSearch | null;
+  lastSearch?: LastSearch | null
 }
 
-// Available Groq models
-const AVAILABLE_MODELS = [
-  {
-    id: "llama-3.3-70b-versatile",
-    label: "Llama 3.3 70B",
-    description: "Most capable",
-  },
-  { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B", description: "Fastest" },
-  { id: "mixtral-8x7b-32768", label: "Mixtral 8x7B", description: "Balanced" },
-] as const;
-
-type ModelId = (typeof AVAILABLE_MODELS)[number]["id"];
-
 const SYSTEM_INTRO: Message = {
-  role: "assistant",
+  role: 'assistant',
   content:
-    "Hi! I'm your AI research assistant powered by Groq. I can help you craft better search queries, summarise results, or explain topics. Each search costs 0.001 USDC on Stellar. What would you like to research?",
-};
+    "Hi! I'm your AI research assistant powered by Groq (Llama 3). I can help you craft better search queries, summarise results, or explain topics. Each search costs 0.001 USDC on Stellar. What would you like to research?",
+}
 
-const SERVER_URL = (path: string) => resolveApiUrl(path)
+const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
+  typeof window !== 'undefined' && window.location.origin.includes('vercel.app')
+    ? `${window.location.origin}/api`
+    : 'http://localhost:3001'
+)
 
 // Parse an SSE stream from `/ai/chat` and invoke `onDelta` for each token.
 // Stops cleanly on `event: done` or `event: error`.
 async function consumeSSE(
   body: ReadableStream<Uint8Array>,
   onDelta: (delta: string) => void,
-  onModel?: (model: string, truncated?: boolean) => void,
 ): Promise<void> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
+  const reader  = body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let   buffer  = ''
 
   while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
 
     // SSE events are delimited by a blank line.
-    let blankLine: number;
-    while ((blankLine = buffer.indexOf("\n\n")) !== -1) {
-      const rawEvent = buffer.slice(0, blankLine);
-      buffer = buffer.slice(blankLine + 2);
+    let blankLine: number
+    while ((blankLine = buffer.indexOf('\n\n')) !== -1) {
+      const rawEvent = buffer.slice(0, blankLine)
+      buffer = buffer.slice(blankLine + 2)
 
-      let event = "message";
-      let data = "";
-      for (const line of rawEvent.split("\n")) {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        else if (line.startsWith("data:")) data += line.slice(5).trim();
+      let event = 'message'
+      let data  = ''
+      for (const line of rawEvent.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim()
+        else if (line.startsWith('data:')) data += line.slice(5).trim()
       }
-      if (!data) continue;
+      if (!data) continue
 
-      if (event === "delta") {
+      if (event === 'delta') {
         try {
-          const { content } = JSON.parse(data) as { content?: string };
-          if (content) onDelta(content);
-        } catch {
-          /* malformed chunk; skip */
-        }
-      } else if (event === "done") {
+          const { content } = JSON.parse(data) as { content?: string }
+          if (content) onDelta(content)
+        } catch { /* malformed chunk; skip */ }
+      } else if (event === 'done') {
+        return
+      } else if (event === 'error') {
         try {
-          const { model } = JSON.parse(data) as { model?: string };
-          if (model && onModel) onModel(model);
-        } catch {
-          /* ignore malformed done event */
-        }
-        return;
-      } else if (event === "error") {
-        try {
-          const { error } = JSON.parse(data) as { error?: string };
-          throw new Error(error || "stream error");
+          const { error } = JSON.parse(data) as { error?: string }
+          throw new Error(error || 'stream error')
         } catch (e) {
-          throw e instanceof Error ? e : new Error("stream error");
+          throw e instanceof Error ? e : new Error('stream error')
         }
       }
     }
@@ -102,384 +80,147 @@ async function consumeSSE(
 // Build a system message that gives Groq context from the user's most recent
 // paid search so follow-up questions can be answered without re-asking.
 function buildSearchContextMessage(s: LastSearch): Message {
-  const top = s.results
-    .slice(0, 3)
-    .map((r, i) => `${i + 1}. ${r.title} — ${r.url}\n   ${r.description}`)
-    .join("\n");
+  const top = s.results.slice(0, 3).map((r, i) =>
+    `${i + 1}. ${r.title} — ${r.url}\n   ${r.description}`
+  ).join('\n')
   return {
-    role: "system",
+    role: 'system',
     content:
       `Context — the user's most recent search:\n` +
       `Query: "${s.query}"\n` +
       `Top results:\n${top}\n\n` +
       `Use this when answering follow-up questions. Do not repeat the list verbatim.`,
-  };
+  }
 }
 
 export function GroqAssistant({ lastSearch }: Props = {}) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen]         = useState(false)
   const [messages, setMessages] = useState<Message[]>([SYSTEM_INTRO])
   const [input, setInput]       = useState('')
   const [loading, setLoading]   = useState(false)
-  const [availableModels, setAvailableModels] = useState<AIModel[]>([])
-  const [selectedModel, setSelectedModel] = useState<ModelId>('')
-  const [showModelDropdown, setShowModelDropdown] = useState(false)
   const bottomRef               = useRef<HTMLDivElement>(null)
   const contextInjectedFor      = useRef<string | null>(null)
-  const dropdownRef             = useRef<HTMLDivElement>(null)
-  const dropdownButtonRef       = useRef<HTMLButtonElement>(null)
-  const optionRefs              = useRef<(HTMLButtonElement | null)[]>([])
-
-  // Fetch models from capability endpoint
-  useEffect(() => {
-    fetch(`${SERVER_URL}/ai/models`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.models && Array.isArray(data.models)) {
-          setAvailableModels(data.models)
-        }
-        if (data.default) {
-          setSelectedModel(data.default)
-        }
-      })
-      .catch(err => console.error('Failed to fetch AI models', err))
-  }, [])
 
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowModelDropdown(false)
-      }
-    }
-    if (showModelDropdown) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [showModelDropdown])
-
-  const handleDropdownKeyDown = (e: React.KeyboardEvent, index: number) => {
-    switch (e.key) {
-      case 'ArrowDown': {
-        e.preventDefault()
-        const next = (index + 1) % AVAILABLE_MODELS.length
-        optionRefs.current[next]?.focus()
-        break
-      }
-      case 'ArrowUp': {
-        e.preventDefault()
-        const prev = (index - 1 + AVAILABLE_MODELS.length) % AVAILABLE_MODELS.length
-        optionRefs.current[prev]?.focus()
-        break
-      }
-      case 'Enter':
-      case ' ':
-        e.preventDefault()
-        setSelectedModel(AVAILABLE_MODELS[index].id)
-        setShowModelDropdown(false)
-        dropdownButtonRef.current?.focus()
-        break
-      case 'Escape':
-        e.preventDefault()
-        setShowModelDropdown(false)
-        dropdownButtonRef.current?.focus()
-        break
-    }
-  }
-
-  const handleButtonKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
-      if (!showModelDropdown) {
-        e.preventDefault()
-        setShowModelDropdown(true)
-        setTimeout(() => optionRefs.current[0]?.focus(), 50)
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      setShowModelDropdown(false)
-      dropdownButtonRef.current?.focus()
-    }
-  }
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   // Inject a search-context system message the first time the assistant is
   // opened after a search completes. Re-inject if the query changes.
   useEffect(() => {
-    if (!open || !lastSearch || !lastSearch.results.length) return;
-    if (contextInjectedFor.current === lastSearch.query) return;
-    contextInjectedFor.current = lastSearch.query;
-    setMessages((prev) => [...prev, buildSearchContextMessage(lastSearch)]);
-  }, [open, lastSearch]);
+    if (!open || !lastSearch || !lastSearch.results.length) return
+    if (contextInjectedFor.current === lastSearch.query) return
+    contextInjectedFor.current = lastSearch.query
+    setMessages(prev => [...prev, buildSearchContextMessage(lastSearch)])
+  }, [open, lastSearch])
 
-  const send = async (retryHistory?: Message[], retryModel?: ModelId) => {
-    if ((!input.trim() && !retryHistory) || loading) return
-    
-    let history: Message[]
-    if (retryHistory) {
-      history = retryHistory
-    } else {
-      const userMsg: Message = { role: 'user', content: input.trim() }
-      history = [...messages, userMsg]
-      setMessages(history)
-      setInput('')
-    }
-    
+  const send = async () => {
+    if (!input.trim() || loading) return
+    const userMsg: Message = { role: 'user', content: input.trim() }
+    const history = [...messages, userMsg]
+    setMessages(history)
+    setInput('')
     setLoading(true)
-    const currentModel = retryModel || selectedModel
 
     // Insert a placeholder assistant message we'll stream tokens into.
-    setMessages([...history, { role: 'assistant', content: '', model: currentModel }])
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }])
 
     const payload = JSON.stringify({
       messages: history.map(m => ({ role: m.role, content: m.content })),
-      model: currentModel,
     })
 
     try {
-      const res = await fetch(SERVER_URL('/ai/chat'), {
+      const res = await fetch(`${SERVER_URL}/ai/chat`, {
         method: 'POST',
         headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
         },
         body: payload,
-      });
-      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      })
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
 
-      const isSSE = res.headers
-        .get("content-type")
-        ?.includes("text/event-stream");
+      const isSSE = res.headers.get('content-type')?.includes('text/event-stream')
       if (isSSE && res.body) {
-        await consumeSSE(
-          res.body,
-          delta => {
-            setMessages(prev => {
-              const next = [...prev]
-              const last = next[next.length - 1]
-              if (last?.role === 'assistant') {
-                next[next.length - 1] = { ...last, content: last.content + delta, isError: false }
-              }
-              return next;
-            });
-          },
-          (model) => {
-            // Update the model info in the last message
-            setMessages((prev) => {
-              const next = [...prev];
-              const last = next[next.length - 1];
-              if (last?.role === "assistant") {
-                next[next.length - 1] = { ...last, model };
-              }
-              return next;
-            });
-          },
-        );
+        await consumeSSE(res.body, delta => {
+          setMessages(prev => {
+            const next = [...prev]
+            const last = next[next.length - 1]
+            if (last?.role === 'assistant') {
+              next[next.length - 1] = { ...last, content: last.content + delta }
+            }
+            return next
+          })
+        })
       } else {
         // Non-streaming fallback: server returned JSON.
         const data = await res.json()
         setMessages(prev => {
           const next = [...prev]
-          next[next.length - 1] = { 
-            role: 'assistant', 
-            content: data.content ?? 'No response.',
-            model: data.model || currentModel,
-            isError: false
-          }
+          next[next.length - 1] = { role: 'assistant', content: data.content ?? 'No response.' }
           return next
         })
       }
     } catch (err: any) {
-      setMessages((prev) => {
-        const next = [...prev];
+      setMessages(prev => {
+        const next = [...prev]
         next[next.length - 1] = {
-          role: "assistant",
+          role: 'assistant',
           content: `⚠️ Could not reach AI server: ${err.message}. Make sure the backend is running with GROQ_API_KEY set.`,
-          model: currentModel,
-          isError: true
         }
         return next
       })
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
-
-  const getModelLabel = (modelId: string) => {
-    const model = AVAILABLE_MODELS.find((m) => m.id === modelId);
-    return model?.label || modelId;
-  };
-
-  const handleClear = () => {
-    if (window.confirm('Clear conversation?')) {
-      setMessages([SYSTEM_INTRO])
-      contextInjectedFor.current = null
-    }
-  }
-
-  const handleExport = () => {
-    const format = window.confirm('Export as JSON? (Cancel for Markdown)') ? 'json' : 'markdown'
-    const includeSystem = window.confirm('Include system messages?')
-    
-    const exportMsgs = messages.filter(m => includeSystem || m.role !== 'system')
-    
-    let content = ''
-    let mimeType = ''
-    let ext = ''
-    
-    if (format === 'json') {
-      content = JSON.stringify(exportMsgs, null, 2)
-      mimeType = 'application/json'
-      ext = 'json'
-    } else {
-      content = exportMsgs.map(m => `**${m.role.toUpperCase()}**:\n${m.content}\n\n`).join('')
-      mimeType = 'text/markdown'
-      ext = 'md'
-    }
-    
-    const blob = new Blob([content], { type: mimeType })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `conversation-export.${ext}`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   return (
     <>
-      {/* Floating trigger button */}
+      {/* Floating button */}
       <motion.button
-        ref={triggerButtonRef}
         onClick={() => setOpen(true)}
         className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full flex items-center justify-center"
-        style={{
-          background: "rgba(0,245,255,0.15)",
-          border: "1px solid rgba(0,245,255,0.4)",
-        }}
+        style={{ background: 'rgba(0,245,255,0.15)', border: '1px solid rgba(0,245,255,0.4)' }}
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
         animate={{
           boxShadow: [
-            "0 0 15px rgba(0,245,255,0.3)",
-            "0 0 35px rgba(0,245,255,0.6)",
-            "0 0 15px rgba(0,245,255,0.3)",
+            '0 0 15px rgba(0,245,255,0.3)',
+            '0 0 35px rgba(0,245,255,0.6)',
+            '0 0 15px rgba(0,245,255,0.3)',
           ],
         }}
-        transition={reducedMotion ? {} : { duration: 2, repeat: Infinity }}
+        transition={{ duration: 2, repeat: Infinity }}
       >
         <Bot className="w-5 h-5 text-neon-cyan" />
       </motion.button>
 
-      {/* Chat dialog panel */}
+      {/* Chat panel */}
       <AnimatePresence>
         {open && (
           <motion.div
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="groq-assistant-title"
-            aria-describedby="groq-assistant-desc"
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="fixed bottom-20 right-4 left-4 sm:left-auto sm:right-6 z-40 sm:w-96 rounded-2xl overflow-hidden flex flex-col"
+            className="fixed bottom-20 right-6 z-40 w-80 rounded-2xl overflow-hidden flex flex-col"
             style={{
-              height: '480px',
-              maxHeight: 'calc(100dvh - 6rem)',
+              height: '420px',
               background: 'rgba(6,13,20,0.96)',
               border: '1px solid rgba(0,245,255,0.2)',
               backdropFilter: 'blur(20px)',
             }}
           >
-            <span id="groq-assistant-desc" className="sr-only">
-              Interactive AI research assistant powered by Groq Llama models.
-            </span>
-
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
               <div className="flex items-center gap-2">
                 <Bot className="w-4 h-4 text-neon-cyan" />
-                <span className="font-display text-xs text-neon-cyan tracking-wider">
-                  GROQ AI
-                </span>
-                {/* Model Selector Dropdown */}
-                <div className="relative" ref={dropdownRef}>
-                  <button
-                    ref={dropdownButtonRef}
-                    onClick={() => {
-                      setShowModelDropdown(!showModelDropdown)
-                      if (!showModelDropdown) {
-                        setTimeout(() => optionRefs.current[0]?.focus(), 50)
-                      }
-                    }}
-                    onKeyDown={handleButtonKeyDown}
-                    aria-haspopup="listbox"
-                    aria-expanded={showModelDropdown}
-                    aria-labelledby="model-selector-label"
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-neon-cyan/50"
-                    style={{
-                      background: "rgba(0,245,255,0.1)",
-                      border: "1px solid rgba(0,245,255,0.2)",
-                      color: "rgba(255,255,255,0.8)",
-                    }}
-                  >
-                    <span id="model-selector-label" className="sr-only">Select AI Model</span>
-                    <span>{getModelLabel(selectedModel)}</span>
-                    <ChevronDown className="w-3 h-3" />
-                  </button>
-
-                  {/* Dropdown Menu */}
-                  <AnimatePresence>
-                    {showModelDropdown && (
-                      <motion.div
-                        role="listbox"
-                        aria-label="Available Groq AI Models"
-                        initial={{ opacity: 0, y: -5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -5 }}
-                        role="listbox"
-                        aria-label="Available AI Models"
-                        className="absolute top-full left-0 mt-1 w-48 rounded-lg overflow-hidden z-50 shadow-xl"
-                        style={{
-                          background: "rgba(6,13,20,0.98)",
-                          border: "1px solid rgba(0,245,255,0.2)",
-                        }}
-                      >
-                        {AVAILABLE_MODELS.map((model, index) => (
-                          <button
-                            key={model.id}
-                            ref={el => optionRefs.current[index] = el}
-                            role="option"
-                            aria-selected={selectedModel === model.id}
-                            onClick={() => {
-                              setSelectedModel(model.id)
-                              setShowModelDropdown(false)
-                              dropdownButtonRef.current?.focus()
-                            }}
-                            onKeyDown={e => handleDropdownKeyDown(e, index)}
-                            tabIndex={selectedModel === model.id ? 0 : -1}
-                            className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors focus:outline-none focus:bg-white/10"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-white font-medium">{model.label}</span>
-                              {selectedModel === model.id && (
-                                <span className="text-neon-cyan text-xs" aria-hidden="true">✓</span>
-                              )}
-                            </div>
-                            <div className="text-xs text-white/50 mt-0.5">{model.description}</div>
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
+                <span className="font-display text-xs text-neon-cyan tracking-wider">GROQ AI</span>
+                <span className="font-display text-xs text-white/25 hidden sm:inline">· Llama 3</span>
               </div>
               <button
-                onClick={handleClose}
-                aria-label="Close AI Research Assistant"
-                className="text-white/30 hover:text-white/60 transition-colors focus:outline-none focus:text-white p-1 rounded"
+                onClick={() => setOpen(false)}
+                className="text-white/30 hover:text-white/60 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -487,83 +228,39 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
-              {messages.map((msg, i) => {
-                if (msg.role === 'system') return null;
-                return (
+              {messages.filter(m => m.role !== 'system').map((msg, i) => (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
                     className="max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed"
                     style={{
                       background: msg.role === 'user'
                         ? 'rgba(0,245,255,0.15)'
-                        : msg.isError
-                        ? 'rgba(255,0,0,0.15)'
                         : 'rgba(255,255,255,0.05)',
                       border: msg.role === 'user'
                         ? '1px solid rgba(0,245,255,0.3)'
-                        : msg.isError
-                        ? '1px solid rgba(255,0,0,0.3)'
                         : '1px solid rgba(255,255,255,0.07)',
-                      color: msg.role === 'user'
-                        ? '#00f5ff'
-                        : msg.isError
-                        ? '#ff4444'
-                        : 'rgba(255,255,255,0.7)',
+                      color: msg.role === 'user' ? '#00f5ff' : 'rgba(255,255,255,0.7)',
                     }}
                   >
-                    {msg.role === 'assistant' ? (
-                      <AiMarkdown
-                        content={msg.content}
-                        citationMax={lastSearch ? Math.min(3, lastSearch.results.length) : undefined}
-                      />
-                    ) : (
-                      msg.content
-                    )}
+                    {msg.content}
                   </div>
-                  {/* Show model metadata for assistant messages */}
-                  {msg.role === 'assistant' && (
-                    <div className="flex items-center gap-2 mt-1 px-1">
-                      {msg.model && (
-                        <div className="text-[10px] text-white/30">
-                          {getModelLabel(msg.model)}
-                        </div>
-                      )}
-                      {msg.isError && !loading && (
-                        <button
-                          onClick={() => send(messages.slice(0, i), msg.model as ModelId)}
-                          className="text-[10px] text-neon-cyan hover:text-neon-cyan/80 transition-colors flex items-center gap-1"
-                        >
-                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                            <path d="M3 3v5h5" />
-                          </svg>
-                          Retry
-                        </button>
-                      )}
-                    </div>
-                  )}
                 </motion.div>
-                )
-              })}
+              ))}
 
               {loading && (
-                <div className="flex justify-start" aria-label="AI is generating response">
+                <div className="flex justify-start">
                   <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/7">
-                    {[0, 1, 2].map((j) => (
+                    {[0, 1, 2].map(j => (
                       <motion.div
                         key={j}
                         className="w-1.5 h-1.5 rounded-full bg-neon-cyan/60"
                         animate={{ opacity: [0.3, 1, 0.3] }}
-                        transition={{
-                          duration: 0.8,
-                          repeat: Infinity,
-                          delay: j * 0.15,
-                        }}
+                        transition={{ duration: 0.8, repeat: Infinity, delay: j * 0.15 }}
                       />
                     ))}
                   </div>
@@ -572,29 +269,26 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               <div ref={bottomRef} />
             </div>
 
-            {/* Input form */}
+            {/* Input */}
             <div className="p-3 border-t border-white/5">
               <div className="flex items-center gap-2">
                 <input
-                  ref={inputRef}
                   type="text"
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
                   placeholder="Ask anything..."
-                  aria-label="Message to AI Research Assistant"
                   disabled={loading}
                   className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-white/25 outline-none focus:border-neon-cyan/30 disabled:opacity-50"
-                  style={{ caretColor: "#00f5ff" }}
+                  style={{ caretColor: '#00f5ff' }}
                 />
                 <button
                   onClick={send}
                   disabled={!input.trim() || loading}
-                  aria-label="Send message"
-                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all disabled:opacity-30 focus:outline-none focus:ring-1 focus:ring-neon-cyan"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all disabled:opacity-30"
                   style={{
-                    background: "rgba(0,245,255,0.15)",
-                    border: "1px solid rgba(0,245,255,0.3)",
+                    background: 'rgba(0,245,255,0.15)',
+                    border: '1px solid rgba(0,245,255,0.3)',
                   }}
                 >
                   <Send className="w-3.5 h-3.5 text-neon-cyan" />

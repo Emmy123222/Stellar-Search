@@ -1,5 +1,6 @@
 import winston from 'winston';
 import crypto from 'crypto';
+import { redact } from '../src/lib/redactor.js';
 
 export function privacySafeQuery(value: unknown): undefined {
   // Query text is intentionally never logged; use request IDs for correlation.
@@ -11,36 +12,22 @@ export function privacySafeIp(value: unknown): string {
   return raw ? `ip:${crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16)}` : 'ip:unknown'
 }
 
-// Configure Winston to log structured JSON to stderr.
+const redactorFormat = winston.format((info) => {
+  return redact(info as Record<string, unknown>) as unknown as winston.Logform.TransformableInfo
+})
+
 const logger = winston.createLogger({
   level: 'info',
-  format: winston.format.combine(
-    redactorFormat(),
-    winston.format.timestamp(),
-    winston.format.json(),
-  ),
+  format: winston.format.combine(redactorFormat(), winston.format.json()),
   transports: [
     new winston.transports.Console({
-      // By default, Winston writes to stdout. We redirect to stderr for all log levels.
-      stderrLevels: ['error', 'warn', 'info', 'debug'],
-      consoleWarnLevels: [],
       format: winston.format.combine(
-        winston.format.timestamp(),
         winston.format.colorize(),
-        winston.format.json()
+        winston.format.simple()
       ),
     }),
   ],
-})
-
-/**
- * Enhanced logger with request ID support
- * Logs can include requestId for distributed tracing
- */
-export function logWithId(level: string, message: string, requestId?: string, meta?: any) {
-  const logMeta = { requestId, ...meta }
-  logger.log(level, message, logMeta)
-}
+});
 
 export default logger;
 export { redact };

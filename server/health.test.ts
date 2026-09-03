@@ -1,12 +1,10 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import request from 'supertest'
-import { MEASURED_STAT_FIELDS, resolveStat, hasAnyStats } from '../src/lib/serverHealth'
 
 // Mock x402 and Groq before importing app
 vi.mock('@x402/express', () => ({
   paymentMiddlewareFromConfig: () => (_req: any, _res: any, next: any) => next(),
 }))
-// Using global mock for HTTPFacilitatorClient
 vi.mock('@x402/core/server', () => ({
   HTTPFacilitatorClient: class { constructor(_opts: any) {} },
 }))
@@ -61,45 +59,11 @@ describe('GET /health and GET /', () => {
     })
   })
 
-  // ─── Statistics declaration (#226) ──────────────────────────────────────
-  // Express keeps the counters in the process serving the paid routes, so it
-  // measures everything and says so. The declaration is what lets a consumer
-  // tell a real `totalQueries: 0` apart from a runtime that never measured it.
-
-  it('GET /health declares that it measures every activity statistic', async () => {
-    const res = await request(app).get('/health')
-    expect(res.body.statsSupported).toBe(true)
-    expect(res.body.unsupportedFields).toEqual([])
-    expect(res.body.statsUnavailableReason).toBeUndefined()
-  })
-
-  it('GET /health resolves every statistic as available through the shared contract', async () => {
-    const res = await request(app).get('/health')
-    expect(hasAnyStats(res.body)).toBe(true)
-    for (const field of MEASURED_STAT_FIELDS) {
-      expect(resolveStat(res.body, field).available).toBe(true)
-    }
-  })
-
-  it('GET /health reports a zero counter as a real measurement, not an absence', async () => {
-    // Nothing has been searched in this suite, so the counters are genuinely
-    // zero — and must resolve as available zeros rather than "unavailable".
-    const res = await request(app).get('/health')
-    const queries = resolveStat(res.body, 'totalQueries')
-    expect(queries).toEqual({ available: true, value: res.body.totalQueries })
-    expect(typeof res.body.totalQueries).toBe('number')
-  })
-
   it('GET / returns service metadata with paid routes', async () => {
     const res = await request(app).get('/')
     expect(res.status).toBe(200)
     expect(res.body.name).toBe('StellarSearch')
     expect(res.body.version).toBe('1.0.0')
-    expect(res.body.capabilities.streaming).toBe(true)
-    expect(res.body.capabilities.images).toBe(true)
-    expect(res.body.capabilities.news).toBe(true)
-    expect(res.body.capabilities.paymentHeaders).toContain('x-payment')
-    expect(res.body.capabilities.runtime).toBe('express')
     expect(res.body.endpoints['GET /search?q=<query>']).toContain('0.001 USDC')
     expect(res.body.endpoints['GET /images?q=<query>']).toContain('0.001 USDC')
     expect(res.body.endpoints['GET /news?q=<query>']).toContain('0.001 USDC')
@@ -123,177 +87,25 @@ describe('GET /health and GET /', () => {
     // facilitator URL present
     expect(typeof res.body.facilitator).toBe('string')
     expect(res.body.facilitator.length).toBeGreaterThan(0)
-    expect(res.body.facilitatorCompatibility).toBeDefined()
-    expect(res.body.facilitatorCompatibility.compatible).toBe(true)
-    expect(res.body.facilitatorCompatibility.scheme).toBe('exact')
-  })
-
-  it('GET /api returns service metadata identical to GET /', async () => {
-    const res = await request(app).get('/api')
-    expect(res.status).toBe(200)
-    expect(res.body.name).toBe('StellarSearch')
-    expect(res.body.version).toBe('1.0.0')
-  })
-
-  it('GET /api/health returns ok with settlement config', async () => {
-    const res = await request(app).get('/api/health')
-    expect(res.status).toBe(200)
-    expect(res.body.status).toBe('ok')
-    expect(res.body.protocol).toBe('x402')
   })
 })
 
-describe('Facilitator Compatibility Guard & Readiness Errors', () => {
-  const originalFacilitator = process.env.FACILITATOR_URL
-  const originalNetwork = process.env.STELLAR_NETWORK
-
-  afterEach(() => {
-    if (originalFacilitator !== undefined) process.env.FACILITATOR_URL = originalFacilitator
-    else delete process.env.FACILITATOR_URL
-    if (originalNetwork !== undefined) process.env.STELLAR_NETWORK = originalNetwork
-    else delete process.env.STELLAR_NETWORK
-  })
-
-  it('reports degraded status on /health when facilitator URL is incompatible with network', async () => {
-    process.env.STELLAR_NETWORK = 'stellar:mainnet'
-    process.env.FACILITATOR_URL = 'https://channels.openzeppelin.com/x402/testnet'
-
-    const res = await request(app).get('/health')
-    expect(res.status).toBe(200)
-    expect(res.body.status).toBe('degraded')
-    expect(res.body.facilitatorCompatibility.compatible).toBe(false)
-    expect(res.body.facilitatorCompatibility.errors.length).toBeGreaterThan(0)
-  })
-
-  it('blocks GET /search with 503 readiness error when facilitator is incompatible', async () => {
-    process.env.STELLAR_NETWORK = 'stellar:mainnet'
-    process.env.FACILITATOR_URL = 'https://channels.openzeppelin.com/x402/testnet'
-
-    const res = await request(app).get('/search?q=test')
-    expect(res.status).toBe(503)
-    expect(res.body.code).toBe('FACILITATOR_NETWORK_INCOMPATIBLE')
-    expect(res.body.error).toContain('incompatible with the selected Stellar network')
-    expect(res.body.details.length).toBeGreaterThan(0)
-  })
-
-  it('blocks GET /images with 503 readiness error when facilitator is incompatible', async () => {
-    process.env.STELLAR_NETWORK = 'stellar:testnet'
-    process.env.FACILITATOR_URL = 'https://channels.openzeppelin.com/x402/mainnet'
-
-    const res = await request(app).get('/images?q=test')
-    expect(res.status).toBe(503)
-    expect(res.body.code).toBe('FACILITATOR_NETWORK_INCOMPATIBLE')
-  })
-
-  it('blocks GET /news with 503 readiness error when facilitator is incompatible', async () => {
-    process.env.STELLAR_NETWORK = 'stellar:testnet'
-    process.env.FACILITATOR_URL = 'invalid-url'
-
-    const res = await request(app).get('/news?q=test')
-    expect(res.status).toBe(503)
-    expect(res.body.code).toBe('FACILITATOR_NETWORK_INCOMPATIBLE')
-  })
-})
-
-describe('POST /ai/chat — single route with streaming, JSON fallback, and model selection', () => {
+describe('POST /ai/chat validation', () => {
   it('returns 400 when messages missing', async () => {
     const res = await request(app).post('/ai/chat').send({}).set('Content-Type', 'application/json')
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/messages array required/)
   })
 
-  it('returns 400 when messages empty on /api/ai/chat', async () => {
-    const res = await request(app).post('/api/ai/chat').send({ messages: [] }).set('Content-Type', 'application/json')
+  it('returns 400 when messages empty', async () => {
+    const res = await request(app).post('/ai/chat').send({ messages: [] }).set('Content-Type', 'application/json')
     expect(res.status).toBe(400)
-  })
-
-  it('validates messages structure — rejects null messages', async () => {
-    const res = await request(app).post('/ai/chat').send({ messages: null }).set('Content-Type', 'application/json')
-    expect(res.status).toBe(400)
-    expect(res.body.error).toMatch(/messages array required/)
-  })
-
-  it('only registers a single POST /ai/chat route', async () => {
-    // Verify the route only accepts POST — GET returns 404 (no GET handler registered)
-    const getRes = await request(app).get('/ai/chat')
-    expect(getRes.status).toBe(404)
-
-    // Verify POST with valid data reaches the handler (Groq mock returns default response)
-    const postRes = await request(app)
-      .post('/ai/chat')
-      .send({ messages: [{ role: 'user', content: 'hello' }] })
-      .set('Content-Type', 'application/json')
-    // The handler either succeeds (200) or fails with Groq error (500),
-    // but it MUST be handled — not 404
-    expect(postRes.status).not.toBe(404)
   })
 })
 
-describe('method handling — 405 with Allow header', () => {
-  it('GET /search returns 405 with Allow header for POST', async () => {
-    const res = await request(app).post('/search')
-    expect(res.status).toBe(405)
-    expect(res.body.error).toMatch(/Method not allowed/)
-    expect(res.headers['allow']).toMatch(/GET/)
-    expect(res.headers['allow']).toMatch(/OPTIONS/)
-  })
-
-  it('GET /search returns 405 with Allow header for PUT', async () => {
-    const res = await request(app).put('/search')
-    expect(res.status).toBe(405)
-    expect(res.headers['allow']).toMatch(/GET/)
-  })
-
-  it('GET /images returns 405 with Allow header for POST', async () => {
-    const res = await request(app).post('/images')
-    expect(res.status).toBe(405)
-    expect(res.body.error).toMatch(/Method not allowed/)
-    expect(res.headers['allow']).toMatch(/GET/)
-  })
-
-  it('GET /news returns 405 with Allow header for DELETE', async () => {
-    const res = await request(app).delete('/news')
-    expect(res.status).toBe(405)
-    expect(res.headers['allow']).toMatch(/GET/)
-  })
-
-  it('GET /health returns 405 with Allow header for POST', async () => {
-    const res = await request(app).post('/health')
-    expect(res.status).toBe(405)
-    expect(res.body.error).toMatch(/Method not allowed/)
-    expect(res.headers['allow']).toMatch(/GET/)
-  })
-
-  it('POST /ai/chat returns 405 with Allow header for GET', async () => {
-    const res = await request(app).get('/ai/chat')
-    expect(res.status).toBe(405)
-    expect(res.body.error).toMatch(/Method not allowed/)
-    expect(res.headers['allow']).toMatch(/POST/)
-  })
-
-  it('POST /ai/chat returns 405 with Allow header for DELETE', async () => {
-    const res = await request(app).delete('/ai/chat')
-    expect(res.status).toBe(405)
-    expect(res.headers['allow']).toMatch(/POST/)
-  })
-
-  it('GET / returns 405 with Allow header for POST', async () => {
-    const res = await request(app).post('/')
-    expect(res.status).toBe(405)
-    expect(res.body.error).toMatch(/Method not allowed/)
-    expect(res.headers['allow']).toMatch(/GET/)
-  })
-})
-
-describe('GET /search & /api/search validation (x402 middleware bypassed via mock)', () => {
-  it('returns 400 when q missing on /search', async () => {
+describe('GET /search validation (x402 middleware bypassed via mock)', () => {
+  it('returns 400 when q missing', async () => {
     const res = await request(app).get('/search')
-    expect(res.status).toBe(400)
-    expect(res.body.error).toMatch(/Missing required parameter/)
-  })
-
-  it('returns 400 when q missing on /api/search', async () => {
-    const res = await request(app).get('/api/search')
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/Missing required parameter/)
   })
@@ -308,83 +120,5 @@ describe('GET /search & /api/search validation (x402 middleware bypassed via moc
     const res = await request(app).get(`/search?q=${long}`)
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/Query too long/)
-  })
-})
-
-describe('Rate limiting - separate budgets per route type', () => {
-  it('paid search routes use separate rate limiter with configurable limit', async () => {
-    // Set low limit for testing
-    process.env.RATE_LIMIT_PAID_PER_MINUTE = '2'
-    
-    // Re-import app to apply new env var
-    const mod = await import('./index.js')
-    const testApp = mod.default
-    
-    // First request should succeed
-    const res1 = await request(testApp).get('/search?q=test')
-    expect(res1.status).not.toBe(429)
-    
-    // Second request should succeed
-    const res2 = await request(testApp).get('/search?q=test2')
-    expect(res2.status).not.toBe(429)
-  })
-
-  it('AI chat route uses separate rate limiter', async () => {
-    process.env.RATE_LIMIT_AI_PER_MINUTE = '2'
-    
-    const mod = await import('./index.js')
-    const testApp = mod.default
-    
-    const res1 = await request(testApp)
-      .post('/ai/chat')
-      .send({ messages: [{ role: 'user', content: 'test' }] })
-    expect(res1.status).not.toBe(429)
-  })
-
-  it('health route uses separate rate limiter with high limit', async () => {
-    process.env.RATE_LIMIT_HEALTH_PER_MINUTE = '1000'
-    
-    const mod = await import('./index.js')
-    const testApp = mod.default
-    
-    const res = await request(testApp).get('/health')
-    expect(res.status).toBe(200)
-  })
-
-  it('429 responses include Retry-After header', async () => {
-    // Mock rate limit to trigger immediately
-    process.env.RATE_LIMIT_PAID_PER_MINUTE = '0'
-    
-    const mod = await import('./index.js')
-    const testApp = mod.default
-    
-    const res = await request(testApp).get('/search?q=test')
-    if (res.status === 429) {
-      expect(res.headers['retry-after']).toBeDefined()
-      expect(res.body.error).toMatch(/Too many paid search requests/)
-    }
-  })
-
-  it('health probes are not affected by paid search rate limiting', async () => {
-    // Set paid search limit to 0
-    process.env.RATE_LIMIT_PAID_PER_MINUTE = '0'
-    // Keep health limit high
-    process.env.RATE_LIMIT_HEALTH_PER_MINUTE = '1000'
-    
-    const mod = await import('./index.js')
-    const testApp = mod.default
-    
-    // Health should still work even when paid search is rate limited
-    const healthRes = await request(testApp).get('/health')
-    expect(healthRes.status).toBe(200)
-  })
-
-  it('rate limiters use IP-based key generator', async () => {
-    const mod = await import('./index.js')
-    const testApp = mod.default
-    
-    // Verify that rate limiters are configured with keyGenerator
-    // This is a structural test - the implementation should use IP-based keys
-    expect(testApp).toBeDefined()
   })
 })

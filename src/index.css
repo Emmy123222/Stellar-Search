@@ -32,13 +32,6 @@
   100% { transform: translateX(-50%); }
 }
 .animate-ticker { animation: ticker 30s linear infinite; }
-.animate-ticker:hover,
-.animate-ticker:focus,
-.animate-ticker:focus-within { animation-play-state: paused; }
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-ticker { animation: none; }
-}
 
 @keyframes scan {
   0% { top: 0%; }
@@ -54,19 +47,4 @@
   animation: blink 1s step-end infinite;
   color: #00f5ff;
   margin-left: 2px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-
-  .animate-ticker {
-    animation: none !important;
-  }
 }

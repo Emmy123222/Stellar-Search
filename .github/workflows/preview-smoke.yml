@@ -46,7 +46,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
         # No `npm ci`: scripts/smoke.mjs is dependency-free ESM on purpose, so
         # this gate stays green even while the lockfile is being changed.
 

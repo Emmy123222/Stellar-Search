@@ -1,7 +1,5 @@
-import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Sparkles } from 'lucide-react'
-import { useReducedMotion } from '../../hooks/useReducedMotion'
 
 const STATIC_SUGGESTIONS = [
   'x402 payment protocol Stellar',
@@ -19,15 +17,8 @@ interface Props {
 }
 
 export function SearchSuggestions({ onSelect, aiSuggestions }: Props) {
-  const reducedMotion = useReducedMotion()
   const isAi = aiSuggestions && aiSuggestions.length > 0
-  const nextItems = isAi ? aiSuggestions : STATIC_SUGGESTIONS
-  const [items, setItems] = useState<string[]>(STATIC_SUGGESTIONS)
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setItems([...nextItems]), 300)
-    return () => window.clearTimeout(timer)
-  }, [aiSuggestions])
+  const items = isAi ? aiSuggestions : STATIC_SUGGESTIONS
 
   return (
     <motion.div
@@ -38,7 +29,7 @@ export function SearchSuggestions({ onSelect, aiSuggestions }: Props) {
     >
       <div className="flex items-center gap-1.5">
         {isAi && <Sparkles className="w-3 h-3 text-neon-amber/60" />}
-        <p className="font-display text-xs text-white/50 tracking-widest">
+        <p className="font-display text-xs text-white/25 tracking-widest">
           {isAi ? 'YOU MIGHT ALSO SEARCH FOR' : 'TRY THESE'}
         </p>
       </div>
@@ -47,21 +38,21 @@ export function SearchSuggestions({ onSelect, aiSuggestions }: Props) {
         {items.map((q, i) => (
           <motion.button
             key={q}
-            initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={reducedMotion ? { duration: 0 } : { delay: i * 0.06 }}
+            transition={{ delay: i * 0.06 }}
             onClick={() => onSelect(q)}
-            className="px-3 py-1.5 rounded-lg text-xs font-display tracking-wide transition-all text-white/55 hover:text-neon-cyan/80"
+            className="px-3 py-1.5 rounded-lg text-xs font-display tracking-wide transition-all text-white/40 hover:text-neon-cyan/80"
             style={{ border: '1px solid rgba(255,255,255,0.08)' }}
             onMouseEnter={e => {
               const el = e.currentTarget as HTMLButtonElement
               el.style.borderColor = isAi ? 'rgba(255,176,0,0.3)' : 'rgba(0,245,255,0.25)'
-              el.style.background = isAi ? 'rgba(255,176,0,0.05)' : 'rgba(0,245,255,0.04)'
+              el.style.background   = isAi ? 'rgba(255,176,0,0.05)' : 'rgba(0,245,255,0.04)'
             }}
             onMouseLeave={e => {
               const el = e.currentTarget as HTMLButtonElement
               el.style.borderColor = 'rgba(255,255,255,0.08)'
-              el.style.background = 'transparent'
+              el.style.background  = 'transparent'
             }}
           >
             {q}
