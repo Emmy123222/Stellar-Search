@@ -297,8 +297,9 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating trigger button */}
       <motion.button
+        ref={triggerButtonRef}
         onClick={() => setOpen(true)}
         className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full flex items-center justify-center"
         style={{
@@ -319,10 +320,15 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
         <Bot className="w-5 h-5 text-neon-cyan" />
       </motion.button>
 
-      {/* Chat panel */}
+      {/* Chat dialog panel */}
       <AnimatePresence>
         {open && (
           <motion.div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="groq-assistant-title"
+            aria-describedby="groq-assistant-desc"
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
@@ -335,6 +341,10 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               backdropFilter: 'blur(20px)',
             }}
           >
+            <span id="groq-assistant-desc" className="sr-only">
+              Interactive AI research assistant powered by Groq Llama models.
+            </span>
+
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
               <div className="flex items-center gap-2">
@@ -372,6 +382,8 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                   <AnimatePresence>
                     {showModelDropdown && (
                       <motion.div
+                        role="listbox"
+                        aria-label="Available Groq AI Models"
                         initial={{ opacity: 0, y: -5 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -5 }}
@@ -413,8 +425,9 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                 </div>
               </div>
               <button
-                onClick={() => setOpen(false)}
-                className="text-white/30 hover:text-white/60 transition-colors"
+                onClick={handleClose}
+                aria-label="Close AI Research Assistant"
+                className="text-white/30 hover:text-white/60 transition-colors focus:outline-none focus:text-white p-1 rounded"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -487,7 +500,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               })}
 
               {loading && (
-                <div className="flex justify-start">
+                <div className="flex justify-start" aria-label="AI is generating response">
                   <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/7">
                     {[0, 1, 2].map((j) => (
                       <motion.div
@@ -507,15 +520,17 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               <div ref={bottomRef} />
             </div>
 
-            {/* Input */}
+            {/* Input form */}
             <div className="p-3 border-t border-white/5">
               <div className="flex items-center gap-2">
                 <input
+                  ref={inputRef}
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
                   placeholder="Ask anything..."
+                  aria-label="Message to AI Research Assistant"
                   disabled={loading}
                   className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder:text-white/25 outline-none focus:border-neon-cyan/30 disabled:opacity-50"
                   style={{ caretColor: "#00f5ff" }}
@@ -523,7 +538,8 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                 <button
                   onClick={send}
                   disabled={!input.trim() || loading}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all disabled:opacity-30"
+                  aria-label="Send message"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all disabled:opacity-30 focus:outline-none focus:ring-1 focus:ring-neon-cyan"
                   style={{
                     background: "rgba(0,245,255,0.15)",
                     border: "1px solid rgba(0,245,255,0.3)",
