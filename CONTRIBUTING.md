@@ -1,4 +1,4 @@
-# Contributing to StellarSearch
+# Contributing to Stellar Search
 
 <<<<<<< HEAD
 Thanks for contributing to StellarSearch. This guide covers the local setup, the wallet and Stellar testnet requirements, and the conventions used for pull requests.
