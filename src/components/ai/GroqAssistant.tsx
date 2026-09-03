@@ -9,6 +9,7 @@ interface Message {
   role: 'system' | 'user' | 'assistant'
   content: string
   model?: string // Add model info to messages
+  isError?: boolean // Flag to identify network/provider failures
 }
 
 interface LastSearch {
@@ -129,20 +130,28 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
     setMessages(prev => [...prev, buildSearchContextMessage(lastSearch)])
   }, [open, lastSearch])
 
-  const send = async () => {
-    if (!input.trim() || loading) return
-    const userMsg: Message = { role: 'user', content: input.trim() }
-    const history = [...messages, userMsg]
-    setMessages(history)
-    setInput('')
+  const send = async (retryHistory?: Message[], retryModel?: ModelId) => {
+    if ((!input.trim() && !retryHistory) || loading) return
+    
+    let history: Message[]
+    if (retryHistory) {
+      history = retryHistory
+    } else {
+      const userMsg: Message = { role: 'user', content: input.trim() }
+      history = [...messages, userMsg]
+      setMessages(history)
+      setInput('')
+    }
+    
     setLoading(true)
+    const currentModel = retryModel || selectedModel
 
     // Insert a placeholder assistant message we'll stream tokens into.
-    setMessages(prev => [...prev, { role: 'assistant', content: '', model: selectedModel }])
+    setMessages([...history, { role: 'assistant', content: '', model: currentModel }])
 
     const payload = JSON.stringify({
       messages: history.map(m => ({ role: m.role, content: m.content })),
-      model: selectedModel,
+      model: currentModel,
     })
 
     try {
@@ -165,7 +174,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
               const next = [...prev]
               const last = next[next.length - 1]
               if (last?.role === 'assistant') {
-                next[next.length - 1] = { ...last, content: last.content + delta }
+                next[next.length - 1] = { ...last, content: last.content + delta, isError: false }
               }
               return next
             })
@@ -190,7 +199,8 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
           next[next.length - 1] = { 
             role: 'assistant', 
             content: data.content ?? 'No response.',
-            model: data.model || selectedModel
+            model: data.model || currentModel,
+            isError: false
           }
           return next
         })
@@ -201,7 +211,8 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
         next[next.length - 1] = {
           role: 'assistant',
           content: `⚠️ Could not reach AI server: ${err.message}. Make sure the backend is running with GROQ_API_KEY set.`,
-          model: selectedModel,
+          model: currentModel,
+          isError: true
         }
         return next
       })
@@ -317,7 +328,9 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
-              {messages.filter(m => m.role !== 'system').map((msg, i) => (
+              {messages.map((msg, i) => {
+                if (msg.role === 'system') return null;
+                return (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, y: 8 }}
@@ -329,11 +342,19 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                     style={{
                       background: msg.role === 'user'
                         ? 'rgba(0,245,255,0.15)'
+                        : msg.isError
+                        ? 'rgba(255,0,0,0.15)'
                         : 'rgba(255,255,255,0.05)',
                       border: msg.role === 'user'
                         ? '1px solid rgba(0,245,255,0.3)'
+                        : msg.isError
+                        ? '1px solid rgba(255,0,0,0.3)'
                         : '1px solid rgba(255,255,255,0.07)',
-                      color: msg.role === 'user' ? '#00f5ff' : 'rgba(255,255,255,0.7)',
+                      color: msg.role === 'user'
+                        ? '#00f5ff'
+                        : msg.isError
+                        ? '#ff4444'
+                        : 'rgba(255,255,255,0.7)',
                     }}
                   >
                     {msg.role === 'assistant' ? (
@@ -346,13 +367,30 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                     )}
                   </div>
                   {/* Show model metadata for assistant messages */}
-                  {msg.role === 'assistant' && msg.model && (
-                    <div className="text-[10px] text-white/30 mt-1 px-1">
-                      {getModelLabel(msg.model)}
+                  {msg.role === 'assistant' && (
+                    <div className="flex items-center gap-2 mt-1 px-1">
+                      {msg.model && (
+                        <div className="text-[10px] text-white/30">
+                          {getModelLabel(msg.model)}
+                        </div>
+                      )}
+                      {msg.isError && !loading && (
+                        <button
+                          onClick={() => send(messages.slice(0, i), msg.model as ModelId)}
+                          className="text-[10px] text-neon-cyan hover:text-neon-cyan/80 transition-colors flex items-center gap-1"
+                        >
+                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                            <path d="M3 3v5h5" />
+                          </svg>
+                          Retry
+                        </button>
+                      )}
                     </div>
                   )}
                 </motion.div>
-              ))}
+                )
+              })}
 
               {loading && (
                 <div className="flex justify-start">
