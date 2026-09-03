@@ -211,6 +211,25 @@ export interface NewsSearchResponse {
   language: string;
 }
 
+/**
+ * Auditable, off-chain credit issued when a paid search fails after x402
+ * settlement (e.g. a provider outage). Distinct from an on-chain refund —
+ * see src/lib/creditLedger.ts and README.md → "Failed-Search Credits".
+ */
+export interface CreditReceipt {
+  creditId: string
+  receiptId: string
+  route: string
+  query: string
+  amount: string
+  currency: string
+  reason: string
+  issuedAt: string
+  expiresAt: string
+  redeemed: boolean
+  redeemedAt: string | null
+}
+
 export interface ApiErrorResponse {
   error: string;
 }

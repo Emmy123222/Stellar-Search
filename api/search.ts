@@ -242,7 +242,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(503).json(errorBody)
     }
     console.error('[search error]', err.message)
-    const errorBody: ApiErrorResponse = { error: 'Search failed.' }
+    const credit = issueCreditForFailure(consumption.paymentId, q.trim(), `Search failed: ${err.message}`)
+    const errorBody: ApiErrorResponse = { error: 'Search failed.', credit }
     return res.status(500).json(errorBody)
   }
+}
+
+// Eligible failures (a settled payment followed by a provider-side error) get
+// an auditable credit linked to the settled receipt. Idempotent per receiptId.
+function issueCreditForFailure(receiptId: string, query: string, reason: string): CreditReceipt {
+  const credit = issueSearchCredit({
+    receiptId,
+    route: '/search',
+    query,
+    amount: AMOUNT_USDC,
+    reason,
+  })
+  return serializeCredit(credit)
 }

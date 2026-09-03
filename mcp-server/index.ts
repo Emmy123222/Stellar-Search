@@ -255,6 +255,15 @@ async function sendProgress(
 // Track abort controllers per tool call for cancellation
 const pendingRequests = new Map<string | number, AbortController>();
 
+// Surfaces the auditable credit (see server/index.ts → issueCreditForFailure)
+// issued when a paid search fails after settlement, so agents can see their
+// recovery record instead of just a bare error string.
+function formatFailureMessage(e: ApiErrorResponse, status: number): string {
+  const base = e.error || `HTTP ${status}`
+  if (!e.credit) return base
+  return `${base} — credit issued: ${e.credit.creditId} (expires ${e.credit.expiresAt}, redeem via POST /credits/${e.credit.creditId}/redeem)`
+}
+
 // ─── MCP server ───────────────────────────────────────────────────────────
 const server = new Server(
   { name: "stellar-search", version: "1.0.0" },
