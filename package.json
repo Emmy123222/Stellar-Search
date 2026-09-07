@@ -93,10 +93,10 @@
     "globals": "^17.11.0",
     "js-yaml": "^5.4.1",
     "jsdom": "^30.0.1",
-    "postcss": "^8.4.35",
+    "postcss": "^8.5.28",
     "supertest": "^7.2.2",
     "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.0",
+    "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^4.1.11",
     "@playwright/test": "^1.55.0"
