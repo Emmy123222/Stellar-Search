@@ -6,6 +6,7 @@ import {
   AMOUNT_USDC
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { fetchSerper } from '../src/lib/serperClient'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -108,7 +109,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
     }
 
-    const serperRes = await fetch('https://google.serper.dev/news', {
+    // Goes through the shared Serper client so this route gets the same
+    // circuit-breaker protection and bounded transient-failure retries (#118)
+    // as the Express server and /api/search.
+    const serperRes = await fetchSerper('/news', {
       method:  'POST',
       headers: {
         'X-API-KEY':    SERPER_API_KEY,

@@ -110,7 +110,11 @@ export interface IdempotentRequestRecord<T = unknown> {
   status: "pending" | "resolved";
   promise?: Promise<T>;
   value?: T;
-  resolve?: (value: T) => void;
+  // `resolve` deliberately accepts `unknown` (not `T`) so that
+  // `IdempotentRequestRecord<T>` stays assignable to
+  // `IdempotentRequestRecord` when records of different result types are
+  // stored in one map keyed only by request key.
+  resolve?: (value: unknown) => void;
   reject?: (error: unknown) => void;
 }
 
@@ -375,7 +379,7 @@ export function extractPaymentIdentifier(header: unknown): string | null {
  */
 export function consumePaymentPayload(
   header: unknown,
-  validityWindowMm: number = DEFAULT_PAYMENT_VALIDITY_WINDOW_MS,
+  validityWindowMs: number = DEFAULT_PAYMENT_VALIDITY_WINDOW_MS,
   now: number = Date.now()
 ): { ok: true; paymentId: string } | { ok: false; error: string; paymentId: string | null } {
   cleanupExpiredPayments(now)
@@ -400,7 +404,7 @@ export function consumePaymentPayload(
     expiresAt: now + validityWindowMs,
   });
 
-  return { paymentId } as { ok: true; paymentId }
+  return { ok: true, paymentId }
 }
 
 /**

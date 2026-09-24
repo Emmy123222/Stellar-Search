@@ -23,7 +23,13 @@ import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
-import logger, { privacySafeIp, privacySafeQuery } from './logger'
+// Import the logger as a namespace rather than destructuring: consumers (and
+// tests) may partially mock the module, and a destructured binding would be
+// `undefined` and throw from inside a `res.on('finish')` callback where it
+// cannot be caught by the request handler. The privacy transforms live in
+// server/privacy.ts so they survive a `{ default: logger }` mock.
+import logger from './logger'
+import { privacySafeIp, privacySafeQuery } from './privacy.js'
 import crypto, { randomUUID } from 'crypto'
 import {
   STELLAR_NETWORK,
@@ -33,6 +39,7 @@ import {
 } from '../src/lib/constants'
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
 import { fetchSerper, CircuitOpenError, getSerperBreakerState } from '../src/lib/serperClient.js'
+import { validateQuery, MAX_QUERY_LENGTH } from '../src/lib/queryValidation.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import {
   normalizeOrganicResults,

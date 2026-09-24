@@ -126,6 +126,10 @@ The typed schema checks required core variables separately from optional feature
 | `SERPER_BREAKER_FAILURE_THRESHOLD` | No | `5` | Consecutive Serper failures (5xx/429/network error) required to open the circuit breaker (see [Serper circuit breaker](#serper-circuit-breaker-120)). | `5` |
 | `SERPER_BREAKER_OPEN_MS` | No | `30000` | Milliseconds the breaker stays open before allowing a half-open recovery probe. | `30000` |
 | `SERPER_BREAKER_HALF_OPEN_PROBES` | No | `1` | Concurrent requests allowed through while the breaker is half-open, testing recovery. | `1` |
+| `SERPER_RETRY_ATTEMPTS` | No | `3` | Total attempts (including the first) for a transient Serper failure. `1` disables retries (see [Serper transient-failure retries](#serper-transient-failure-retries-118)). | `3` |
+| `SERPER_RETRY_BASE_MS` | No | `200` | Base of the exponential backoff between retries. | `200` |
+| `SERPER_RETRY_MAX_MS` | No | `2000` | Upper bound for a single backoff delay. | `2000` |
+| `SERPER_RETRY_AFTER_MAX_MS` | No | `5000` | Upper bound applied to a server-provided `Retry-After`. | `5000` |
 
 > Startup validation: the server validates `STELLAR_NETWORK` and `STELLAR_RECEIVING_ADDRESS` before the paid routes are mounted. Invalid values fail fast with a clear error that redacts the actual address instead of logging secret material.
 
@@ -202,6 +206,44 @@ and in the Vercel functions (`api/search.ts`, `api/search/batch.ts`,
 
 A **4xx** from Serper (e.g. a malformed query) does *not* count as a breaker
 failure — Serper answered, so that's not a signal the dependency is down.
+
+### Serper transient-failure retries (#118)
+
+A single `429`, `502`, `503`, or connection reset used to fail an
+**already-settled** search immediately: the payer had signed and the
+facilitator had settled 0.001 USDC, but a momentary upstream blip returned
+`502 Serper.dev API error`. `src/lib/serperClient.ts` now retries transient
+failures inside the circuit breaker, so one logical request (including its
+retries) still counts as a single breaker outcome.
+
+- **Retried** — `408`, `425`, `429`, and `5xx` responses (except `501`, which
+  is permanent), plus transport failures (connection reset/refused, timeouts,
+  undici's `TypeError: fetch failed`).
+- **Never retried** — any other `4xx`. Serper answered, so a retry would fail
+  the same way. Client cancellation is never retried either: an aborted
+  `AbortSignal` (browser disconnect, MCP deadline, batch abort) aborts the
+  pending backoff and rejects immediately.
+- **Budget** — `SERPER_RETRY_ATTEMPTS` total attempts (default `3`, so at most
+  two retries). The final attempt's response is returned as-is, so callers
+  keep their existing status handling (e.g. `/search` still answers `502`).
+- **Delay** — exponential backoff from `SERPER_RETRY_BASE_MS`, capped at
+  `SERPER_RETRY_MAX_MS`, with **full jitter** so parallel callers don't retry in
+  lockstep after a shared outage.
+- **`Retry-After`** — honoured when Serper sends it (delta-seconds or an
+  HTTP-date) and capped at `SERPER_RETRY_AFTER_MAX_MS` so a hostile or
+  very large value cannot pin a paid request open.
+
+Because the retry loop lives in the shared client, every direct Serper caller
+inherits it: Express `/search`, `/images`, `/news`, batch JSONL and async jobs,
+plus the Vercel functions (`api/search.ts`, `api/search/batch.ts`,
+`api/jobs.ts`, `api/news.ts`, `api/images.ts`). The browser and MCP server call
+those endpoints rather than Serper, so they inherit it transitively. Settlement
+semantics are untouched — retries happen only after a payment has already been
+verified, and none of them can double-charge.
+
+Coverage lives in `src/lib/serperClient.test.ts`: what is retried, what is not,
+backoff bounds and jitter, `Retry-After` parsing/capping, mid-retry
+cancellation, and the strict attempt budget.
 
 Breaker state is exposed on `GET /health` (Express) and `/api/health`
 (Vercel) as `serperCircuitBreaker: { state, failureCount, failureThreshold,
