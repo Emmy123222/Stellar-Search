@@ -18,6 +18,12 @@ import { signAuthEntry, getNetworkDetails }    from '@stellar/freighter-api'
 import { Networks }                            from '@stellar/stellar-sdk'
 import { Buffer }                              from 'buffer'
 import { HORIZON_URL, IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
+import {
+  CHALLENGE_EXPIRED_MESSAGE,
+  isChallengeExpired,
+  readChallengeDeadline,
+  type ChallengeDeadline,
+} from '../lib/paymentChallenge'
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
   typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
@@ -62,6 +68,14 @@ export interface SearchSession {
   error?: string
   durationMs?: number
   suggestions: string[]
+  /**
+   * Deadline of the *active* payment challenge (#114). Present from the moment
+   * the 402 is parsed until the request completes, so the UI can count down and
+   * explain an expiration instead of showing a generic failure.
+   */
+  challenge?: ChallengeDeadline | null
+  /** True when the flow stopped because the challenge expired before signing. */
+  challengeExpired?: boolean
 }
 
 interface ActivePayment {
@@ -77,9 +91,13 @@ export function useSearch(
 ) {
   const [session, setSession] = useState<SearchSession>({
     query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
+    challenge: null, challengeExpired: false,
   })
   const activePaymentRef = useRef<ActivePayment | null>(null)
   const previousNetworkRef = useRef(walletNetwork)
+  // Last request, so `retry` can obtain a *fresh* challenge for the same search
+  // without the caller having to re-supply the query (#114).
+  const lastRequestRef = useRef<{ query: string; count: number } | null>(null)
 
   const cancelActivePayment = useCallback((message = NETWORK_CHANGED_MESSAGE) => {
     const activePayment = activePaymentRef.current
@@ -107,6 +125,8 @@ export function useSearch(
   const search = useCallback(async (query: string, count = 5) => {
     if (!query.trim()) return
 
+    lastRequestRef.current = { query, count }
+
     const activePayment: ActivePayment = {
       controller: new AbortController(),
       cancelled: false,
@@ -118,7 +138,11 @@ export function useSearch(
       }
     }
 
-    setSession({ query, results: [], txHash: null, paidAmount: null, status: 'searching', step: 1, suggestions: [] })
+    setSession({
+      query, results: [], txHash: null, paidAmount: null,
+      status: 'searching', step: 1, suggestions: [],
+      challenge: null, challengeExpired: false,
+    })
 
     const t0     = Date.now()
     const params = new URLSearchParams({ q: query, count: String(count), suggestions: '1' })
@@ -198,6 +222,7 @@ export function useSearch(
         return setSession({
           query, results: data.results ?? [], txHash: null,
           paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
+          challenge: null, challengeExpired: false,
         })
       }
 
@@ -209,7 +234,21 @@ export function useSearch(
       )
       console.log('💰 Payment requirements:', paymentRequired)
 
+      // The challenge carries a validity window. Start counting it down so the
+      // user can see the deadline while Freighter is open, and so an expired
+      // challenge is reported as such instead of as a generic failure (#114).
+      const deadline = readChallengeDeadline(paymentRequired)
+      setSession(prev => ({ ...prev, challenge: deadline }))
+
+      /** Refuses to continue once the challenge window has closed. */
+      const throwIfChallengeExpired = () => {
+        if (isChallengeExpired(deadline)) {
+          throw Object.assign(new Error(CHALLENGE_EXPIRED_MESSAGE), { challengeExpired: true })
+        }
+      }
+
       // Flow step 3 — createPaymentPayload() triggers the Freighter popup (signs auth entry)
+      throwIfChallengeExpired()
       advance(3)
       console.log('🔐 Triggering Freighter popup via createPaymentPayload...')
       const paymentPayload = await client.createPaymentPayload(paymentRequired)
@@ -218,6 +257,11 @@ export function useSearch(
 
       const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload)
       console.log('✅ Payment headers encoded')
+
+      // Signing can outlast the window (the user may sit on the Freighter
+      // prompt). Re-check before presenting the authorization so we never send
+      // a payload the facilitator must reject.
+      throwIfChallengeExpired()
 
       // Flow step 4 — retry with X-PAYMENT header
       advance(4)
@@ -251,6 +295,8 @@ export function useSearch(
         step:        6,
         durationMs:  Date.now() - t0,
         suggestions: data.suggestions ?? [],
+        challenge:   deadline,
+        challengeExpired: false,
       })
 
       if (data.txHash) {
@@ -290,11 +336,13 @@ export function useSearch(
       if (activePayment.cancelled) return
       console.error('❌ Search failed:', err)
       const msg = err.message || 'Search failed.'
+      const challengeExpired = Boolean(err?.challengeExpired)
       toast.error('Search Payment Failed', { description: msg })
       setSession(prev => ({
         ...prev,
         status: 'error',
         error:  msg,
+        challengeExpired,
       }))
     } finally {
       if (activePaymentRef.current === activePayment) {
@@ -304,8 +352,23 @@ export function useSearch(
   }, [walletAddress, walletNetwork])
 
   const reset = useCallback(() => {
-    setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [] })
+    lastRequestRef.current = null
+    setSession({
+      query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
+      challenge: null, challengeExpired: false,
+    })
   }, [])
 
-  return { session, search, reset, cancelActivePayment }
+  /**
+   * Re-runs the last search so the server issues a **fresh** 402 challenge
+   * (#114). Used after an expiry: the previous challenge cannot be re-signed,
+   * and the caller should not have to retype the query.
+   */
+  const retry = useCallback(async () => {
+    const last = lastRequestRef.current
+    if (!last) return
+    await search(last.query, last.count)
+  }, [search])
+
+  return { session, search, retry, reset, cancelActivePayment }
 }

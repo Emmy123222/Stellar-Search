@@ -18,7 +18,7 @@ export default function App() {
 
   // Lifted so the floating GroqAssistant can read the last completed search
   // and pre-populate context (issue #57).
-  const { session, search, reset } = useSearch(
+  const { session, search, retry, reset } = useSearch(
     wallet.connected ? wallet.publicKey : null,
     wallet.network,
   )
@@ -68,6 +68,7 @@ export default function App() {
                   onConnectWallet={connect}
                   session={session}
                   search={search}
+                  retry={retry}
                   reset={reset}
                 />
               )}

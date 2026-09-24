@@ -163,6 +163,31 @@ While connected, the browser watches Freighter for account/network updates. A ne
 | Spendable amount | USDC balance ≥ 0.001 USDC (`AMOUNT_STROOPS=10000`) | Fund the wallet with testnet USDC |
 | Signer availability | Freighter can sign Soroban authorization entries | Unlock Freighter and approve the request |
 
+### Payment challenge expiry (#114)
+
+A payment challenge is only valid for a limited window
+(`accepts[].maxTimeoutSeconds`, 300 seconds by default). Freighter prompts can
+take longer than that, and the previous client silently dropped the deadline:
+the flow failed with a generic error, with no countdown and no way to recover.
+
+- **Countdown** — the payment flow reads the window from the decoded
+  `PAYMENT-REQUIRED` payload and shows a live `EXPIRES m:ss` timer while signing
+  and settlement are in flight. A server that omits the field falls back to the
+  documented 300-second window rather than hiding the countdown; a challenge with
+  no payment options at all shows no deadline.
+- **Expiry gate** — the deadline is checked before the Freighter prompt and
+  again before the signed authorization is presented. If the window closed, the
+  request is stopped **before** anything is sent to the facilitator, so no
+  payment is attempted with a signature the facilitator must reject.
+- **Deliberate retry** — an expired flow renders `PAYMENT CHALLENGE EXPIRED`
+  with a **GET FRESH CHALLENGE** action instead of a bare error. The retry
+  repeats the same query against `/search` to obtain a brand-new 402 challenge;
+  the old one is never reused.
+
+The deadline helpers live in `src/lib/paymentChallenge.ts` (pure, unit-tested),
+the state is owned by `useSearch` (`session.challenge` / `session.challengeExpired`
+and `retry()`), and the presentation lives in `PaymentFlowVisualizer`.
+
 1. Agent hits `/search` — the `@x402/express` middleware intercepts
 2. Returns `HTTP 402 Payment Required` with price + network + payTo address
 3. After the preflight passes, the x402 client signs a Soroban authorization entry via Freighter wallet
