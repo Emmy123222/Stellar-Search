@@ -13,7 +13,7 @@
  *   groq-sdk       — Groq AI (Llama 3)
  */
 
-import express, { Request, Response } from 'express'
+import express, { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import helmet from 'helmet'
@@ -23,16 +23,28 @@ import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
-import logger, { privacySafeIp, privacySafeQuery } from './logger'
+import logger from './logger'
+// Privacy transforms live in their own module so this handler never destructures
+// named exports from the logger module (which tests partially mock), and never
+// throws from inside a `res.on('finish')` callback.
+import { privacySafeIp, privacySafeQuery } from './privacy.js'
 import crypto, { randomUUID } from 'crypto'
-import {
-  STELLAR_NETWORK,
-  AMOUNT_USDC,
-  AMOUNT_STROOPS,
-  USDC_CONTRACT
-} from '../src/lib/constants'
+// `AMOUNT_USDC`/`AMOUNT_STROOPS` are derived from runtime config below, so they
+// are intentionally not imported here to avoid a duplicate declaration.
+import { USDC_CONTRACT, MAX_BATCH_SIZE } from '../src/lib/constants'
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
 import { fetchSerper, CircuitOpenError, getSerperBreakerState } from '../src/lib/serperClient.js'
+import { validateQuery, MAX_QUERY_LENGTH } from '../src/lib/queryValidation.js'
+import {
+  validateCount,
+  validateFreshness,
+  SEARCH_COUNT,
+  IMAGES_COUNT,
+  NEWS_COUNT,
+  FRESHNESS_TBS,
+  type CountBounds,
+} from '../src/lib/paramValidation.js'
+import { getX402DiscoveryMetadata, requestOrigin } from '../src/lib/x402Discovery.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import {
   normalizeOrganicResults,
@@ -169,7 +181,9 @@ const stats = {
 }
 
 // ─── Batch idempotency & async job stores (issues #324, #325) ────────────
-export const MAX_BATCH_SIZE = 10
+// The batch-size bound is shared with the Vercel handler and the MCP
+// capability document via src/lib/constants.ts.
+export { MAX_BATCH_SIZE }
 export const MAX_BATCH_TOTAL_USDC = 0.01
 export const MAX_JOB_WEBHOOK_ATTEMPTS = 5
 export const WEBHOOK_RETRY_BASE_MS = 1000
@@ -365,6 +379,11 @@ const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }]
 
 // Apply middleware to all routes, not just /search
 
+// Validate `count`/`freshness` for the paid GET routes BEFORE the x402
+// middleware, so an invalid request always gets the same stable 400 response
+// and is never handed a payment challenge (issue #98).
+app.use(validatePaidRouteParams)
+
 // ─── Payment Logging Middleware ──────────────────────────────────────────
 app.use((req, res, next) => {
   if (req.path === '/search') {
@@ -445,6 +464,40 @@ function recordReconciliation(params: {
 
 export { validateQuery, MAX_QUERY_LENGTH }
 
+// ─── Paid-route parameter validation (issues #98, #188) ───────────────────
+// `count` and `freshness` are validated BEFORE any payment adapter runs, so an
+// invalid request always receives the same stable 400 response and can never
+// reach (or be charged by) the x402 middleware or Serper. Bounds are shared
+// with the Vercel functions and the MCP server via src/lib/paramValidation.ts.
+const PAID_GET_ROUTE_BOUNDS: Record<string, { count: CountBounds; freshness: boolean }> = {
+  '/search': { count: SEARCH_COUNT, freshness: true },
+  '/images': { count: IMAGES_COUNT, freshness: false },
+  '/news':   { count: NEWS_COUNT,   freshness: true },
+}
+
+export function validatePaidRouteParams(req: Request, res: Response, next: NextFunction): void {
+  const bounds = PAID_GET_ROUTE_BOUNDS[req.path]
+  if (!bounds) return next()
+
+  const count = validateCount(req.query.count, bounds.count)
+  if (!count.ok) {
+    const errorBody: ApiErrorResponse = { error: count.error }
+    res.status(400).json(errorBody)
+    return
+  }
+
+  if (bounds.freshness) {
+    const freshness = validateFreshness(req.query.freshness)
+    if (!freshness.ok) {
+      const errorBody: ApiErrorResponse = { error: freshness.error }
+      res.status(400).json(errorBody)
+      return
+    }
+  }
+
+  next()
+}
+
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {
   const requestId = randomUUID()
@@ -453,7 +506,7 @@ app.get('/search', async (req: Request, res: Response) => {
   let txHash: string | null = null
 
   try {
-    const { q, count = '5', freshness } = req.query as Record<string, string>
+    const { q } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -462,23 +515,29 @@ app.get('/search', async (req: Request, res: Response) => {
     }
     const cleanQ = v.cleanQ
 
+    // Re-validate here (the shared middleware runs first for mounted routes) so
+    // the handler stays correct if it is exercised in isolation.
+    const countValidation = validateCount(req.query.count, SEARCH_COUNT)
+    if (!countValidation.ok) {
+      const errorBody: ApiErrorResponse = { error: countValidation.error }
+      return res.status(400).json(errorBody)
+    }
+    const freshnessValidation = validateFreshness(req.query.freshness)
+    if (!freshnessValidation.ok) {
+      const errorBody: ApiErrorResponse = { error: freshnessValidation.error }
+      return res.status(400).json(errorBody)
+    }
+
     const t0 = Date.now()
 
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
-      num: Math.min(parseInt(count) || 5, 20),
+      num: countValidation.value,
     }
 
     // Add freshness filter if provided (Serper supports date filters)
-    if (freshness) {
-      const dateFilters: Record<string, string> = {
-        'pd': 'qdr:d',  // past day
-        'pw': 'qdr:w',  // past week
-        'pm': 'qdr:m',  // past month
-      }
-      if (dateFilters[freshness]) {
-        requestBody.tbs = dateFilters[freshness]
-      }
+    if (freshnessValidation.value) {
+      requestBody.tbs = FRESHNESS_TBS[freshnessValidation.value]
     }
 
     const serperRes = await fetchSerper('/search', {
@@ -515,7 +574,7 @@ app.get('/search', async (req: Request, res: Response) => {
 
     // ── Optional AI suggestions via Groq ──────────────────────────────────
     let suggestions: string[] = []
-    if (req.query.suggestions === '1' && results.length > 0) {
+    if (groq && req.query.suggestions === '1' && results.length > 0) {
       try {
         const topSnippets = results.slice(0, 3).map((r) => r.description).join(' | ')
         const suggCompletion = await groq.chat.completions.create({
@@ -600,7 +659,7 @@ app.get('/images', async (req: Request, res: Response) => {
   let txHash: string | null = null
 
   try {
-    const { q, count = '10' } = req.query as Record<string, string>
+    const { q } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -608,6 +667,14 @@ app.get('/images', async (req: Request, res: Response) => {
       return res.status(400).json(errorBody)
     }
     const cleanQ = v.cleanQ
+
+    // Image search supports `count` but not `freshness`; other params are
+    // ignored, matching the documented route contract.
+    const countValidation = validateCount(req.query.count, IMAGES_COUNT)
+    if (!countValidation.ok) {
+      const errorBody: ApiErrorResponse = { error: countValidation.error }
+      return res.status(400).json(errorBody)
+    }
 
     const t0 = Date.now()
 
@@ -619,7 +686,7 @@ app.get('/images', async (req: Request, res: Response) => {
       },
       body: JSON.stringify({
         q: cleanQ,
-        num: Math.min(parseInt(count) || 10, 10),
+        num: countValidation.value,
       }),
     })
 
@@ -679,7 +746,7 @@ app.get('/news', async (req: Request, res: Response) => {
   let txHash: string | null = null
 
   try {
-    const { q, count = '10', freshness } = req.query as Record<string, string>
+    const { q } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -688,22 +755,26 @@ app.get('/news', async (req: Request, res: Response) => {
     }
     const cleanQ = v.cleanQ
 
+    const countValidation = validateCount(req.query.count, NEWS_COUNT)
+    if (!countValidation.ok) {
+      const errorBody: ApiErrorResponse = { error: countValidation.error }
+      return res.status(400).json(errorBody)
+    }
+    const freshnessValidation = validateFreshness(req.query.freshness)
+    if (!freshnessValidation.ok) {
+      const errorBody: ApiErrorResponse = { error: freshnessValidation.error }
+      return res.status(400).json(errorBody)
+    }
+
     const t0 = Date.now()
 
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
-      num: Math.min(parseInt(count) || 10, 20),
+      num: countValidation.value,
     }
 
-    if (freshness) {
-      const dateFilters: Record<string, string> = {
-        'pd': 'qdr:d',
-        'pw': 'qdr:w',
-        'pm': 'qdr:m',
-      }
-      if (dateFilters[freshness]) {
-        requestBody.tbs = dateFilters[freshness]
-      }
+    if (freshnessValidation.value) {
+      requestBody.tbs = FRESHNESS_TBS[freshnessValidation.value]
     }
 
     const serperRes = await fetchSerper('/news', {
@@ -798,7 +869,18 @@ app.post('/search/batch', async (req: Request, res: Response) => {
     if (!v.ok) return res.status(400).json({ error: `Invalid query "${String(q).slice(0, 30)}": ${v.error}`, index: queries.indexOf(q) })
     cleanQueries.push(v.cleanQ)
   }
-  const parsedCount = Math.min(Math.max(parseInt(String(rawCount ?? '5')) || 5, 1), 20)
+  // Validate `count`/`freshness` before the payment adapter is consulted so an
+  // invalid batch is rejected with a stable 400 and is never charged.
+  const countValidation = validateCount(rawCount, SEARCH_COUNT)
+  if (!countValidation.ok) {
+    return res.status(400).json({ error: countValidation.error })
+  }
+  const freshnessValidation = validateFreshness(freshness)
+  if (!freshnessValidation.ok) {
+    return res.status(400).json({ error: freshnessValidation.error })
+  }
+  const parsedCount = countValidation.value
+  const freshnessTbs = freshnessValidation.value ? FRESHNESS_TBS[freshnessValidation.value] : undefined
 
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
   if (!paymentHeader) {
@@ -879,10 +961,7 @@ app.post('/search/batch', async (req: Request, res: Response) => {
     const t0 = Date.now()
     try {
       const requestBody: Record<string, unknown> = { q, num: parsedCount }
-      if (freshness) {
-        const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
-        if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
-      }
+      if (freshnessTbs) requestBody.tbs = freshnessTbs
       const serperRes = await fetchSerper('/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
@@ -978,12 +1057,19 @@ app.post('/jobs', async (req: Request, res: Response) => {
     }
   }
 
-  const { query, count = '5', freshness, webhookUrl, webhookSecret } = (req.body || {}) as { query?: unknown; count?: unknown; freshness?: string; webhookUrl?: string; webhookSecret?: string }
+  const { query, count, freshness, webhookUrl, webhookSecret } = (req.body || {}) as { query?: unknown; count?: unknown; freshness?: unknown; webhookUrl?: string; webhookSecret?: string }
 
   const v = validateQuery(query)
   if (!v.ok) return res.status(400).json({ error: v.error })
   const cleanQ = v.cleanQ
-  const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 20)
+
+  // Validated before any job is created or paid for (issues #98, #188).
+  const countValidation = validateCount(count, SEARCH_COUNT)
+  if (!countValidation.ok) return res.status(400).json({ error: countValidation.error })
+  const freshnessValidation = validateFreshness(freshness)
+  if (!freshnessValidation.ok) return res.status(400).json({ error: freshnessValidation.error })
+  const safeCount = countValidation.value
+  const freshnessTbs = freshnessValidation.value ? FRESHNESS_TBS[freshnessValidation.value] : undefined
 
   // Webhook validation (SSRF + https)
   if (webhookUrl) {
@@ -1026,7 +1112,7 @@ app.post('/jobs', async (req: Request, res: Response) => {
     id: jobId,
     query: cleanQ,
     count: safeCount,
-    freshness,
+    freshness: freshnessValidation.value,
     status: 'running' as JobStatus,
     createdAt: now,
     updatedAt: now,
@@ -1053,10 +1139,7 @@ app.post('/jobs', async (req: Request, res: Response) => {
     const t0 = Date.now()
     try {
       const requestBody: Record<string, unknown> = { q: cleanQ, num: safeCount }
-      if (freshness) {
-        const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
-        if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
-      }
+      if (freshnessTbs) requestBody.tbs = freshnessTbs
       const serperRes = await fetchSerper('/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },

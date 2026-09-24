@@ -1,6 +1,12 @@
 export type { WalletState, StellarTransaction } from '../hooks/useFreighterWallet'
 export type { SearchResult, SearchSession, SearchReceipt } from '../hooks/useSearch'
 
+// The canonical `SearchResult` shape lives with the search hook (it is part of
+// the session contract). Import it locally as well so the response types below
+// can reference it — a pure `export type { X } from '...'` re-export does not
+// bind `X` in this module's own scope.
+import type { SearchResult } from '../hooks/useSearch'
+
 // ─── Answer Box ────────────────────────────────────────────────────────────
 /** Direct factual answer to a query (e.g., "what is X") */
 export interface AnswerBoxSource {
@@ -13,6 +19,13 @@ export interface AnswerBox {
   title: string
   answer: string
   source: AnswerBoxSource
+}
+
+// ─── Sitelinks ─────────────────────────────────────────────────────────────
+/** Additional links Serper returns beneath an organic result. */
+export interface Sitelink {
+  title: string
+  url: string
 }
 
 // ─── Knowledge Graph ───────────────────────────────────────────────────────
@@ -120,20 +133,28 @@ export interface ApiErrorResponse {
 export type ErrorResponse = ApiErrorResponse
 
 // ─── Credit Receipt ───────────────────────────────────────────────────────
+/**
+ * JSON-safe projection of an internal `SearchCredit` (see src/lib/creditLedger.ts)
+ * returned to a payer when a settled search fails upstream.
+ */
 export interface CreditReceipt {
-  id: string
-  amount: string
-  reason: string
-}
-
-// ─── Search Receipt ───────────────────────────────────────────────────────
-export interface SearchReceipt {
-  txHash: string
+  creditId: string
+  /** The settled payment identifier this credit is linked to. */
+  receiptId: string
+  route: string
   query: string
   amount: string
-  timestamp: string
-  network: string
+  currency: string
+  reason: string
+  issuedAt: string
+  expiresAt: string
+  redeemed: boolean
+  redeemedAt: string | null
 }
+
+// NOTE: `SearchReceipt` is defined by `src/hooks/useSearch.ts` and re-exported
+// at the top of this file — it is deliberately not redeclared here, which would
+// create a duplicate-export conflict for consumers of the barrel module.
 
 // ─── API Stats ─────────────────────────────────────────────────────────────
 export interface ApiStat {
@@ -204,17 +225,36 @@ export interface BatchJsonlDoneEvent extends BatchJsonlEvent {
 }
 
 // ─── Job Types ─────────────────────────────────────────────────────────────
+// Shape shared by the Express `/jobs` route and the Vercel `/api/jobs`
+// functions. Webhook + payment metadata are part of the persisted job so the
+// status endpoint can report what was settled and where the result was sent.
 export interface SearchJob {
   id: string
   query: string
   statusUrl: string
   status: JobStatus
   createdAt: string
+  updatedAt?: string
   completedAt?: string
+  /** Validated result count (1..20) used for the upstream search. */
+  count?: number
+  /** Validated `pd` | `pw` | `pm` freshness filter, if requested. */
+  freshness?: string
   paymentId?: string
   txHash?: string | null
+  /** True once the x402 payment for this job was verified. */
+  verified?: boolean
+  paidAmount?: string
+  currency?: string
+  network?: string
+  idempotencyKey?: string
+  attempts?: number
+  webhookUrl?: string
+  webhookSecret?: string
   results?: SearchResult[]
+  /** Full search response once the job finishes successfully. */
+  result?: SearchResponse
   error?: string
 }
 
-export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed'
+export type JobStatus = 'queued' | 'running' | 'processing' | 'completed' | 'failed'

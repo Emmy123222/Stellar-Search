@@ -1,16 +1,10 @@
 import winston from 'winston';
-import crypto from 'crypto';
 import { redact } from '../src/lib/redactor.js';
+import { privacySafeIp, privacySafeQuery } from './privacy.js';
 
-export function privacySafeQuery(value: unknown): undefined {
-  // Query text is intentionally never logged; use request IDs for correlation.
-  return undefined
-}
-
-export function privacySafeIp(value: unknown): string {
-  const raw = typeof value === 'string' ? value : ''
-  return raw ? `ip:${crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16)}` : 'ip:unknown'
-}
+// Re-exported for existing consumers; the implementations live in
+// server/privacy.ts so handlers can use them without importing the logger.
+export { privacySafeIp, privacySafeQuery };
 
 const redactorFormat = winston.format((info) => {
   return redact(info as Record<string, unknown>) as unknown as winston.Logform.TransformableInfo

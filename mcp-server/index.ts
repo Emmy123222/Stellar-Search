@@ -42,8 +42,14 @@ import {
   AI_TEXT_MAX_LENGTH,
   AI_INSTRUCTION_MAX_LENGTH,
   AI_COMBINED_MAX_LENGTH,
+  MAX_BATCH_SIZE,
 } from '../src/lib/constants'
 import { formatReceipt } from './receipt'
+import {
+  validateWebSearchArgs,
+  validateImageSearchArgs,
+  validateNewsSearchArgs,
+} from './validateArgs'
 import type {
   SearchResponse,
   ImageSearchResponse,
@@ -626,38 +632,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // Helper to handle abort without false completion
   const isAborted = () => controller.signal.aborted;
 
-  // Keep the externally exposed tools backed by the tested handler
-  // implementations. The remaining branches below handle image, news, and
-  // stats tools which have different response shapes.
-  if (name === 'web_search') {
-    const input = args as { query: string; count?: number; freshness?: string }
-    return webSearch(fetch, SERVER_URL, input.query, input.count ?? 5, input.freshness)
-  }
-  if (name === 'ai_summarize') {
-    const input = args as { text: string; instruction?: string }
-    return aiSummarize(groq, input.text, input.instruction ?? 'summarise')
-  }
-  if (name === 'check_balance') {
-    const input = args as { address: string }
-    return checkBalance(fetch, input.address)
-  }
-
   // ── web_search with progress ──────────────────────────────────────────
   if (name === "web_search") {
-    const {
-      query,
-      count = 5,
-      freshness,
-      locale = "en-US",
-      country = "us",
-      language = "en",
-    } = args as {
+    // Reject malformed arguments (wrong types, fractional/out-of-range counts,
+    // unknown freshness enums) before any progress notification or payment
+    // work happens. Never silently coerce — issue #98.
+    const invalidArgs = validateWebSearchArgs(args)
+    if (invalidArgs) {
+      return {
+        content: [{ type: "text", text: `Validation error: ${invalidArgs}` }],
+        isError: true,
+      };
+    }
+
+    const { query, count = 5, freshness } = args as {
       query: string;
       count?: number;
       freshness?: string;
-      locale?: string;
-      country?: string;
-      language?: string;
     };
 
     try {
@@ -696,6 +687,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       await sendProgress(server, progressToken, 'search', `Searching Serper for "${query}"`)
 
+      const safeCount = clampCount(count, { min: 1, max: 10, defaultValue: 5 })
+      const params = new URLSearchParams({ q: query, count: String(safeCount) })
+      if (freshness) params.set('freshness', freshness)
+
       const res = await fetch(`${SERVER_URL}/search?${params}`, {
         signal: controller.signal,
       });
@@ -730,13 +725,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         .join("\n\n");
 
       const timingsStr = data.timings ? ` (server: validation ${data.timings.validationMs ?? '?'}ms, serper ${data.timings.serperMs ?? '?'}ms)` : ''
+      cleanup();
       return {
         structuredContent: { query: data.executedQuery || query, results: data.results, count: data.count, payment: { amount: data.paidAmount, currency: data.currency, network: data.network }, latencyMs: data.latencyMs, txHash: data.txHash ?? null },
         content: [
           {
             type: "text",
             text: [
-              ...headerLines,
+              `🔍 Results for: "${data.executedQuery || query}"${timingsStr}`,
+              `💰 Paid: ${data.paidAmount} ${data.currency} on ${data.network}`,
+              `⚡ Latency: ${data.latencyMs}ms`,
+              `📊 ${data.count} results\n`,
               formatted,
             ].join("\n"),
           },
@@ -764,7 +763,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── image_search ──────────────────────────────────────────────────────
   if (name === "image_search") {
-    const { query, count = 5 } = args as { query: string; count?: number };
+    const invalidArgs = validateImageSearchArgs(args)
+    if (invalidArgs) {
+      return {
+        content: [{ type: "text", text: `Validation error: ${invalidArgs}` }],
+        isError: true,
+      };
+    }
+
+    const { query, count = 10 } = args as { query: string; count?: number };
 
     try {
       await sendProgress(
@@ -799,9 +806,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `Searching images for "${query}"`,
       );
 
-      const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 10)
+      const safeCount = clampCount(count, { min: 1, max: 10, defaultValue: 10 })
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
-      if (safeSearch) params.set('safeSearch', safeSearch)
 
       const res = await fetch(`${SERVER_URL}/images?${params}`, {
         signal: controller.signal,
@@ -872,6 +878,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── news_search ───────────────────────────────────────────────────────
   if (name === "news_search") {
+    const invalidArgs = validateNewsSearchArgs(args)
+    if (invalidArgs) {
+      return {
+        content: [{ type: "text", text: `Validation error: ${invalidArgs}` }],
+        isError: true,
+      };
+    }
+
     const {
       query,
       count = 10,
@@ -915,7 +929,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `Searching news for "${query}"`,
       );
 
-      const safeCount = Math.min(Math.max(parseInt(String(count)) || 10, 1), 20)
+      const safeCount = clampCount(count, { min: 1, max: 20, defaultValue: 10 })
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
       if (freshness) params.set('freshness', freshness)
 

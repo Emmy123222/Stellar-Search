@@ -9,15 +9,25 @@ import {
 import { consumePaymentPayload, decodePaymentReceipt } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults, normalizeQueryMetadata, normalizeAnswerBox, normalizeKnowledgeGraph } from '../src/lib/serperNormalizer'
 import { fetchSerper, CircuitOpenError } from '../src/lib/serperClient'
-import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
+import type { SearchResponse, ApiErrorResponse, CreditReceipt } from '../src/types/index.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
+import { validateQuery } from '../src/lib/queryValidator'
+import {
+  validateCount,
+  validateFreshness,
+  SEARCH_COUNT,
+  FRESHNESS_TBS,
+} from '../src/lib/paramValidation'
+import { issueSearchCredit, serializeCredit } from '../src/lib/creditLedger'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS ?? ''
 const NETWORK           = (process.env.STELLAR_NETWORK ?? STELLAR_NETWORK) as 'stellar:testnet' | 'stellar:mainnet'
 const SERPER_API_KEY    = process.env.SERPER_API_KEY!
 
+// Fail fast on a misconfigured network/address pair rather than handing out a
+// payment challenge that can never settle.
 assertValidStellarConfig({
   STELLAR_NETWORK: NETWORK,
   STELLAR_RECEIVING_ADDRESS: RECEIVING_ADDRESS,
@@ -71,39 +81,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const validatedFreshness = validateFreshness(req.query.freshness)
   if (!validatedFreshness.ok) {
-    const errorBody: ApiErrorResponse = { error: validatedFreshness.error }
+    // `/api/search` has pinned this exact 400 body since launch, so the public
+    // contract is preserved even though the *rules* now come from the shared
+    // validator. Other routes use the shared message verbatim.
+    const errorBody: ApiErrorResponse = {
+      error: 'Unsupported freshness parameter. Allowed values: empty, pd, pw, pm',
+    }
     return res.status(400).json(errorBody)
   }
+  // `validateQuery` above already enforces MAX_QUERY_LENGTH and strips control
+  // characters, so no separate length/encoding pass is required here.
   const count = validatedCount.value
   const tbs = validatedFreshness.value ? FRESHNESS_TBS[validatedFreshness.value] : undefined
-
-  const freshnessValidation = validateFreshness(freshness);
-  if (!freshnessValidation.ok) {
-    const errorBody: ApiErrorResponse = { error: freshnessValidation.error };
-    return res.status(400).json(errorBody);
-  }
-  const normalizedFreshness = freshnessValidation.value;
-
-  const localeResult = validateLocalization({ locale, country, language });
-  if (!localeResult.ok) {
-    const errorBody: ApiErrorResponse = { error: localeResult.error };
-    return res.status(400).json(errorBody);
-  }
-  const {
-    locale: normalizedLocale,
-    country: normalizedCountry,
-    language: normalizedLanguage,
-  } = localeResult.values;
-
-  // Length-validate the serialized query. Advanced operators are composed
-  // client-side and sent through unchanged; the per-query price is fixed.
-  if (q.length > MAX_QUERY_LENGTH) {
-    const errorBody: ApiErrorResponse = { error: `Query exceeds maximum length of ${MAX_QUERY_LENGTH} characters` }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-
-  const validSafeSearch = ['strict', 'moderate', 'off'].includes(safeSearch) ? safeSearch : 'moderate'
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -186,17 +175,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ─── Serper.dev ──────────────────────────────────────────────────────────
     const requestBody: Record<string, unknown> = {
       q:   cleanQ,
-      num: Math.min(parseInt(count) || 5, 20),
+      num: count,
     };
 
-    if (normalizedFreshness) {
-      const dateFilters: Record<string, string> = {
-        pd: "qdr:d", // past day
-        pw: "qdr:w", // past week
-        pm: "qdr:m", // past month
-      };
-      requestBody.tbs = dateFilters[normalizedFreshness];
-    }
     if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetchSerper('/search', {

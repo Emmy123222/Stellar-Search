@@ -316,7 +316,11 @@ components:
     Count:
       name: count
       in: query
-      description: Number of results to return (max 20).
+      description: >
+        Number of results to return (max 20). Must be a single integer within
+        the route bounds: fractional, negative, out-of-range, non-numeric, and
+        repeated values are rejected with `400` rather than being clamped to a
+        default or forwarded upstream.
       schema:
         type: integer
         default: 5

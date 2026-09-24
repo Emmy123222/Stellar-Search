@@ -43,3 +43,44 @@ export const USDC_CONTRACT = IS_MAINNET ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_
 // Payments
 export const AMOUNT_STROOPS = '10000' // 0.001 USDC
 export const AMOUNT_USDC = '0.001'
+
+// Bounded paid-batch contract, shared by Express (`server/index.ts`),
+// Vercel (`api/search/batch.ts`), and the MCP capability document so every
+// runtime advertises the same limit.
+export const MAX_BATCH_SIZE = 10
+
+// AI request limits. Enforced by the MCP `ai_summarize` tool before any Groq
+// call so an unbounded payload can never be forwarded upstream.
+export const AI_TEXT_MAX_LENGTH = 10_000
+export const AI_INSTRUCTION_MAX_LENGTH = 2_000
+export const AI_COMBINED_MAX_LENGTH = 12_000
+
+// ─── Startup validation ───────────────────────────────────────────────────
+// Shared by the Express server and the Vercel functions so both refuse to
+// serve traffic against a misconfigured Stellar network/address pair.
+export const VALID_STELLAR_NETWORKS = ['stellar:testnet', 'stellar:mainnet'] as const
+
+export function isValidStellarNetwork(network: unknown): network is (typeof VALID_STELLAR_NETWORKS)[number] {
+  return typeof network === 'string' && (VALID_STELLAR_NETWORKS as readonly string[]).includes(network)
+}
+
+/** Stellar public keys are 56-character base32 strings starting with `G`. */
+export function isValidStellarReceivingAddress(address: unknown): boolean {
+  return typeof address === 'string' && /^G[A-Z2-7]{55}$/.test(address)
+}
+
+export function assertValidStellarConfig(config: {
+  STELLAR_NETWORK?: unknown
+  STELLAR_RECEIVING_ADDRESS?: unknown
+}): void {
+  if (!isValidStellarNetwork(config.STELLAR_NETWORK)) {
+    throw new Error(
+      `Invalid STELLAR_NETWORK: ${String(config.STELLAR_NETWORK)}. Expected one of: ${VALID_STELLAR_NETWORKS.join(', ')}`,
+    )
+  }
+  if (!isValidStellarReceivingAddress(config.STELLAR_RECEIVING_ADDRESS)) {
+    throw new Error(
+      `Invalid STELLAR_RECEIVING_ADDRESS: expected a 56-character Stellar public key starting with G`,
+    )
+  }
+}
