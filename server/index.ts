@@ -33,6 +33,14 @@ import {
 } from '../src/lib/constants'
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
 import { fetchSerper, CircuitOpenError, getSerperBreakerState } from '../src/lib/serperClient.js'
+import {
+  validateChatMessages,
+  executeChatCompletion,
+  streamChatCompletion,
+  formatAiError,
+  resolveModel,
+  type ChatMessage,
+} from '../src/lib/aiChatService.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import {
   normalizeOrganicResults,
@@ -1197,59 +1205,42 @@ app.get('/metrics', (_req: Request, res: Response) => {
 // Streams responses as Server-Sent Events when the client sends
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
 // (back-compat fallback for callers that don't support SSE).
+// Validation uses the shared validateChatMessages from src/lib/aiChatService so
+// that Express and Vercel apply identical rules: per-message-index errors without
+// ever echoing message content.
 app.post('/ai/chat', async (req: Request, res: Response) => {
   if (!groq) {
     return res.status(503).json({ error: 'AI assistant is not configured.' })
   }
-  const { messages, model: requestedModel } = req.body as {
-    messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+
+  const body = req.body || {}
+  const { messages: rawMessages, model: requestedModel, stream: streamFlag } = body as {
+    messages?: unknown
     model?: string
+    stream?: unknown
   }
 
-  if (!messages?.length) {
-    return res.status(400).json({ error: 'messages array required' })
+  // Shared validation — identifies offending index, never echoes content.
+  const validationError = validateChatMessages(rawMessages)
+  if (validationError) {
+    return res.status(400).json({ error: validationError })
   }
 
-  // Available models whitelist
-  const AVAILABLE_MODELS = [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
-    'mixtral-8x7b-32768',
-  ]
-  
-  // Use requested model if valid, otherwise fall back to default
-  const model = requestedModel && AVAILABLE_MODELS.includes(requestedModel)
-    ? requestedModel
-    : 'llama-3.3-70b-versatile'
+  const messages = rawMessages as ChatMessage[]
+  const model = resolveModel(requestedModel)
 
   const wantsStream =
     (req.headers.accept || '').includes('text/event-stream') ||
-    (req.body as any)?.stream === true ||
+    streamFlag === true ||
     req.query.stream === '1'
-
-  const groqMessages = [
-    {
-      role: 'system' as const,
-      content:
-        'You are StellarSearch AI, a concise research assistant. Help users craft better search queries and understand results. Keep responses under 200 words.',
-    },
-    ...messages,
-  ]
 
   if (!wantsStream) {
     try {
-      const completion = await groq.chat.completions.create({
-        model,
-        messages: groqMessages,
-        max_tokens:  512,
-        temperature: 0.7,
-      })
-
-      const content = completion.choices[0]?.message?.content || 'No response.'
-      return res.json({ content, model: completion.model })
+      const result = await executeChatCompletion(groq, { messages, model })
+      return res.json(result)
     } catch (err: any) {
       console.error('[groq error]', err.message)
-      return res.status(500).json({ error: `Groq AI error: ${err.message}` })
+      return res.status(500).json({ error: formatAiError(err).message })
     }
   }
 
@@ -1271,16 +1262,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   req.on('close', () => controller.abort())
 
   try {
-    const stream = await groq.chat.completions.create(
-      {
-        model,
-        messages: groqMessages,
-        max_tokens:  512,
-        temperature: 0.7,
-        stream: true,
-      },
-      { signal: controller.signal },
-    )
+    const stream = await streamChatCompletion(groq, { messages, model }, controller.signal)
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content
@@ -1291,7 +1273,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   } catch (err: any) {
     if (controller.signal.aborted) return res.end()
     console.error('[groq stream error]', err.message)
-    sendEvent('error', { error: `Groq AI error: ${err.message}` })
+    sendEvent('error', { error: formatAiError(err).message })
     res.end()
   }
 })

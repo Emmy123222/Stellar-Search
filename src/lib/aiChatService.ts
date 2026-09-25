@@ -103,12 +103,15 @@ export async function executeChatCompletion(
   const max_tokens = options.maxTokens ?? DEFAULT_MAX_TOKENS
   const temperature = options.temperature ?? DEFAULT_TEMPERATURE
 
-  const completion = await groqClient.chat.completions.create({
-    model,
-    messages,
-    max_tokens,
-    temperature,
-  }, signal ? { signal } : undefined)
+  const completion = await groqClient.chat.completions.create(
+    {
+      model,
+      messages,
+      max_tokens,
+      temperature,
+    },
+    ...(signal ? [{ signal }] : [])
+  )
 
   const content = completion.choices?.[0]?.message?.content || 'No response.'
   return {
@@ -138,7 +141,7 @@ export async function streamChatCompletion(
       temperature,
       stream: true,
     },
-    signal ? { signal } : undefined
+    ...(signal ? [{ signal }] : [])
   )
 }
 
