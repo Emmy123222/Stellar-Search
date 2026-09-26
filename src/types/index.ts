@@ -112,7 +112,12 @@ export type NewsResponse = NewsSearchResponse
 
 // ─── API Error Response ────────────────────────────────────────────────────
 export interface ApiErrorResponse {
-  error: string
+  error: {
+    code: string
+    message: string
+    requestId: string
+    retryAfter?: number
+  }
   credit?: CreditReceipt
 }
 

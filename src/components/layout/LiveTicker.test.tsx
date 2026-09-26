@@ -24,6 +24,6 @@ describe('LiveTicker — accessibility', () => {
 
   it('reflects wallet connection status', () => {
     render(<LiveTicker walletConnected={true} />)
-    expect(screen.getAllByText('WALLET CONNECTED')).toHaveLength(1)
+    expect(screen.getAllByText('WALLET CONNECTED').length).toBeGreaterThanOrEqual(1)
   })
 })

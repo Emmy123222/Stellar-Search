@@ -107,7 +107,7 @@ const limiter = rateLimit({
   legacyHeaders: true,
   handler: (_req: Request, res: Response) => {
     res.setHeader('Retry-After', '60')
-    res.status(429).json({ error: 'Too many requests, please try again later.' })
+    res.status(429).json({ error: { code: "RATE_LIMITED", message: "Too many requests, please try again later.", requestId: getRequestId(req), retryAfter: 60 } })
   },
 })
 
@@ -121,7 +121,7 @@ app.use(async (_req, res, next) => {
     res.on('close', releaseOnce)
     next()
   } catch {
-    res.status(503).json({ error: 'Provider capacity is temporarily full; please retry shortly.' })
+    res.status(503).json({ error: { code: "PROVIDER_UNAVAILABLE", message: "Provider capacity is temporarily full; please retry shortly.", requestId: getRequestId(req), retryAfter: 30 } })
   }
 })
 app.use(
@@ -457,7 +457,7 @@ app.get('/search', async (req: Request, res: Response) => {
 
     const v = validateQuery(q)
     if (!v.ok) {
-      const errorBody: ApiErrorResponse = { error: v.error }
+      const errorBody: ApiErrorResponse = { error: { code: "VALIDATION_ERROR", message: v.error, requestId: getRequestId(req) } }
       return res.status(400).json(errorBody)
     }
     const cleanQ = v.cleanQ
@@ -604,7 +604,7 @@ app.get('/images', async (req: Request, res: Response) => {
 
     const v = validateQuery(q)
     if (!v.ok) {
-      const errorBody: ApiErrorResponse = { error: v.error }
+      const errorBody: ApiErrorResponse = { error: { code: "VALIDATION_ERROR", message: v.error, requestId: getRequestId(req) } }
       return res.status(400).json(errorBody)
     }
     const cleanQ = v.cleanQ
@@ -683,7 +683,7 @@ app.get('/news', async (req: Request, res: Response) => {
 
     const v = validateQuery(q)
     if (!v.ok) {
-      const errorBody: ApiErrorResponse = { error: v.error }
+      const errorBody: ApiErrorResponse = { error: { code: "VALIDATION_ERROR", message: v.error, requestId: getRequestId(req) } }
       return res.status(400).json(errorBody)
     }
     const cleanQ = v.cleanQ
