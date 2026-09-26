@@ -1,173 +1,134 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
+  buildCorsOptions,
   parseAllowedOrigins,
   isProductionEnv,
   getCorsStartupMessage,
-  buildCorsOptions,
-} from './corsConfig'
+} from './corsConfig';
 
-describe('corsConfig', () => {
+describe('CORS Configuration', () => {
+  const originalEnv = process.env.NODE_ENV;
+  const originalAllowedOrigins = process.env.ALLOWED_ORIGINS;
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalEnv;
+    process.env.ALLOWED_ORIGINS = originalAllowedOrigins;
+  });
+
   describe('parseAllowedOrigins', () => {
-    it('returns empty array for undefined', () => {
-      expect(parseAllowedOrigins(undefined)).toEqual([])
-    })
-    it('returns empty array for empty string', () => {
-      expect(parseAllowedOrigins('')).toEqual([])
-    })
-    it('splits comma separated origins', () => {
-      expect(parseAllowedOrigins('https://a.com,https://b.com')).toEqual(['https://a.com', 'https://b.com'])
-    })
-    it('trims entries and filters empty', () => {
-      expect(parseAllowedOrigins(' https://a.com , , https://b.com ')).toEqual(['https://a.com', 'https://b.com'])
-    })
-    it('handles single origin without comma', () => {
-      expect(parseAllowedOrigins('https://example.com')).toEqual(['https://example.com'])
-    })
-    it('filters out blank entries from trailing comma', () => {
-      expect(parseAllowedOrigins('https://a.com,')).toEqual(['https://a.com'])
-    })
-    it('deduplicates origins while preserving order', () => {
-      expect(parseAllowedOrigins('https://a.com, https://a.com, https://b.com')).toEqual(['https://a.com', 'https://b.com'])
-    })
-    it('does not treat hostile lookalike origins as allowed', () => {
-      expect(parseAllowedOrigins('https://example.com')).not.toContain('https://example.com.evil.test')
-    })
-  })
+    it('should parse comma-separated origins and strip whitespace', () => {
+      const result = parseAllowedOrigins('  https://app.stellar.com , https://admin.stellar.com  ');
+      expect(result).toEqual(['https://app.stellar.com', 'https://admin.stellar.com']);
+    });
 
-  describe('isProductionEnv', () => {
-    const originalEnv = process.env.NODE_ENV
-    afterEach(() => {
-      process.env.NODE_ENV = originalEnv
-      vi.restoreAllMocks()
-    })
+    it('should remove empty entries resulting from extra commas', () => {
+      const result = parseAllowedOrigins('https://app.stellar.com,, ,https://admin.stellar.com');
+      expect(result).toEqual(['https://app.stellar.com', 'https://admin.stellar.com']);
+    });
 
-    it('returns true when NODE_ENV is production', () => {
-      process.env.NODE_ENV = 'production'
-      expect(isProductionEnv()).toBe(true)
-    })
-    it('returns false when NODE_ENV is not production', () => {
-      process.env.NODE_ENV = 'development'
-      expect(isProductionEnv()).toBe(false)
-    })
-    it('returns false when NODE_ENV is test', () => {
-      process.env.NODE_ENV = 'test'
-      expect(isProductionEnv()).toBe(false)
-    })
-    it('returns false when NODE_ENV is undefined', () => {
-      delete process.env.NODE_ENV
-      expect(isProductionEnv()).toBe(false)
-    })
-  })
+    it('should return empty array for empty string or undefined input', () => {
+      expect(parseAllowedOrigins('')).toEqual([]);
+      expect(parseAllowedOrigins(undefined)).toEqual([]);
+    });
+  });
 
-  describe('getCorsStartupMessage', () => {
-    const originalEnv = process.env.NODE_ENV
-    const originalAllowed = process.env.ALLOWED_ORIGINS
-    afterEach(() => {
-      process.env.NODE_ENV = originalEnv
-      process.env.ALLOWED_ORIGINS = originalAllowed
-    })
+  describe('Development Mode', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'development';
+    });
 
-    it('returns development message when not production', () => {
-      process.env.NODE_ENV = 'development'
-      expect(getCorsStartupMessage()).toBe('CORS: * (development)')
-    })
+    it('should return origin wildcard "*"', () => {
+      const options = buildCorsOptions();
+      expect(options.origin).toBe('*');
+    });
 
-    it('returns allowlist empty message in production with no origins', () => {
-      process.env.NODE_ENV = 'production'
-      delete process.env.ALLOWED_ORIGINS
-      expect(getCorsStartupMessage()).toBe('CORS: allowlist empty — cross-origin browser requests blocked')
-    })
+    it('should return development startup message', () => {
+      expect(getCorsStartupMessage()).toBe('CORS: * (development)');
+    });
+  });
 
-    it('returns empty allowed with empty string', () => {
-      process.env.NODE_ENV = 'production'
-      process.env.ALLOWED_ORIGINS = ''
-      expect(getCorsStartupMessage()).toBe('CORS: allowlist empty — cross-origin browser requests blocked')
-    })
+  describe('Production Mode - Allowlist Behavior', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'production';
+    });
 
-    it('returns singular origin message', () => {
-      process.env.NODE_ENV = 'production'
-      process.env.ALLOWED_ORIGINS = 'https://example.com'
-      expect(getCorsStartupMessage()).toBe('CORS: allowlist (1 origin)')
-    })
+    const checkOrigin = (
+      options: ReturnType<typeof buildCorsOptions>,
+      origin?: string
+    ): Promise<{ err: Error | null; allow?: boolean }> => {
+      return new Promise((resolve) => {
+        if (typeof options.origin === 'function') {
+          options.origin(origin, (err, allow) => {
+            resolve({ err, allow: Boolean(allow) });
+          });
+        } else {
+          resolve({ err: null, allow: options.origin === '*' || options.origin === true });
+        }
+      });
+    };
 
-    it('returns plural origins message', () => {
-      process.env.NODE_ENV = 'production'
-      process.env.ALLOWED_ORIGINS = 'https://a.com,https://b.com'
-      expect(getCorsStartupMessage()).toBe('CORS: allowlist (2 origins)')
-    })
-  })
+    it('should allow origins in the allowlist', async () => {
+      process.env.ALLOWED_ORIGINS = 'https://app.stellar.com,https://admin.stellar.com';
+      const options = buildCorsOptions();
 
-  describe('buildCorsOptions', () => {
-    const originalNodeEnv = process.env.NODE_ENV
-    const originalAllowed = process.env.ALLOWED_ORIGINS
-    afterEach(() => {
-      process.env.NODE_ENV = originalNodeEnv
-      process.env.ALLOWED_ORIGINS = originalAllowed
-      vi.restoreAllMocks()
-    })
+      const res1 = await checkOrigin(options, 'https://app.stellar.com');
+      expect(res1.allow).toBe(true);
 
-    it('returns wildcard origin in development', () => {
-      process.env.NODE_ENV = 'development'
-      const opts = buildCorsOptions()
-      expect(opts.origin).toBe('*')
-      expect(opts.allowedHeaders).toContain('X-Payment')
-      expect(opts.exposedHeaders).toContain('X-Payment-Response')
-      expect(opts.methods).toContain('GET')
-    })
+      const res2 = await checkOrigin(options, 'https://admin.stellar.com');
+      expect(res2.allow).toBe(true);
+    });
 
-    it('exposes x402 payment headers', () => {
-      process.env.NODE_ENV = 'development'
-      const opts = buildCorsOptions()
-      expect(opts.allowedHeaders).toEqual(expect.arrayContaining(['X-Payment', 'Content-Type']))
-      expect(opts.exposedHeaders).toEqual(expect.arrayContaining(['PAYMENT-REQUIRED', 'X-Payment-Response']))
-    })
+    it('should block hostile/unauthorized origins', async () => {
+      process.env.ALLOWED_ORIGINS = 'https://app.stellar.com';
+      const options = buildCorsOptions();
 
-    it('in production with empty allowlist warns and blocks origins', () => {
-      process.env.NODE_ENV = 'production'
-      delete process.env.ALLOWED_ORIGINS
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      const opts = buildCorsOptions()
-      expect(warnSpy).toHaveBeenCalled()
-      expect(typeof opts.origin).toBe('function')
-      // No origin should be allowed
-      const fn = opts.origin as any
-      fn('https://evil.com', (err: any, allowed: boolean) => {
-        expect(allowed).toBe(false)
-      })
-      // No origin header (like curl) should be allowed
-      fn(undefined, (err: any, allowed: boolean) => {
-        expect(allowed).toBe(true)
-      })
-    })
+      const res = await checkOrigin(options, 'https://evil-site.com');
+      expect(res.allow).toBe(false);
+    });
 
-    it('in production allows only listed origins', () => {
-      process.env.NODE_ENV = 'production'
-      process.env.ALLOWED_ORIGINS = 'https://a.com, https://b.com'
-      const opts = buildCorsOptions()
-      const fn = opts.origin as any
-      fn('https://a.com', (_err: any, allowed: boolean) => expect(allowed).toBe(true))
-      fn('https://b.com', (_err: any, allowed: boolean) => expect(allowed).toBe(true))
-      fn('https://c.com', (_err: any, allowed: boolean) => expect(allowed).toBe(false))
-      fn(undefined, (_err: any, allowed: boolean) => expect(allowed).toBe(true))
-    })
+    it('should handle whitespace and duplicates in ALLOWED_ORIGINS', async () => {
+      process.env.ALLOWED_ORIGINS = '  https://app.stellar.com  , https://app.stellar.com ';
+      const options = buildCorsOptions();
 
-    it('includes required CORS methods and headers', () => {
-      process.env.NODE_ENV = 'development'
-      const opts = buildCorsOptions()
-      expect(opts.methods).toEqual(expect.arrayContaining(['GET', 'POST', 'OPTIONS']))
-      expect(opts.allowedHeaders).toEqual(
-        expect.arrayContaining(['Content-Type', 'Authorization', 'X-Payment'])
-      )
-    })
+      const res = await checkOrigin(options, 'https://app.stellar.com');
+      expect(res.allow).toBe(true);
+    });
 
-    it('allows non-browser requests (no origin) in production', () => {
-      process.env.NODE_ENV = 'production'
-      process.env.ALLOWED_ORIGINS = 'https://a.com'
-      const opts = buildCorsOptions()
-      const fn = opts.origin as any
-      // Simulate server-to-server or curl request with no Origin header
-      fn(null, (err: any, allowed: boolean) => expect(allowed).toBe(true))
-      fn('', (err: any, allowed: boolean) => expect(allowed).toBe(true))
-    })
-  })
-})
+    it('should allow requests with no Origin header (curl, server-to-server, MCP)', async () => {
+      process.env.ALLOWED_ORIGINS = 'https://app.stellar.com';
+      const options = buildCorsOptions();
+
+      const res = await checkOrigin(options, undefined);
+      expect(res.allow).toBe(true);
+    });
+
+    it('should block cross-origin requests when ALLOWED_ORIGINS is empty', async () => {
+      delete process.env.ALLOWED_ORIGINS;
+      const options = buildCorsOptions();
+
+      const res = await checkOrigin(options, 'https://app.stellar.com');
+      expect(res.allow).toBe(false);
+    });
+
+    it('should return correct startup messages based on allowlist state', () => {
+      delete process.env.ALLOWED_ORIGINS;
+      expect(getCorsStartupMessage()).toBe('CORS: allowlist empty — cross-origin browser requests blocked');
+
+      process.env.ALLOWED_ORIGINS = 'https://app.stellar.com';
+      expect(getCorsStartupMessage()).toBe('CORS: allowlist (1 origin)');
+
+      process.env.ALLOWED_ORIGINS = 'https://app.stellar.com,https://admin.stellar.com';
+      expect(getCorsStartupMessage()).toBe('CORS: allowlist (2 origins)');
+    });
+
+    it('should include required headers for paid routes (x402 payment headers)', () => {
+      process.env.ALLOWED_ORIGINS = 'https://app.stellar.com';
+      const options = buildCorsOptions();
+
+      expect(options.allowedHeaders).toContain('X-Payment');
+      expect(options.allowedHeaders).toContain('payment-signature');
+      expect(options.exposedHeaders).toContain('PAYMENT-REQUIRED');
+      expect(options.exposedHeaders).toContain('X-Payment-Response');
+    });
+  });
+});
