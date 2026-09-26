@@ -27,7 +27,19 @@ This document covers everything you need to go from zero to a merged pull reques
 
 ## Code of Conduct
 
-By participating in this project you agree to treat all contributors with respect. Harassment, discrimination, or hostile behaviour of any kind will not be tolerated. Be constructive, be kind, assume good intent.
+We are dedicated to providing a welcoming, inclusive, and harassment-free environment for all contributors and community members.
+
+This project has formally adopted the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md). Please review our full [Code of Conduct](CODE_OF_CONDUCT.md) for details on expected behavior, standards, and enforcement procedures.
+
+### Enforcement Scope & Contacts
+
+The Code of Conduct applies within all official community spaces (GitHub repositories, issue trackers, pull requests, discussions) as well as any public or private venue where an individual officially represents the StellarSearch project.
+
+Unacceptable behavior, harassment, or abusive conduct may be reported confidentially to project leadership:
+- **Email:** `conduct@stellarsearch.org`
+- **GitHub Maintainer:** `@Emmy123222`
+
+All reports are treated with strict confidentiality, investigated promptly, and handled according to the enforcement guidelines outlined in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ---
 
@@ -593,6 +605,7 @@ node scripts/check-vulnerabilities.mjs osv-results.json  # enforce the gate
 ## Getting Help
 
 - **Bug or question about the code?** Open a [GitHub Issue](https://github.com/Emmy123222/Stellar-Search/issues/new).
+- **Security vulnerability or payment disclosure?** Do NOT open a public issue. Follow [SECURITY.md](SECURITY.md) to report privately.
 - **Something in this guide is wrong or unclear?** Open a PR fixing it — contributions to docs are just as valuable as code.
 - **x402 protocol questions?** See the [official x402 docs](https://x402.org) and the [Stellar agentic payments guide](https://developers.stellar.org/docs/build/agentic-payments/x402/built-on-stellar).
 - **Freighter API reference?** [Stellar Freighter docs](https://docs.freighter.app).
