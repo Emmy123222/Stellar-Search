@@ -36,6 +36,7 @@ This project has formally adopted the [Contributor Covenant v2.1](CODE_OF_CONDUC
 The Code of Conduct applies within all official community spaces (GitHub repositories, issue trackers, pull requests, discussions) as well as any public or private venue where an individual officially represents the StellarSearch project.
 
 Unacceptable behavior, harassment, or abusive conduct may be reported confidentially to project leadership:
+
 - **Email:** `conduct@stellarsearch.org`
 - **GitHub Maintainer:** `@Emmy123222`
 
@@ -78,15 +79,16 @@ Serper.dev  ──── real Google results ────►  Browser
 
 Before you begin, make sure you have:
 
-| Requirement | Version | Notes |
-|---|---|---|
-| **Node.js** | ≥ 20.19.0 | ESM support required; CI tests Node 20 and 22 |
-| **npm** | ≥ 9.0.0 | Comes with Node 18 |
-| **Git** | any recent | — |
-| **Freighter** | latest | [freighter.app](https://freighter.app) browser extension |
-| **Stellar testnet account** | — | Free — see setup below |
+| Requirement                 | Version    | Notes                                                    |
+| --------------------------- | ---------- | -------------------------------------------------------- |
+| **Node.js**                 | ≥ 20.19.0  | ESM support required; CI tests Node 20 and 22            |
+| **npm**                     | ≥ 9.0.0    | Comes with Node 18                                       |
+| **Git**                     | any recent | —                                                        |
+| **Freighter**               | latest     | [freighter.app](https://freighter.app) browser extension |
+| **Stellar testnet account** | —          | Free — see setup below                                   |
 
 ### Free API keys you will need
+
 Install or prepare the following before you begin:
 
 - **Node.js** (an active LTS release is recommended) and npm.
@@ -156,11 +158,11 @@ VITE_SERVER_URL=http://localhost:3001
 > and, without validation, spoofed `X-Forwarded-For` headers could be honored.
 > Set `TRUST_PROXY_HOPS` explicitly per deployment:
 >
-> | Value | Behavior |
-> |---|---|
+> | Value       | Behavior                                                                                                           |
+> | ----------- | ------------------------------------------------------------------------------------------------------------------ |
 > | unset / `0` | Trust no proxy (default). `req.ip` ignores `X-Forwarded-For` entirely — safe directly or in single-process setups. |
-> | `1`, `2`, … | Trust exactly that many hops (e.g. `1` for Vercel). Distinct real clients get separate rate-limit buckets. |
-> | `true` | Trust all proxies — only for opaque, fully-controlled networks. |
+> | `1`, `2`, … | Trust exactly that many hops (e.g. `1` for Vercel). Distinct real clients get separate rate-limit buckets.         |
+> | `true`      | Trust all proxies — only for opaque, fully-controlled networks.                                                    |
 >
 > This is wired in `server/index.ts` via `app.set('trust proxy', …)`.
 
@@ -207,6 +209,7 @@ npm run dev
 ### Dependency updates (Dependabot)
 
 Dependabot is configured in `.github/dependabot.yml` to automatically propose weekly updates with sensible open PR limits:
+
 - **Grouped updates:** Minor/patch dependencies for tooling, linting, testing, and UI are grouped into single PRs to reduce notification noise.
 - **Deliberate review for payment & runtime:** Major upgrades for `@x402/*`, `@stellar/*`, `@modelcontextprotocol/*`, AI SDKs (`groq-sdk`), and server runtime packages are kept as isolated PRs to ensure deliberate review, preventing regressions across runtime boundaries (Express, Vercel, browser, and MCP) and safeguarding x402 settlement semantics.
 
@@ -240,12 +243,12 @@ Dependabot is configured in `.github/dependabot.yml` to automatically propose we
 
 ### PR size guidelines
 
-| Change type | Ideal PR size |
-|---|---|
-| Bug fix | < 100 lines changed |
-| Small feature | < 300 lines changed |
-| Large feature | Break into logical sub-PRs |
-| Refactor | One file / one abstraction at a time |
+| Change type   | Ideal PR size                        |
+| ------------- | ------------------------------------ |
+| Bug fix       | < 100 lines changed                  |
+| Small feature | < 300 lines changed                  |
+| Large feature | Break into logical sub-PRs           |
+| Refactor      | One file / one abstraction at a time |
 
 ---
 
@@ -274,6 +277,7 @@ When you open a bug, include:
 - Check the [open issues](https://github.com/Emmy123222/Stellar-Search/issues) first — the backlog already has 50+ scoped ideas waiting for contributors.
 
 ---
+
 Visit [http://localhost:5173](http://localhost:5173) and work on components that do not require a completed wallet transaction. Wallet-dependent actions may show a connection or payment error until Freighter is installed and configured. Do not add mock payment or search data to make those flows appear successful; use the real testnet setup when testing them end to end.
 
 ## Getting free testnet USDC
@@ -313,7 +317,7 @@ Use concise conventional-style commit subjects, for example:
 
 Vitest + @vitest/coverage-v8 enforces **coverage thresholds for statements, branches, functions, and lines**. Configuration lives in `vite.config.ts:6` and is documented in `README.md#testing--coverage`.
 
-```bash
+````bash
 npm run test              # run tests without coverage
 npm run test:coverage     # run with coverage + thresholds (CI gate)
 node scripts/check-node-version.js  # validate Node version against engines
@@ -321,7 +325,7 @@ node scripts/check-node-version.js  # validate Node version against engines
 open coverage/index.html  # view HTML report
 ```text
 fix: handle rejected Freighter signatures
-```
+````
 
 ### PR naming convention
 
@@ -329,14 +333,15 @@ fix: handle rejected Freighter signatures
 
 CI runs typecheck, lint, and test jobs across a matrix of Node versions to ensure compatibility:
 
-| Node version | Role |
-|---|---|
-| **20** | Minimum supported (per `package.json` engines) |
-| **22** | Current LTS |
+| Node version | Role                                           |
+| ------------ | ---------------------------------------------- |
+| **20**       | Minimum supported (per `package.json` engines) |
+| **22**       | Current LTS                                    |
 
 Each job includes a `node scripts/check-node-version.js` step that validates the running version against the `engines` field before any build or test steps run. Unsupported versions fail early with a clear error message.
 
 ### Running the TypeScript compiler
+
 Use the same conventional prefix in the pull request title:
 
 ```text
@@ -476,20 +481,20 @@ open coverage/index.html  # view HTML report
 
 Global thresholds start modest and ratchet upward as payment/wallet/API/MCP/UI behavior moves from untested to tested:
 
-| Scope | Statements | Branches | Functions | Lines |
-|---|---:|---:|---:|---:|
-| Global | 35% | 30% | 28% | 35% |
-| `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
-| `src/lib/facilitatorValidation.ts` | 85% | 70% | 75% | 85% |
-| `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
-| `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
-| `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
-| `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
-| `server/index.ts` | 65% | 60% | 65% | 65% |
-| `api/search.ts` | 90% | 75% | 80% | 90% |
-| `api/health.ts` | 95% | 90% | 100% | 95% |
-| `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
-| `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
+| Scope                                 | Statements | Branches | Functions | Lines |
+| ------------------------------------- | ---------: | -------: | --------: | ----: |
+| Global                                |        35% |      30% |       28% |   35% |
+| `src/lib/constants.ts`                |        90% |      60% |      100% |   90% |
+| `src/lib/facilitatorValidation.ts`    |        85% |      70% |       75% |   85% |
+| `src/lib/stellar.ts`                  |        85% |      75% |       85% |   85% |
+| `src/lib/paymentIntegrity.ts`         |        90% |      85% |       95% |   90% |
+| `server/corsConfig.ts`                |        90% |      85% |       95% |   90% |
+| `src/components/search/SearchBar.tsx` |        80% |      80% |       90% |   80% |
+| `server/index.ts`                     |        65% |      60% |       65% |   65% |
+| `api/search.ts`                       |        90% |      75% |       80% |   90% |
+| `api/health.ts`                       |        95% |      90% |      100% |   95% |
+| `mcp-server/index.ts`                 |        30% |      20% |       20% |   30% |
+| `src/hooks/useFreighterWallet.ts`     |        85% |      65% |       90% |   85% |
 
 **Ratchet policy:** If a module's real coverage exceeds its threshold, bump the threshold in `vite.config.ts` in the same PR. CI fails if any threshold drops. Global ratchets `15 → 25 → 35` as new payment, wallet, API, MCP, and UI tests land. Keep Express (`server/`), Vercel (`api/`), browser (`src/`), and MCP (`mcp-server/`) constants aligned — `STELLAR_NETWORK`, `USDC_CONTRACT`, `AMOUNT_STROOPS=10000` → `0.001 USDC` (see `server/index.ts:104`, `api/search.ts:48`, `mcp-server/index.ts:19`). Thresholds verify the **x402 settlement semantics** are preserved for paid routes.
 
@@ -548,7 +553,7 @@ CI runs dependency supply-chain checks in the `supply-chain` job: it generates a
   - `reason` — the accepted risk and the planned remediation,
   - `ignoreUntil` — a deadline (YYYY-MM-DD). When it passes, the advisory is reported again and CI fails until the dependency is upgraded, the exception is renewed, or the risk is otherwise resolved.
 
-The exception list is intentionally an allowlist of *known, pre-existing* findings on the baseline dependency tree. **New advisories are not automatically excused** — add them to `osv-scanner.toml` only when the risk is genuinely accepted and a remediation is tracked.
+The exception list is intentionally an allowlist of _known, pre-existing_ findings on the baseline dependency tree. **New advisories are not automatically excused** — add them to `osv-scanner.toml` only when the risk is genuinely accepted and a remediation is tracked.
 
 ### Adding an exception
 
@@ -585,12 +590,12 @@ node scripts/check-vulnerabilities.mjs osv-results.json  # enforce the gate
 
 ### Vite / Build
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| `global is not defined` | Stellar SDK needs `globalThis` polyfill | Already handled in `vite.config.ts` — do not remove the `define` block |
-| Buffer errors in browser | `buffer` package not aliased | `resolve.alias` in `vite.config.ts` handles this |
-| CORS errors in dev | Frontend calling server directly | Use the Vite proxy (`/search`, `/ai`, `/health` already proxied) |
-| All users share one rate-limit bucket / spoofed IPs bypass limits | `TRUST_PROXY_HOPS` not set behind Vercel/nginx | Set `TRUST_PROXY_HOPS=1` (or your proxy hop count); see *Trusting proxies* above |
+| Symptom                                                           | Likely cause                                   | Fix                                                                              |
+| ----------------------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------- |
+| `global is not defined`                                           | Stellar SDK needs `globalThis` polyfill        | Already handled in `vite.config.ts` — do not remove the `define` block           |
+| Buffer errors in browser                                          | `buffer` package not aliased                   | `resolve.alias` in `vite.config.ts` handles this                                 |
+| CORS errors in dev                                                | Frontend calling server directly               | Use the Vite proxy (`/search`, `/ai`, `/health` already proxied)                 |
+| All users share one rate-limit bucket / spoofed IPs bypass limits | `TRUST_PROXY_HOPS` not set behind Vercel/nginx | Set `TRUST_PROXY_HOPS=1` (or your proxy hop count); see _Trusting proxies_ above |
 
 ### Stellar / Horizon
 
