@@ -62,6 +62,10 @@ export interface SearchSession {
   error?: string
   durationMs?: number
   suggestions: string[]
+  filters?: {
+    includeDomains?: string[]
+    excludeDomains?: string[]
+  }
 }
 
 interface ActivePayment {
@@ -104,7 +108,7 @@ export function useSearch(
     }
   }, [walletNetwork, cancelActivePayment])
 
-  const search = useCallback(async (query: string, count = 5) => {
+  const search = useCallback(async (query: string, count = 5, includeDomains?: string[], excludeDomains?: string[]) => {
     if (!query.trim()) return
 
     const activePayment: ActivePayment = {
@@ -122,6 +126,8 @@ export function useSearch(
 
     const t0     = Date.now()
     const params = new URLSearchParams({ q: query, count: String(count), suggestions: '1' })
+    if (includeDomains && includeDomains.length > 0) params.append('includeDomains', includeDomains.join(','))
+    if (excludeDomains && excludeDomains.length > 0) params.append('excludeDomains', excludeDomains.join(','))
 
     const advance = (step: PaymentStep) =>
       setSession(prev => ({ ...prev, step }))
@@ -197,7 +203,7 @@ export function useSearch(
         const data = await firstRes.json()
         return setSession({
           query, results: data.results ?? [], txHash: null,
-          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
+          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [], filters: data.filters,
         })
       }
 
@@ -251,6 +257,7 @@ export function useSearch(
         step:        6,
         durationMs:  Date.now() - t0,
         suggestions: data.suggestions ?? [],
+        filters:     data.filters,
       })
 
       if (data.txHash) {

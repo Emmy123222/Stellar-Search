@@ -579,7 +579,7 @@ app.get('/search', async (req: Request, res: Response) => {
   let txHash: string | null = null
 
   try {
-    const { q } = req.query as Record<string, string>
+    const { q, includeDomains, excludeDomains } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -589,12 +589,24 @@ app.get('/search', async (req: Request, res: Response) => {
     const cleanQ = v.cleanQ
 
     const { count, tbs } = paidParams(req, SEARCH_COUNT)
+
+    let finalQ = cleanQ
+    const appliedIncludes = includeDomains ? includeDomains.split(',').map(d => d.trim().toLowerCase()).filter(d => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)).slice(0, 5) : []
+    const appliedExcludes = excludeDomains ? excludeDomains.split(',').map(d => d.trim().toLowerCase()).filter(d => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)).slice(0, 10) : []
+
+    if (appliedIncludes.length > 0) {
+      finalQ += ' (' + appliedIncludes.map(d => `site:${d}`).join(' OR ') + ')'
+    }
+    if (appliedExcludes.length > 0) {
+      finalQ += ' ' + appliedExcludes.map(d => `-site:${d}`).join(' ')
+    }
+
     const t0 = Date.now()
 
     const requestBody: Record<string, unknown> = {
-      q: cleanQ,
+      q: finalQ,
       num: count,
-    }
+
     if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetchSerper('/search', {
@@ -685,6 +697,10 @@ app.get('/search', async (req: Request, res: Response) => {
       txHash,
       latencyMs,
       suggestions,
+      filters: {
+        ...(appliedIncludes.length > 0 && { includeDomains: appliedIncludes }),
+        ...(appliedExcludes.length > 0 && { excludeDomains: appliedExcludes }),
+      }
     }
 
     // Record opted-in receipt (cap 50, in-memory)

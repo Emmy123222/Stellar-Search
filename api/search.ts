@@ -154,6 +154,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const cleanQ = validation.cleanQ
 
+  const { count, freshness, includeDomains, excludeDomains } = req.query as Record<string, string>
+
   // ─── Parameter validation (#188) ─────────────────────────────────────────
   const validatedCount = validateCount(req.query.count, SEARCH_COUNT)
   if (!validatedCount.ok) {
@@ -169,6 +171,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const count = validatedCount.value
   const tbs = validatedFreshness.value ? FRESHNESS_TBS[validatedFreshness.value] : undefined
+
+  let finalQ = cleanQ
+  const appliedIncludes = includeDomains ? includeDomains.split(',').map(d => d.trim().toLowerCase()).filter(d => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)).slice(0, 5) : []
+  const appliedExcludes = excludeDomains ? excludeDomains.split(',').map(d => d.trim().toLowerCase()).filter(d => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)).slice(0, 10) : []
+
+  if (appliedIncludes.length > 0) {
+    finalQ += ' (' + appliedIncludes.map(d => `site:${d}`).join(' OR ') + ')'
+  }
+  if (appliedExcludes.length > 0) {
+    finalQ += ' ' + appliedExcludes.map(d => `-site:${d}`).join(' ')
+  }
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -208,9 +221,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // ─── Serper.dev ──────────────────────────────────────────────────────────
     const requestBody: Record<string, unknown> = {
-      q: cleanQ,
+      q: finalQ,
       num: count,
-    }
+
     if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetchSerper('/search', {
@@ -250,6 +263,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       latencyMs,
       ...(answerBox && { answerBox }),
       ...(knowledgeGraph && { knowledgeGraph }),
+      filters: {
+        ...(appliedIncludes.length > 0 && { includeDomains: appliedIncludes }),
+        ...(appliedExcludes.length > 0 && { excludeDomains: appliedExcludes }),
+      }
     }
 
     return res.json(responseBody)

@@ -16,14 +16,14 @@ interface Props {
   wallet: WalletState
   onConnectWallet: () => void
   session: SearchSession
-  search: (query: string, count?: number) => Promise<void>
+  search: (query: string, count?: number, includeDomains?: string[], excludeDomains?: string[]) => Promise<void>
   reset: () => void
 }
 
 export function SearchPage({ wallet, onConnectWallet, session, search, reset }: Props) {
-  const handleSearch = (query: string) => {
+  const handleSearch = (query: string, includeDomains?: string[], excludeDomains?: string[]) => {
     if (!wallet.connected) { onConnectWallet(); return }
-    search(query)
+    search(query, 5, includeDomains, excludeDomains)
   }
 
   const isSearching = session.status === 'searching'
@@ -129,6 +129,16 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
             {(session.status === 'complete' || session.status === 'searching') && (
               <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+                {session.filters && (
+                   <div className="flex flex-wrap gap-2 mb-4 px-1">
+                     {session.filters.includeDomains?.map((d: string) => (
+                        <span key={`inc-${d}`} className="px-3 py-1 bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan text-[10px] uppercase tracking-widest font-display rounded-full cursor-pointer hover:bg-neon-cyan/20 transition-colors" onClick={() => handleSearch(session.query, session.filters?.includeDomains?.filter((x: string) => x !== d), session.filters?.excludeDomains)}>+ {d} ✕</span>
+                     ))}
+                     {session.filters.excludeDomains?.map((d: string) => (
+                        <span key={`exc-${d}`} className="px-3 py-1 bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] uppercase tracking-widest font-display rounded-full cursor-pointer hover:bg-red-500/20 transition-colors" onClick={() => handleSearch(session.query, session.filters?.includeDomains, session.filters?.excludeDomains?.filter((x: string) => x !== d))}>- {d} ✕</span>
+                     ))}
+                   </div>
+                )}
                 <SearchResults results={session.results} query={session.query} isLoading={session.status === 'searching'} />
               </motion.div>
             )}

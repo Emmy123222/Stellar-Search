@@ -1,4 +1,4 @@
-import { useState, useMemo }                   from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence }             from 'framer-motion'
 import { AnimatedBackground, Navbar, LiveTicker, Footer } from './components/layout'
 import { GroqAssistant }                       from './components/ai'
@@ -10,6 +10,23 @@ type Page = 'search' | 'docs' | 'dashboard'
 
 export default function App() {
   const [page, setPage] = useState<Page>('search')
+  const scrollPositions = useRef<Record<Page, number>>({ search: 0, docs: 0, dashboard: 0 })
+  const previousPage = useRef<Page>(page)
+
+  useEffect(() => {
+    const handleScroll = () => {
+      scrollPositions.current[page] = window.scrollY
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [page])
+
+  useEffect(() => {
+    if (previousPage.current !== page) {
+      window.scrollTo(0, scrollPositions.current[page] || 0)
+      previousPage.current = page
+    }
+  }, [page])
 
   const {
     wallet, transactions, txLoading,
@@ -54,35 +71,37 @@ export default function App() {
 
         {/* Page content */}
         <main className="flex-1">
+          <div style={{ display: page === 'search' ? 'block' : 'none' }}>
+            <SearchPage
+              wallet={wallet}
+              onConnectWallet={connect}
+              session={session}
+              search={search}
+              reset={reset}
+            />
+          </div>
           <AnimatePresence mode="wait">
-            <motion.div
-              key={page}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
-            >
-              {page === 'search' && (
-                <SearchPage
-                  wallet={wallet}
-                  onConnectWallet={connect}
-                  session={session}
-                  search={search}
-                  reset={reset}
-                />
-              )}
-              {page === 'docs' && <DocsPage />}
-              {page === 'dashboard' && (
-                <DashboardPage
-                  transactions={transactions}
-                  txLoading={txLoading}
-                  publicKey={wallet.publicKey}
-                  usdcBalance={wallet.usdcBalance}
-                  xlmBalance={wallet.xlmBalance}
-                  onRefresh={refresh}
-                />
-              )}
-            </motion.div>
+            {page !== 'search' && (
+              <motion.div
+                key={page}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+              >
+                {page === 'docs' && <DocsPage />}
+                {page === 'dashboard' && (
+                  <DashboardPage
+                    transactions={transactions}
+                    txLoading={txLoading}
+                    publicKey={wallet.publicKey}
+                    usdcBalance={wallet.usdcBalance}
+                    xlmBalance={wallet.xlmBalance}
+                    onRefresh={refresh}
+                  />
+                )}
+              </motion.div>
+            )}
           </AnimatePresence>
         </main>
 

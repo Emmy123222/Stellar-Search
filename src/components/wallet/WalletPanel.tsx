@@ -142,7 +142,7 @@ export function WalletPanel({
                   <p className="font-display text-white/30" style={{ fontSize: '9px' }}>USDC BALANCE</p>
                   <p className="font-display text-lg text-neon-amber mt-0.5">{wallet.usdcBalance}</p>
                   <p className="font-display text-white/25 mt-0.5" style={{ fontSize: '9px' }}>
-                    ~{Math.floor(parseFloat(wallet.usdcBalance) / parseFloat(AMOUNT_USDC)).toLocaleString()} queries
+                    ~{Math.floor((isNaN(parseFloat(wallet.usdcBalance)) ? 0 : Math.max(0, parseFloat(wallet.usdcBalance))) / parseFloat(AMOUNT_USDC)).toLocaleString()} queries
                   </p>
                 </div>
                 <div className="py-2 px-3 rounded-lg bg-white/5">
