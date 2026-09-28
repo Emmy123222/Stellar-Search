@@ -203,6 +203,47 @@ export interface BatchJsonlDoneEvent extends BatchJsonlEvent {
   completedAt: string
 }
 
+// ─── Research Workflow Types ───────────────────────────────────────────────
+
+/**
+ * Output format the AI should produce when generating a research report.
+ * - bullets: concise bullet-point summary with citations
+ * - narrative: flowing prose with inline citations
+ * - table:  markdown table comparing sources by key claim
+ * - comparison: side-by-side contrast of sources' positions
+ */
+export type ReportFormat = 'bullets' | 'narrative' | 'table' | 'comparison'
+
+/** Config that the user supplies before invoking the AI research step. */
+export interface ResearchReportConfig {
+  /** IDs of the SearchResult items the user wants included in the report. */
+  selectedSourceIds: string[]
+  /** How the AI should structure its output. */
+  format: ReportFormat
+}
+
+/** Status of a single source after report generation. */
+export interface SourceStatus {
+  id: string
+  title: string
+  url: string
+  /** 'used' | 'omitted' (deselected by user) | 'failed' (AI could not process it) */
+  status: 'used' | 'omitted' | 'failed'
+}
+
+/** Result of a research report generation. */
+export interface ResearchReport {
+  format: ReportFormat
+  /** Per-source status map so the UI can show which sources were used/omitted/failed. */
+  sources: SourceStatus[]
+  /** AI-generated report content in the requested format. */
+  content: string
+  /** IDs of sources the user chose to omit. */
+  omitted: string[]
+  /** IDs of sources that the AI reported it could not process. */
+  failed: string[]
+}
+
 // ─── Job Types ─────────────────────────────────────────────────────────────
 export interface SearchJob {
   id: string
