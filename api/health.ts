@@ -2,6 +2,13 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getSerperBreakerState } from '../src/lib/serperClient'
 import { readServerConfig } from '../src/lib/config'
 import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
+import { USDC_CONTRACT_MAINNET, USDC_CONTRACT_TESTNET } from '../src/lib/constants'
+import { validateFacilitatorConfig } from '../src/lib/facilitatorValidation'
+import {
+  type ServerHealthResponse,
+  declareStatsUnsupported,
+  SERVERLESS_STATS_UNAVAILABLE_REASON,
+} from '../src/lib/serverHealth'
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
   applyServerlessHeaders(res)

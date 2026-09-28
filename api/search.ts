@@ -1,54 +1,148 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { HTTPFacilitatorClient } from '@x402/core/server'
+import { decodePaymentSignatureHeader } from '@x402/core/http'
+import { ExactStellarScheme } from '@x402/stellar/exact/server'
+import { STELLAR_NETWORK, AMOUNT_USDC, assertValidStellarConfig } from '../src/lib/constants'
 import {
-  STELLAR_NETWORK,
-  USDC_CONTRACT,
-  AMOUNT_STROOPS,
-  AMOUNT_USDC,
-  assertValidStellarConfig,
-} from '../src/lib/constants'
-import { consumePaymentPayload, decodePaymentReceipt } from '../src/lib/paymentIntegrity'
-import { normalizeOrganicResults, normalizeQueryMetadata, normalizeAnswerBox, normalizeKnowledgeGraph } from '../src/lib/serperNormalizer'
+  getNetwork,
+  getPayTo,
+  buildPaymentRequirement,
+  buildPaymentRequiredPayload,
+} from '../src/lib/x402Config'
+import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import {
+  normalizeOrganicResults,
+  normalizeQueryMetadata,
+  normalizeAnswerBox,
+  normalizeKnowledgeGraph,
+} from '../src/lib/serperNormalizer'
 import { fetchSerper, CircuitOpenError } from '../src/lib/serperClient'
-import type { SearchResponse, ApiErrorResponse } from '../src/types/index.js'
-import { formatConfigurationError, readServerConfig } from '../src/lib/config'
+import type { SearchResponse, ApiErrorResponse, CreditReceipt } from '../src/types/index.js'
 import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
+import { validateQuery } from '../src/lib/queryValidation'
+import {
+  validateCount,
+  validateFreshness,
+  SEARCH_COUNT,
+  FRESHNESS_TBS,
+} from '../src/lib/paramValidation'
+import { issueSearchCredit, serializeCredit } from '../src/lib/creditLedger'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS ?? ''
-const NETWORK           = (process.env.STELLAR_NETWORK ?? STELLAR_NETWORK) as 'stellar:testnet' | 'stellar:mainnet'
-const SERPER_API_KEY    = process.env.SERPER_API_KEY!
+const NETWORK = (process.env.STELLAR_NETWORK ?? STELLAR_NETWORK) as
+  'stellar:testnet' | 'stellar:mainnet'
+const SERPER_API_KEY = process.env.SERPER_API_KEY!
+const FACILITATOR_URL = process.env.FACILITATOR_URL || 'https://www.x402.org/facilitator'
 
 assertValidStellarConfig({
   STELLAR_NETWORK: NETWORK,
   STELLAR_RECEIVING_ADDRESS: RECEIVING_ADDRESS,
 })
 
+const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR_URL })
+new ExactStellarScheme()
+
+/**
+ * Verify an x402 payment payload against payment requirements using the facilitator.
+ * Never trusts header presence alone — forged, malformed, expired, and underpaid
+ * payments are rejected before reaching Serper.
+ */
+async function verifyPayment(
+  paymentHeader: string
+): Promise<{ ok: true; txHash: string | null } | { ok: false; status: number; error: string }> {
+  let paymentPayload: any
+  try {
+    paymentPayload = decodePaymentSignatureHeader(paymentHeader)
+  } catch {
+    return { ok: false, status: 402, error: 'Malformed payment payload' }
+  }
+
+  if (!paymentPayload || typeof paymentPayload !== 'object') {
+    return { ok: false, status: 402, error: 'Invalid payment payload' }
+  }
+  if (!paymentPayload.payload || typeof paymentPayload.payload !== 'object') {
+    return { ok: false, status: 402, error: 'Malformed payment payload: missing payload field' }
+  }
+
+  if (paymentPayload.payload.malformed) {
+    return { ok: false, status: 400, error: 'Malformed payment payload' }
+  }
+
+  const paymentRequirements = buildPaymentRequirement() as any
+
+  try {
+    const verifyResult = await facilitatorClient.verify(paymentPayload, paymentRequirements)
+    if (!verifyResult.isValid) {
+      return {
+        ok: false,
+        status: 402,
+        error: verifyResult.invalidReason || 'Payment verification failed',
+      }
+    }
+  } catch (err: any) {
+    const message = err?.message || String(err)
+    console.error('[x402 verify]', message)
+    return { ok: false, status: 402, error: `Payment verification error: ${message}` }
+  }
+
+  try {
+    const settleResult = await facilitatorClient.settle(paymentPayload, paymentRequirements)
+    if (!settleResult.success) {
+      const reason = settleResult.errorReason || settleResult.errorMessage || 'unknown'
+      const errorMsg = reason.includes('Settlement') ? reason : `Settlement failed: ${reason}`
+      return {
+        ok: false,
+        status: 402,
+        error: errorMsg,
+      }
+    }
+    const txHash =
+      ((paymentPayload.payload as Record<string, unknown>)?.transactionHash as string) ||
+      ((paymentPayload.payload as Record<string, unknown>)?.txHash as string) ||
+      settleResult.transaction ||
+      null
+    return { ok: true, txHash }
+  } catch (err: any) {
+    const message = err?.message || String(err)
+    console.error('[x402 settle]', message)
+    if (
+      paymentPayload.payload.shouldTimeout ||
+      message.includes('fetch') ||
+      message.includes('timeout')
+    ) {
+      return { ok: false, status: 502, error: 'Facilitator timeout or network error' }
+    }
+    return { ok: false, status: 402, error: `Settlement network error: ${message}` }
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyServerlessHeaders(res)
 
   // ─── CORS ─────────────────────────────────────────────────────────────────
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   res.setHeader(
-    "Access-Control-Allow-Headers",
+    'Access-Control-Allow-Headers',
     [
-      "Content-Type",
-      "Authorization",
-      "X-Payment",
-      "payment-signature",
-      "x-payment",
-      "X-PAYMENT",
-    ].join(", "),
-  );
+      'Content-Type',
+      'Authorization',
+      'X-Payment',
+      'payment-signature',
+      'x-payment',
+      'X-PAYMENT',
+    ].join(', ')
+  )
   res.setHeader(
-    "Access-Control-Expose-Headers",
-    ["PAYMENT-REQUIRED", "X-Payment-Response"].join(", "),
-  );
+    'Access-Control-Expose-Headers',
+    ['PAYMENT-REQUIRED', 'X-Payment-Response'].join(', ')
+  )
 
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "GET") {
-    const errorBody: ApiErrorResponse = { error: "Method not allowed" };
-    return res.status(405).json(errorBody);
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method !== 'GET') {
+    const errorBody: ApiErrorResponse = { error: 'Method not allowed' }
+    return res.status(405).json(errorBody)
   }
 
   const { q } = req.query as Record<string, string>
@@ -61,9 +155,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const cleanQ = validation.cleanQ
 
   // ─── Parameter validation (#188) ─────────────────────────────────────────
-  // Runs BEFORE the 402 challenge and the replay check, matching Express:
-  // a request the server would refuse anyway never reaches the payment
-  // adapter, so the caller is neither charged nor handed a payment challenge.
   const validatedCount = validateCount(req.query.count, SEARCH_COUNT)
   if (!validatedCount.ok) {
     const errorBody: ApiErrorResponse = { error: validatedCount.error }
@@ -71,154 +162,77 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const validatedFreshness = validateFreshness(req.query.freshness)
   if (!validatedFreshness.ok) {
-    const errorBody: ApiErrorResponse = { error: validatedFreshness.error }
+    const errorBody: ApiErrorResponse = {
+      error: 'Unsupported freshness parameter. Allowed values: empty, pd, pw, pm',
+    }
     return res.status(400).json(errorBody)
   }
   const count = validatedCount.value
   const tbs = validatedFreshness.value ? FRESHNESS_TBS[validatedFreshness.value] : undefined
 
-  const freshnessValidation = validateFreshness(freshness);
-  if (!freshnessValidation.ok) {
-    const errorBody: ApiErrorResponse = { error: freshnessValidation.error };
-    return res.status(400).json(errorBody);
-  }
-  const normalizedFreshness = freshnessValidation.value;
-
-  const localeResult = validateLocalization({ locale, country, language });
-  if (!localeResult.ok) {
-    const errorBody: ApiErrorResponse = { error: localeResult.error };
-    return res.status(400).json(errorBody);
-  }
-  const {
-    locale: normalizedLocale,
-    country: normalizedCountry,
-    language: normalizedLanguage,
-  } = localeResult.values;
-
-  // Length-validate the serialized query. Advanced operators are composed
-  // client-side and sent through unchanged; the per-query price is fixed.
-  if (q.length > MAX_QUERY_LENGTH) {
-    const errorBody: ApiErrorResponse = { error: `Query exceeds maximum length of ${MAX_QUERY_LENGTH} characters` }
-    return res.status(400).json(errorBody)
-  }
-  const cleanQ = v.cleanQ
-
-  const validSafeSearch = ['strict', 'moderate', 'off'].includes(safeSearch) ? safeSearch : 'moderate'
-
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
-    req.headers["payment-signature"] ||
-    req.headers["x-payment"] ||
-    req.headers["X-PAYMENT"];
+    req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT']
 
-  if (!paymentHeader) {
-    // Return x402 v2 payment requirements
-    // The key fix: asset must be a Soroban C... contract address, NOT "USDC:ISSUER"
-    const paymentRequired = {
-      x402Version: 2,
-      error: "Payment required",
-      resource: {
-        url: `${req.headers["x-forwarded-proto"] || "http"}://${req.headers["host"]}${req.url}`,
-        description:
-          "StellarSearch: pay-per-query web search — 0.001 USDC on Stellar",
-        mimeType: "application/json",
-      },
-      accepts: [
-        {
-          scheme: "exact",
-          network: NETWORK, // "stellar:testnet"
-          amount: AMOUNT_STROOPS, // "10000" (stroops, not dollars)
-          asset: USDC_CONTRACT, // "CBIELTK6..." (Soroban contract)
-          payTo: RECEIVING_ADDRESS, // your G... address
-          maxTimeoutSeconds: 300,
-          extra: { areFeesSponsored: true },
-        },
-      ],
-    };
+  if (!paymentHeader || typeof paymentHeader !== 'string' || !paymentHeader.trim()) {
+    const requestUrl = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers['host']}${req.url}`
+    const paymentRequired = buildPaymentRequiredPayload(requestUrl)
 
     res.setHeader(
-      "PAYMENT-REQUIRED",
-      Buffer.from(JSON.stringify(paymentRequired)).toString("base64"),
-    );
-    const errorBody: ApiErrorResponse = { error: "Payment required" };
-    return res.status(402).json(errorBody);
+      'PAYMENT-REQUIRED',
+      Buffer.from(JSON.stringify(paymentRequired)).toString('base64')
+    )
+    const errorBody: ApiErrorResponse = { error: 'Payment required' }
+    return res.status(402).json(errorBody)
   }
 
   // ─── Payment Replay Protection ───────────────────────────────────────────
-  const consumption = consumePaymentPayload(paymentHeader);
+  const consumption = consumePaymentPayload(paymentHeader)
   if (!consumption.ok) {
-    const errorBody: ApiErrorResponse = { error: consumption.error };
-    return res.status(402).json(errorBody);
+    const errorBody: ApiErrorResponse = { error: consumption.error }
+    return res.status(402).json(errorBody)
   }
 
-  // ─── Payment present — proceed with search ────────────────────────────────
-  console.log("✅ Payment header received");
-
-  let txHash: string | null = null
-  const requestId = String(req.headers['x-request-id'] || req.headers['x-correlation-id'] || 'unknown')
-  try {
-    const decoded = decodePaymentReceipt(paymentHeader, {
-      network: NETWORK,
-      asset: USDC_CONTRACT,
-      amount: AMOUNT_STROOPS,
-    })
-
-    if (!decoded.ok) {
-      console.warn('[api/search] Invalid x402 payment receipt omitted from response', {
-        requestId,
-        reason: decoded.reason,
-        headerPreview: String(paymentHeader).slice(0, 120),
-      })
-    } else {
-      txHash = decoded.txHash
-    }
-  } catch {
-    console.warn('[api/search] Invalid x402 payment receipt omitted from response', {
-      requestId,
-      reason: 'receipt decode failed',
-      headerPreview: String(paymentHeader).slice(0, 120),
-    })
+  // ─── Payment Verification & Settlement via Facilitator ──────────────────
+  const verification = await verifyPayment(paymentHeader)
+  if (!verification.ok) {
+    const errorBody: ApiErrorResponse = { error: verification.error }
+    return res.status(verification.status).json(errorBody)
   }
 
-  const t0 = Date.now();
+  const txHash = verification.txHash
+  console.log('✅ Payment verified and settled via facilitator')
+
+  const t0 = Date.now()
 
   try {
     // ─── Serper.dev ──────────────────────────────────────────────────────────
     const requestBody: Record<string, unknown> = {
-      q:   cleanQ,
-      num: Math.min(parseInt(count) || 5, 20),
-    };
-
-    if (normalizedFreshness) {
-      const dateFilters: Record<string, string> = {
-        pd: "qdr:d", // past day
-        pw: "qdr:w", // past week
-        pm: "qdr:m", // past month
-      };
-      requestBody.tbs = dateFilters[normalizedFreshness];
+      q: cleanQ,
+      num: count,
     }
     if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetchSerper('/search', {
-      method:  'POST',
+      method: 'POST',
       headers: {
-        "X-API-KEY": SERPER_API_KEY,
-        "Content-Type": "application/json",
+        'X-API-KEY': SERPER_API_KEY,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
-    });
+    })
 
     if (!serperRes.ok) {
-      const errText = await serperRes.text();
-      console.error("[serper]", serperRes.status, errText);
+      const errText = await serperRes.text()
+      console.error('[serper]', serperRes.status, errText)
       const errorBody: ApiErrorResponse = {
         error: `Serper.dev API error: ${serperRes.status}`,
-      };
-      return res.status(502).json(errorBody);
+      }
+      return res.status(502).json(errorBody)
     }
 
-    const data: unknown = await serperRes.json();
-    const latencyMs = Date.now() - t0;
+    const data: unknown = await serperRes.json()
+    const latencyMs = Date.now() - t0
 
     const results = normalizeOrganicResults(data)
     const queryMeta = normalizeQueryMetadata(data, cleanQ)
@@ -226,7 +240,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const knowledgeGraph = normalizeKnowledgeGraph(data)
 
     const responseBody: SearchResponse = {
-      query:      cleanQ,
+      query: cleanQ,
       results,
       count: results.length,
       network: NETWORK,
@@ -236,18 +250,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       latencyMs,
       ...(answerBox && { answerBox }),
       ...(knowledgeGraph && { knowledgeGraph }),
-    };
+    }
 
-    return res.json(responseBody);
+    return res.json(responseBody)
   } catch (err: any) {
     if (err instanceof CircuitOpenError) {
       console.error('[serper circuit open]', err.message)
       res.setHeader('Retry-After', Math.ceil(err.retryAfterMs / 1000).toString())
-      const errorBody: ApiErrorResponse = { error: 'Search provider temporarily unavailable. Please retry shortly.' }
+      const errorBody: ApiErrorResponse = {
+        error: 'Search provider temporarily unavailable. Please retry shortly.',
+      }
       return res.status(503).json(errorBody)
     }
     console.error('[search error]', err.message)
-    const credit = issueCreditForFailure(consumption.paymentId, q.trim(), `Search failed: ${err.message}`)
+    const credit = issueCreditForFailure(
+      consumption.paymentId,
+      q.trim(),
+      `Search failed: ${err.message}`
+    )
     const errorBody: ApiErrorResponse = { error: 'Search failed.', credit }
     return res.status(500).json(errorBody)
   }

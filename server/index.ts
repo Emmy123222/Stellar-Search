@@ -23,14 +23,31 @@ import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
-import logger, { privacySafeIp, privacySafeQuery } from './logger'
+import logger from './logger'
 import crypto, { randomUUID } from 'crypto'
+
+function privacySafeIp(value: unknown): string {
+  const raw = typeof value === 'string' ? value : ''
+  return raw
+    ? `ip:${crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16)}`
+    : 'ip:unknown'
+}
+
+function privacySafeQuery(_value: unknown): undefined {
+  return undefined
+}
+import { STELLAR_NETWORK, AMOUNT_USDC, AMOUNT_STROOPS, USDC_CONTRACT } from '../src/lib/constants'
 import {
-  STELLAR_NETWORK,
-  AMOUNT_USDC,
-  AMOUNT_STROOPS,
-  USDC_CONTRACT
-} from '../src/lib/constants'
+  type CountBounds,
+  type Freshness,
+  SEARCH_COUNT,
+  IMAGES_COUNT,
+  NEWS_COUNT,
+  FRESHNESS_TBS,
+  validateCount,
+  validateFreshness,
+} from '../src/lib/paramValidation.js'
+import { sanitizeOperatorText } from '../src/lib/logSanitize.js'
 import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
 import { fetchSerper, CircuitOpenError, getSerperBreakerState } from '../src/lib/serperClient.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
@@ -60,6 +77,7 @@ import { buildReconciliationRecord, type ReconciliationRoute } from '../src/lib/
 import { appendReconciliationRecord } from './reconciliationStore.js'
 import { ConcurrencyGate } from './concurrency.js'
 import { getReadiness } from './readiness.js'
+import { validateQuery, MAX_QUERY_LENGTH } from '../src/lib/queryValidation.js'
 
 dotenv.config()
 
@@ -71,7 +89,7 @@ try {
   throw error
 }
 
-const app  = express()
+const app = express()
 const providerGate = new ConcurrencyGate(Number(process.env.PROVIDER_CONCURRENCY_LIMIT ?? 16))
 const PORT = config.port
 const RATE_LIMIT_PER_MINUTE = config.rateLimitPerMinute
@@ -114,9 +132,16 @@ const limiter = rateLimit({
 // ─── Security Headers & Middleware ────────────────────────────────────────
 app.use(async (_req, res, next) => {
   try {
-    const release = await providerGate.acquire(Number(process.env.PROVIDER_QUEUE_TIMEOUT_MS ?? 10000))
+    const release = await providerGate.acquire(
+      Number(process.env.PROVIDER_QUEUE_TIMEOUT_MS ?? 10000)
+    )
     let released = false
-    const releaseOnce = () => { if (!released) { released = true; release() } }
+    const releaseOnce = () => {
+      if (!released) {
+        released = true
+        release()
+      }
+    }
     res.on('finish', releaseOnce)
     res.on('close', releaseOnce)
     next()
@@ -181,7 +206,17 @@ export const jobStore = new Map<string, SearchJob>()
 // Job idempotency: key -> jobId
 export const jobIdempotencyStore = new Map<string, { jobId: string; expiresAt: number }>()
 // Recent receipts for MCP resources (opted-in, in-memory capped at 50)
-export const recentReceipts: Array<{ id: string; query: string; txHash: string | null; amount: string; currency: string; network: string; timestamp: string; latencyMs: number; count: number }> = []
+export const recentReceipts: Array<{
+  id: string
+  query: string
+  txHash: string | null
+  amount: string
+  currency: string
+  network: string
+  timestamp: string
+  latencyMs: number
+  count: number
+}> = []
 
 export function resetBatchJobStores(): void {
   batchIdempotencyStore.clear()
@@ -190,14 +225,16 @@ export function resetBatchJobStores(): void {
   recentReceipts.length = 0
 }
 
-export function addRecentReceipt(receipt: typeof recentReceipts[number]): void {
+export function addRecentReceipt(receipt: (typeof recentReceipts)[number]): void {
   recentReceipts.unshift(receipt)
   if (recentReceipts.length > 50) recentReceipts.pop()
 }
 
 function cleanupBatchIdempotency(now = Date.now()): void {
-  for (const [k, v] of batchIdempotencyStore.entries()) if (v.expiresAt <= now) batchIdempotencyStore.delete(k)
-  for (const [k, v] of jobIdempotencyStore.entries()) if (v.expiresAt <= now) jobIdempotencyStore.delete(k)
+  for (const [k, v] of batchIdempotencyStore.entries())
+    if (v.expiresAt <= now) batchIdempotencyStore.delete(k)
+  for (const [k, v] of jobIdempotencyStore.entries())
+    if (v.expiresAt <= now) jobIdempotencyStore.delete(k)
 }
 
 // ─── Webhook SSRF protection & signing (issue #324) ─────────────────────
@@ -214,7 +251,11 @@ export function isPrivateIp(hostname: string): boolean {
   // 169.254.0.0/16 link-local
   if (/^169\.254\.\d+\.\d+$/.test(hostname)) return true
   // fc00::/7 private, fe80::/10 link-local
-  if (hostname.includes(':') && (/^fc/i.test(hostname) || /^fd/i.test(hostname) || /^fe80/i.test(hostname))) return true
+  if (
+    hostname.includes(':') &&
+    (/^fc/i.test(hostname) || /^fd/i.test(hostname) || /^fe80/i.test(hostname))
+  )
+    return true
   return false
 }
 
@@ -231,7 +272,8 @@ export function validateWebhookUrl(urlStr: string): { ok: true } | { ok: false; 
   if (isPrivateIp(parsed.hostname)) {
     return { ok: false, error: 'Webhook URL points to private or blocked host (SSRF protection)' }
   }
-  if (parsed.username || parsed.password) return { ok: false, error: 'Webhook URL must not contain credentials' }
+  if (parsed.username || parsed.password)
+    return { ok: false, error: 'Webhook URL must not contain credentials' }
   return { ok: true }
 }
 
@@ -239,13 +281,21 @@ export function signWebhookPayload(payload: string, secret: string): string {
   return crypto.createHmac('sha256', secret).update(payload).digest('hex')
 }
 
-export function verifyWebhookSignature(payload: string, signature: string, secret: string, maxAgeMs = 5 * 60 * 1000, timestampHeader?: string): boolean {
+export function verifyWebhookSignature(
+  payload: string,
+  signature: string,
+  secret: string,
+  maxAgeMs = 5 * 60 * 1000,
+  timestampHeader?: string
+): boolean {
   const expected = signWebhookPayload(payload, secret)
   // timing-safe compare
   if (expected.length !== signature.length) return false
   try {
     if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return false
-  } catch { return false }
+  } catch {
+    return false
+  }
   if (timestampHeader) {
     const ts = parseInt(timestampHeader, 10)
     if (!Number.isFinite(ts)) return false
@@ -255,7 +305,10 @@ export function verifyWebhookSignature(payload: string, signature: string, secre
   return true
 }
 
-async function deliverWebhookWithRetry(job: SearchJob, maxAttempts = MAX_JOB_WEBHOOK_ATTEMPTS): Promise<void> {
+async function deliverWebhookWithRetry(
+  job: SearchJob,
+  maxAttempts = MAX_JOB_WEBHOOK_ATTEMPTS
+): Promise<void> {
   if (!job.webhookUrl || !job.webhookSecret) return
   const payloadObj = {
     event: 'job.completed',
@@ -301,8 +354,9 @@ async function deliverWebhookWithRetry(job: SearchJob, maxAttempts = MAX_JOB_WEB
       console.warn(`[webhook] attempt ${attempt} failed for job ${job.id}: ${err.message}`)
     }
     if (attempt < maxAttempts) {
-      const backoff = WEBHOOK_RETRY_BASE_MS * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200)
-      await new Promise((r) => setTimeout(r, backoff))
+      const backoff =
+        WEBHOOK_RETRY_BASE_MS * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200)
+      await new Promise(r => setTimeout(r, backoff))
     }
   }
   console.error(`[webhook] exhausted retries for job ${job.id}`)
@@ -310,12 +364,12 @@ async function deliverWebhookWithRetry(job: SearchJob, maxAttempts = MAX_JOB_WEB
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = config.receivingAddress
-const FACILITATOR_URL   = config.facilitatorUrl
-const NETWORK           = config.stellarNetwork
-const SERPER_API_KEY    = config.serperApiKey
-const GROQ_API_KEY      = config.groqApiKey
-const AMOUNT_USDC       = config.amountUsdc
-const AMOUNT_STROOPS    = config.amountStroops
+const FACILITATOR_URL = config.facilitatorUrl
+const NETWORK = config.stellarNetwork
+const SERPER_API_KEY = config.serperApiKey
+const GROQ_API_KEY = config.groqApiKey
+const AMOUNT_USDC = config.amountUsdc
+const AMOUNT_STROOPS = config.amountStroops
 
 // ─── Groq ─────────────────────────────────────────────────────────────────
 const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
@@ -323,13 +377,15 @@ const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : undefined
 // ─── x402 payment guard on /search ───────────────────────────────────────
 // paymentMiddlewareFromConfig is the recommended API per official Stellar docs.
 // It uses the Coinbase public facilitator (no API key needed for testnet).
-const x402Accepts = [{
-  scheme:  'exact',
-  price:   parseFloat(AMOUNT_USDC),
-  amount:  AMOUNT_STROOPS,
-  network: NETWORK,
-  payTo:   RECEIVING_ADDRESS,
-}]
+const x402Accepts = [
+  {
+    scheme: 'exact',
+    price: parseFloat(AMOUNT_USDC),
+    amount: AMOUNT_STROOPS,
+    network: NETWORK,
+    payTo: RECEIVING_ADDRESS,
+  },
+]
 
 const x402Routes = {
   'GET /search': {
@@ -345,13 +401,15 @@ const x402Routes = {
     description: `StellarSearch: pay-per-query news search — ${AMOUNT_USDC} USDC on Stellar`,
   },
   'POST /search/batch': {
-    accepts: [{
-      scheme: 'exact',
-      price: parseFloat(AMOUNT_USDC) * MAX_BATCH_SIZE,
-      amount: String(parseInt(AMOUNT_STROOPS) * MAX_BATCH_SIZE),
-      network: NETWORK,
-      payTo: RECEIVING_ADDRESS,
-    }],
+    accepts: [
+      {
+        scheme: 'exact',
+        price: parseFloat(AMOUNT_USDC) * MAX_BATCH_SIZE,
+        amount: String(parseInt(AMOUNT_STROOPS) * MAX_BATCH_SIZE),
+        network: NETWORK,
+        payTo: RECEIVING_ADDRESS,
+      },
+    ],
     description: `StellarSearch: batch web search (up to ${MAX_BATCH_SIZE}) — ${AMOUNT_USDC} USDC per query on Stellar, JSONL streaming`,
   },
   'POST /jobs': {
@@ -368,24 +426,92 @@ const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }]
 // ─── Payment Logging Middleware ──────────────────────────────────────────
 app.use((req, res, next) => {
   if (req.path === '/search') {
-    const { q } = req.query as Record<string, string>;
-    const truncatedQ = q ? String(q).substring(0, 50) : '';
+    const { q } = req.query as Record<string, string>
+    const truncatedQ = q ? String(q).substring(0, 50) : ''
 
     res.on('finish', () => {
-      let paymentStatus = 'error';
-      if (res.statusCode === 200) paymentStatus = 'paid';
-      else if (res.statusCode === 402) paymentStatus = '402';
+      let paymentStatus = 'error'
+      if (res.statusCode === 200) paymentStatus = 'paid'
+      else if (res.statusCode === 402) paymentStatus = '402'
 
       logger.info('Payment attempt', {
         timestamp: new Date().toISOString(),
         ip: privacySafeIp(req.ip),
         query: privacySafeQuery(truncatedQ),
         paymentStatus: paymentStatus,
-      });
-    });
+      })
+    })
   }
-  next();
-});
+  next()
+})
+
+// ─── Shared parameter validation for paid routes (#188) ──────────────────
+// Registered BEFORE the x402 middleware on purpose: a malformed `count` or
+// `freshness` is rejected with 400 without ever consulting the payment
+// adapter, the facilitator, or Serper. That keeps a caller from being
+// charged — or from being handed a 402 challenge — for a request the server
+// was always going to refuse.
+
+interface PaidRouteParamSpec {
+  bounds: CountBounds
+  /** `/images` has no Serper date filter, so `freshness` is not accepted there. */
+  supportsFreshness: boolean
+  /** GET routes carry params in the query string, POST routes in the JSON body. */
+  source: 'query' | 'body'
+}
+
+const PAID_ROUTE_PARAMS: Record<string, PaidRouteParamSpec> = {
+  'GET /search': { bounds: SEARCH_COUNT, supportsFreshness: true, source: 'query' },
+  'GET /images': { bounds: IMAGES_COUNT, supportsFreshness: false, source: 'query' },
+  'GET /news': { bounds: NEWS_COUNT, supportsFreshness: true, source: 'query' },
+  'POST /search/batch': { bounds: SEARCH_COUNT, supportsFreshness: true, source: 'body' },
+  'POST /jobs': { bounds: SEARCH_COUNT, supportsFreshness: true, source: 'body' },
+}
+
+export interface ValidatedPaidParams {
+  /** Forwarded to Serper as `num`. */
+  count: number
+  freshness?: Freshness
+  /** Serper `tbs` date filter; undefined when no freshness was requested. */
+  tbs?: string
+}
+
+/** Reads the params a paid route validated for this request. */
+function paidParams(req: Request, bounds: CountBounds): ValidatedPaidParams {
+  return (
+    ((req as any).validatedParams as ValidatedPaidParams | undefined) ?? { count: bounds.default }
+  )
+}
+
+app.use((req, res, next) => {
+  const spec = PAID_ROUTE_PARAMS[`${req.method} ${req.path}`]
+  if (!spec) return next()
+
+  const raw = (spec.source === 'body' ? req.body : req.query) ?? {}
+
+  const count = validateCount((raw as Record<string, unknown>).count, spec.bounds)
+  if (!count.ok) {
+    const errorBody: ApiErrorResponse = { error: count.error }
+    return res.status(400).json(errorBody)
+  }
+
+  const params: ValidatedPaidParams = { count: count.value }
+
+  if (spec.supportsFreshness) {
+    const freshness = validateFreshness((raw as Record<string, unknown>).freshness)
+    if (!freshness.ok) {
+      const errorBody: ApiErrorResponse = { error: freshness.error }
+      return res.status(400).json(errorBody)
+    }
+    if (freshness.value) {
+      params.freshness = freshness.value
+      params.tbs = FRESHNESS_TBS[freshness.value]
+    }
+  }
+
+  ;(req as any).validatedParams = params
+  next()
+})
 
 app.use(paymentMiddlewareFromConfig(x402Routes, facilitatorClient, schemes))
 
@@ -453,7 +579,7 @@ app.get('/search', async (req: Request, res: Response) => {
   let txHash: string | null = null
 
   try {
-    const { q, count = '5', freshness } = req.query as Record<string, string>
+    const { q } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -462,24 +588,14 @@ app.get('/search', async (req: Request, res: Response) => {
     }
     const cleanQ = v.cleanQ
 
+    const { count, tbs } = paidParams(req, SEARCH_COUNT)
     const t0 = Date.now()
 
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
-      num: Math.min(parseInt(count) || 5, 20),
+      num: count,
     }
-
-    // Add freshness filter if provided (Serper supports date filters)
-    if (freshness) {
-      const dateFilters: Record<string, string> = {
-        'pd': 'qdr:d',  // past day
-        'pw': 'qdr:w',  // past week
-        'pm': 'qdr:m',  // past month
-      }
-      if (dateFilters[freshness]) {
-        requestBody.tbs = dateFilters[freshness]
-      }
-    }
+    if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetchSerper('/search', {
       method: 'POST',
@@ -492,7 +608,7 @@ app.get('/search', async (req: Request, res: Response) => {
 
     if (!serperRes.ok) {
       const err = await serperRes.text()
-      console.error('[serper]', serperRes.status, err)
+      console.error('[serper]', serperRes.status, sanitizeOperatorText(err))
       const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
       return res.status(502).json(errorBody)
     }
@@ -517,13 +633,17 @@ app.get('/search', async (req: Request, res: Response) => {
     let suggestions: string[] = []
     if (req.query.suggestions === '1' && results.length > 0) {
       try {
-        const topSnippets = results.slice(0, 3).map((r) => r.description).join(' | ')
+        const topSnippets = results
+          .slice(0, 3)
+          .map(r => r.description)
+          .join(' | ')
         const suggCompletion = await groq.chat.completions.create({
           model: 'llama-3.3-70b-versatile',
           messages: [
             {
               role: 'system',
-              content: 'You are a search assistant. Given a query and top result snippets, return exactly 3 related search queries the user might want to explore next. Output only a JSON array of 3 strings, no explanation.',
+              content:
+                'You are a search assistant. Given a query and top result snippets, return exactly 3 related search queries the user might want to explore next. Output only a JSON array of 3 strings, no explanation.',
             },
             {
               role: 'user',
@@ -569,7 +689,17 @@ app.get('/search', async (req: Request, res: Response) => {
 
     // Record opted-in receipt (cap 50, in-memory)
     try {
-      addRecentReceipt({ id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+      addRecentReceipt({
+        id: txHash || `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        query: queryMeta.originalQuery,
+        txHash,
+        amount: AMOUNT_USDC,
+        currency: 'USDC',
+        network: NETWORK,
+        timestamp: new Date().toISOString(),
+        latencyMs,
+        count: results.length,
+      })
     } catch {
       // ignore receipt recording failure
     }
@@ -581,14 +711,23 @@ app.get('/search', async (req: Request, res: Response) => {
     if (err instanceof CircuitOpenError) {
       console.error('[serper circuit open]', err.message)
       res.setHeader('Retry-After', Math.ceil(err.retryAfterMs / 1000).toString())
-      const errorBody: ApiErrorResponse = { error: 'Search provider temporarily unavailable. Please retry shortly.' }
+      const errorBody: ApiErrorResponse = {
+        error: 'Search provider temporarily unavailable. Please retry shortly.',
+      }
       return res.status(503).json(errorBody)
     }
-    console.error('[search error]', err.message)
+    console.error('[search error]', sanitizeOperatorText(err.message))
     const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.' }
     return res.status(500).json(errorBody)
   } finally {
-    recordReconciliation({ req, route: '/search', requestId, providerDelivered, resultCount, txHash })
+    recordReconciliation({
+      req,
+      route: '/search',
+      requestId,
+      providerDelivered,
+      resultCount,
+      txHash,
+    })
   }
 })
 
@@ -600,7 +739,7 @@ app.get('/images', async (req: Request, res: Response) => {
   let txHash: string | null = null
 
   try {
-    const { q, count = '10' } = req.query as Record<string, string>
+    const { q } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -609,6 +748,7 @@ app.get('/images', async (req: Request, res: Response) => {
     }
     const cleanQ = v.cleanQ
 
+    const { count } = paidParams(req, IMAGES_COUNT)
     const t0 = Date.now()
 
     const serperRes = await fetchSerper('/images', {
@@ -619,13 +759,13 @@ app.get('/images', async (req: Request, res: Response) => {
       },
       body: JSON.stringify({
         q: cleanQ,
-        num: Math.min(parseInt(count) || 10, 10),
+        num: count,
       }),
     })
 
     if (!serperRes.ok) {
       const err = await serperRes.text()
-      console.error('[serper images]', serperRes.status, err)
+      console.error('[serper images]', serperRes.status, sanitizeOperatorText(err))
       const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
       return res.status(502).json(errorBody)
     }
@@ -660,14 +800,23 @@ app.get('/images', async (req: Request, res: Response) => {
     if (err instanceof CircuitOpenError) {
       console.error('[serper circuit open]', err.message)
       res.setHeader('Retry-After', Math.ceil(err.retryAfterMs / 1000).toString())
-      const errorBody: ApiErrorResponse = { error: 'Search provider temporarily unavailable. Please retry shortly.' }
+      const errorBody: ApiErrorResponse = {
+        error: 'Search provider temporarily unavailable. Please retry shortly.',
+      }
       return res.status(503).json(errorBody)
     }
-    console.error('[images error]', err.message)
+    console.error('[images error]', sanitizeOperatorText(err.message))
     const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.' }
     return res.status(500).json(errorBody)
   } finally {
-    recordReconciliation({ req, route: '/images', requestId, providerDelivered, resultCount, txHash })
+    recordReconciliation({
+      req,
+      route: '/images',
+      requestId,
+      providerDelivered,
+      resultCount,
+      txHash,
+    })
   }
 })
 
@@ -679,7 +828,7 @@ app.get('/news', async (req: Request, res: Response) => {
   let txHash: string | null = null
 
   try {
-    const { q, count = '10', freshness } = req.query as Record<string, string>
+    const { q } = req.query as Record<string, string>
 
     const v = validateQuery(q)
     if (!v.ok) {
@@ -688,23 +837,14 @@ app.get('/news', async (req: Request, res: Response) => {
     }
     const cleanQ = v.cleanQ
 
+    const { count, tbs } = paidParams(req, NEWS_COUNT)
     const t0 = Date.now()
 
     const requestBody: Record<string, unknown> = {
       q: cleanQ,
-      num: Math.min(parseInt(count) || 10, 20),
+      num: count,
     }
-
-    if (freshness) {
-      const dateFilters: Record<string, string> = {
-        'pd': 'qdr:d',
-        'pw': 'qdr:w',
-        'pm': 'qdr:m',
-      }
-      if (dateFilters[freshness]) {
-        requestBody.tbs = dateFilters[freshness]
-      }
-    }
+    if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetchSerper('/news', {
       method: 'POST',
@@ -717,7 +857,7 @@ app.get('/news', async (req: Request, res: Response) => {
 
     if (!serperRes.ok) {
       const err = await serperRes.text()
-      console.error('[serper news]', serperRes.status, err)
+      console.error('[serper news]', serperRes.status, sanitizeOperatorText(err))
       const errorBody: ApiErrorResponse = { error: `Serper.dev API error: ${serperRes.status}` }
       return res.status(502).json(errorBody)
     }
@@ -752,10 +892,12 @@ app.get('/news', async (req: Request, res: Response) => {
     if (err instanceof CircuitOpenError) {
       console.error('[serper circuit open]', err.message)
       res.setHeader('Retry-After', Math.ceil(err.retryAfterMs / 1000).toString())
-      const errorBody: ApiErrorResponse = { error: 'Search provider temporarily unavailable. Please retry shortly.' }
+      const errorBody: ApiErrorResponse = {
+        error: 'Search provider temporarily unavailable. Please retry shortly.',
+      }
       return res.status(503).json(errorBody)
     }
-    console.error('[news error]', err.message)
+    console.error('[news error]', sanitizeOperatorText(err.message))
     const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.' }
     return res.status(500).json(errorBody)
   } finally {
@@ -771,43 +913,85 @@ app.post('/search/batch', async (req: Request, res: Response) => {
   const tBatchStart = Date.now()
 
   // Idempotency: header or body key, valid for 24h
-  const idempotencyKey = (req.headers['idempotency-key'] as string) || (req.body as any)?.idempotencyKey
+  const idempotencyKey =
+    (req.headers['idempotency-key'] as string) || (req.body as any)?.idempotencyKey
   if (idempotencyKey) {
     cleanupBatchIdempotency()
     const existing = batchIdempotencyStore.get(idempotencyKey)
     if (existing && existing.expiresAt > Date.now()) {
-      return res.status(409).json({ error: 'Idempotent batch already processed', requestId: existing.requestId, idempotencyKey })
+      return res
+        .status(409)
+        .json({
+          error: 'Idempotent batch already processed',
+          requestId: existing.requestId,
+          idempotencyKey,
+        })
     }
   }
 
-  const { queries, count: rawCount, freshness } = (req.body || {}) as { queries?: unknown; count?: unknown; freshness?: string }
+  const { queries } = (req.body || {}) as { queries?: unknown }
+  const { count: parsedCount, freshness, tbs } = paidParams(req, SEARCH_COUNT)
 
   if (!Array.isArray(queries) || queries.length === 0) {
     return res.status(400).json({ error: 'queries array required (1..10)' })
   }
   if (queries.length > MAX_BATCH_SIZE) {
-    return res.status(400).json({ error: `Batch too large: max ${MAX_BATCH_SIZE} queries, got ${queries.length}` })
+    return res
+      .status(400)
+      .json({ error: `Batch too large: max ${MAX_BATCH_SIZE} queries, got ${queries.length}` })
   }
   const totalAmount = (parseFloat(AMOUNT_USDC) * queries.length).toFixed(3)
   if (parseFloat(totalAmount) > MAX_BATCH_TOTAL_USDC) {
-    return res.status(400).json({ error: `Aggregate spending limit exceeded: ${totalAmount} USDC > ${MAX_BATCH_TOTAL_USDC} USDC` })
+    return res
+      .status(400)
+      .json({
+        error: `Aggregate spending limit exceeded: ${totalAmount} USDC > ${MAX_BATCH_TOTAL_USDC} USDC`,
+      })
   }
   const cleanQueries: string[] = []
   for (const q of queries) {
     const v = validateQuery(q)
-    if (!v.ok) return res.status(400).json({ error: `Invalid query "${String(q).slice(0, 30)}": ${v.error}`, index: queries.indexOf(q) })
+    if (!v.ok)
+      return res
+        .status(400)
+        .json({
+          error: `Invalid query "${String(q).slice(0, 30)}": ${v.error}`,
+          index: queries.indexOf(q),
+        })
     cleanQueries.push(v.cleanQ)
   }
-  const parsedCount = Math.min(Math.max(parseInt(String(rawCount ?? '5')) || 5, 1), 20)
 
-  const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
+  const paymentHeader = (req.headers['payment-signature'] ||
+    req.headers['x-payment'] ||
+    req.headers['X-PAYMENT'] ||
+    req.headers['x-payment-response'] ||
+    req.headers['authorization']) as string | undefined
   if (!paymentHeader) {
-    res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify({
-      x402Version: 2,
-      error: 'Payment required for batch',
-      resource: { url: `${req.protocol}://${req.get('host')}${req.originalUrl}`, description: `Batch search ${cleanQueries.length} x ${AMOUNT_USDC} USDC`, mimeType: 'application/x-ndjson' },
-      accepts: [{ scheme: 'exact', network: NETWORK, amount: String(parseInt(AMOUNT_STROOPS) * cleanQueries.length), asset: USDC_CONTRACT, payTo: RECEIVING_ADDRESS, maxTimeoutSeconds: 300, extra: { areFeesSponsored: true } }],
-    })).toString('base64'))
+    res.setHeader(
+      'PAYMENT-REQUIRED',
+      Buffer.from(
+        JSON.stringify({
+          x402Version: 2,
+          error: 'Payment required for batch',
+          resource: {
+            url: `${req.protocol}://${req.get('host')}${req.originalUrl}`,
+            description: `Batch search ${cleanQueries.length} x ${AMOUNT_USDC} USDC`,
+            mimeType: 'application/x-ndjson',
+          },
+          accepts: [
+            {
+              scheme: 'exact',
+              network: NETWORK,
+              amount: String(parseInt(AMOUNT_STROOPS) * cleanQueries.length),
+              asset: USDC_CONTRACT,
+              payTo: RECEIVING_ADDRESS,
+              maxTimeoutSeconds: 300,
+              extra: { areFeesSponsored: true },
+            },
+          ],
+        })
+      ).toString('base64')
+    )
     return res.status(402).json({ error: 'Payment required' })
   }
 
@@ -827,7 +1011,10 @@ app.post('/search/batch', async (req: Request, res: Response) => {
   }
 
   if (idempotencyKey) {
-    batchIdempotencyStore.set(idempotencyKey, { requestId, expiresAt: Date.now() + 24 * 3600 * 1000 })
+    batchIdempotencyStore.set(idempotencyKey, {
+      requestId,
+      expiresAt: Date.now() + 24 * 3600 * 1000,
+    })
   }
 
   // Prepare JSONL streaming response
@@ -852,11 +1039,21 @@ app.post('/search/batch', async (req: Request, res: Response) => {
     try {
       res.write(JSON.stringify(evt) + '\n')
       return true
-    } catch { return false }
+    } catch {
+      return false
+    }
   }
 
   // Emit settlement event immediately after payment verification
-  const settlementEvent: BatchJsonlSettlementEvent = { v: 1, type: 'settlement', requestId, paymentId, txHash, verified, settledAt: new Date().toISOString() }
+  const settlementEvent: BatchJsonlSettlementEvent = {
+    v: 1,
+    type: 'settlement',
+    requestId,
+    paymentId,
+    txHash,
+    verified,
+    settledAt: new Date().toISOString(),
+  }
   writeEvent(settlementEvent)
 
   let succeeded = 0
@@ -864,12 +1061,28 @@ app.post('/search/batch', async (req: Request, res: Response) => {
 
   for (let i = 0; i < cleanQueries.length; i++) {
     if (clientAborted || abortController.signal.aborted) {
-      const errEvt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: cleanQueries[i], error: 'Client disconnected', code: 'CLIENT_DISCONNECT' }
+      const errEvt: BatchJsonlErrorEvent = {
+        v: 1,
+        type: 'error',
+        requestId,
+        index: i,
+        query: cleanQueries[i],
+        error: 'Client disconnected',
+        code: 'CLIENT_DISCONNECT',
+      }
       writeEvent(errEvt)
       failed++
       // remaining items marked skipped
       for (let j = i + 1; j < cleanQueries.length; j++) {
-        const skipEvt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: j, query: cleanQueries[j], error: 'Skipped due to client disconnect', code: 'SKIPPED' }
+        const skipEvt: BatchJsonlErrorEvent = {
+          v: 1,
+          type: 'error',
+          requestId,
+          index: j,
+          query: cleanQueries[j],
+          error: 'Skipped due to client disconnect',
+          code: 'SKIPPED',
+        }
         writeEvent(skipEvt)
         failed++
       }
@@ -880,7 +1093,7 @@ app.post('/search/batch', async (req: Request, res: Response) => {
     try {
       const requestBody: Record<string, unknown> = { q, num: parsedCount }
       if (freshness) {
-        const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
+        const dateFilters: Record<string, string> = { pd: 'qdr:d', pw: 'qdr:w', pm: 'qdr:m' }
         if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
       }
       const serperRes = await fetchSerper('/search', {
@@ -892,7 +1105,15 @@ app.post('/search/batch', async (req: Request, res: Response) => {
       if (!serperRes.ok) {
         const errText = await serperRes.text().catch(() => '')
         console.error('[serper batch]', serperRes.status, errText)
-        const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: `Serper.dev API error: ${serperRes.status}`, code: 'UPSTREAM_ERROR' }
+        const evt: BatchJsonlErrorEvent = {
+          v: 1,
+          type: 'error',
+          requestId,
+          index: i,
+          query: q,
+          error: `Serper.dev API error: ${serperRes.status}`,
+          code: 'UPSTREAM_ERROR',
+        }
         writeEvent(evt)
         failed++
         continue
@@ -907,7 +1128,17 @@ app.post('/search/batch', async (req: Request, res: Response) => {
       const queryMeta = normalizeQueryMetadata(data, q)
       const answerBox = normalizeAnswerBox(data)
       const knowledgeGraph = normalizeKnowledgeGraph(data)
-      addRecentReceipt({ id: txHash || `${requestId}-${i}`, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+      addRecentReceipt({
+        id: txHash || `${requestId}-${i}`,
+        query: queryMeta.originalQuery,
+        txHash,
+        amount: AMOUNT_USDC,
+        currency: 'USDC',
+        network: NETWORK,
+        timestamp: new Date().toISOString(),
+        latencyMs,
+        count: results.length,
+      })
       const evt: BatchJsonlResultEvent = {
         v: 1,
         type: 'result',
@@ -932,30 +1163,67 @@ app.post('/search/batch', async (req: Request, res: Response) => {
       succeeded++
     } catch (err: any) {
       if (err?.name === 'AbortError' || abortController.signal.aborted) {
-        const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: 'Aborted due to client disconnect', code: 'ABORTED' }
+        const evt: BatchJsonlErrorEvent = {
+          v: 1,
+          type: 'error',
+          requestId,
+          index: i,
+          query: q,
+          error: 'Aborted due to client disconnect',
+          code: 'ABORTED',
+        }
         writeEvent(evt)
         failed++
         // mark remaining as skipped
         for (let j = i + 1; j < cleanQueries.length; j++) {
-          const skip: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: j, query: cleanQueries[j], error: 'Skipped due to abort', code: 'SKIPPED' }
-          writeEvent(skip); failed++
+          const skip: BatchJsonlErrorEvent = {
+            v: 1,
+            type: 'error',
+            requestId,
+            index: j,
+            query: cleanQueries[j],
+            error: 'Skipped due to abort',
+            code: 'SKIPPED',
+          }
+          writeEvent(skip)
+          failed++
         }
         break
       }
       if (err instanceof CircuitOpenError) {
-        const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: err.message, code: 'CIRCUIT_OPEN' }
+        const evt: BatchJsonlErrorEvent = {
+          v: 1,
+          type: 'error',
+          requestId,
+          index: i,
+          query: q,
+          error: err.message,
+          code: 'CIRCUIT_OPEN',
+        }
         writeEvent(evt)
         failed++
         continue
       }
-      const evt: BatchJsonlErrorEvent = { v: 1, type: 'error', requestId, index: i, query: q, error: err.message || 'Search failed', code: 'SEARCH_FAILED' }
+      const evt: BatchJsonlErrorEvent = {
+        v: 1,
+        type: 'error',
+        requestId,
+        index: i,
+        query: q,
+        error: err.message || 'Search failed',
+        code: 'SEARCH_FAILED',
+      }
       writeEvent(evt)
       failed++
     }
   }
 
   const doneEvent: BatchJsonlDoneEvent = {
-    v: 1, type: 'done', requestId, succeeded, failed,
+    v: 1,
+    type: 'done',
+    requestId,
+    succeeded,
+    failed,
     totalUsdcSpent: (succeeded * parseFloat(AMOUNT_USDC)).toFixed(3),
     aggregateLatencyMs: Date.now() - tBatchStart,
     completedAt: new Date().toISOString(),
@@ -967,43 +1235,84 @@ app.post('/search/batch', async (req: Request, res: Response) => {
 // ─── Async paid search jobs with webhooks (issue #324) ─────────────────
 app.post('/jobs', async (req: Request, res: Response) => {
   cleanupBatchIdempotency()
-  const idempotencyKey = (req.headers['idempotency-key'] as string) || (req.body as any)?.idempotencyKey
+  const idempotencyKey =
+    (req.headers['idempotency-key'] as string) || (req.body as any)?.idempotencyKey
   if (idempotencyKey) {
     const existing = jobIdempotencyStore.get(idempotencyKey)
     if (existing && existing.expiresAt > Date.now()) {
       const existingJob = jobStore.get(existing.jobId)
       if (existingJob) {
-        return res.status(200).json({ jobId: existingJob.id, statusUrl: existingJob.statusUrl, paymentVerified: existingJob.verified, job: existingJob })
+        return res
+          .status(200)
+          .json({
+            jobId: existingJob.id,
+            statusUrl: existingJob.statusUrl,
+            paymentVerified: existingJob.verified,
+            job: existingJob,
+          })
       }
     }
   }
 
-  const { query, count = '5', freshness, webhookUrl, webhookSecret } = (req.body || {}) as { query?: unknown; count?: unknown; freshness?: string; webhookUrl?: string; webhookSecret?: string }
+  const { query, webhookUrl, webhookSecret } = (req.body || {}) as {
+    query?: unknown
+    webhookUrl?: string
+    webhookSecret?: string
+  }
 
   const v = validateQuery(query)
   if (!v.ok) return res.status(400).json({ error: v.error })
   const cleanQ = v.cleanQ
-  const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 20)
+  const { count: safeCount, freshness, tbs } = paidParams(req, SEARCH_COUNT)
 
   // Webhook validation (SSRF + https)
   if (webhookUrl) {
     const chk = validateWebhookUrl(webhookUrl)
     if (!chk.ok) return res.status(400).json({ error: chk.error })
-    if (!webhookSecret || webhookSecret.length < 16) return res.status(400).json({ error: 'webhookSecret required (min 16 chars) when webhookUrl is set' })
+    if (!webhookSecret || webhookSecret.length < 16)
+      return res
+        .status(400)
+        .json({ error: 'webhookSecret required (min 16 chars) when webhookUrl is set' })
   }
 
   // Payment verification via x402 header
-  const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT'] || req.headers['x-payment-response'] || req.headers['authorization']) as string | undefined
+  const paymentHeader = (req.headers['payment-signature'] ||
+    req.headers['x-payment'] ||
+    req.headers['X-PAYMENT'] ||
+    req.headers['x-payment-response'] ||
+    req.headers['authorization']) as string | undefined
   if (!paymentHeader) {
     // Return 402 with payment requirements and statusUrl hint
     const paymentRequired = {
       x402Version: 2,
       error: 'Payment required for async job',
-      resource: { url: `${req.protocol}://${req.get('host')}${req.originalUrl}`, description: `Async search job: ${AMOUNT_USDC} USDC on Stellar`, mimeType: 'application/json' },
-      accepts: [{ scheme: 'exact', network: NETWORK, amount: AMOUNT_STROOPS, asset: USDC_CONTRACT, payTo: RECEIVING_ADDRESS, maxTimeoutSeconds: 300, extra: { areFeesSponsored: true } }],
+      resource: {
+        url: `${req.protocol}://${req.get('host')}${req.originalUrl}`,
+        description: `Async search job: ${AMOUNT_USDC} USDC on Stellar`,
+        mimeType: 'application/json',
+      },
+      accepts: [
+        {
+          scheme: 'exact',
+          network: NETWORK,
+          amount: AMOUNT_STROOPS,
+          asset: USDC_CONTRACT,
+          payTo: RECEIVING_ADDRESS,
+          maxTimeoutSeconds: 300,
+          extra: { areFeesSponsored: true },
+        },
+      ],
     }
-    res.setHeader('PAYMENT-REQUIRED', Buffer.from(JSON.stringify(paymentRequired)).toString('base64'))
-    return res.status(402).json({ error: 'Payment required', hint: 'Retry with X-Payment header containing signed Soroban auth' })
+    res.setHeader(
+      'PAYMENT-REQUIRED',
+      Buffer.from(JSON.stringify(paymentRequired)).toString('base64')
+    )
+    return res
+      .status(402)
+      .json({
+        error: 'Payment required',
+        hint: 'Retry with X-Payment header containing signed Soroban auth',
+      })
   }
   const consumption = consumePaymentPayload(paymentHeader)
   if (!consumption.ok) return res.status(402).json({ error: consumption.error })
@@ -1043,10 +1352,13 @@ app.post('/jobs', async (req: Request, res: Response) => {
     statusUrl,
   }
   jobStore.set(jobId, job)
-  if (idempotencyKey) jobIdempotencyStore.set(idempotencyKey, { jobId, expiresAt: Date.now() + 24 * 3600 * 1000 })
+  if (idempotencyKey)
+    jobIdempotencyStore.set(idempotencyKey, { jobId, expiresAt: Date.now() + 24 * 3600 * 1000 })
 
   // Immediate 202 response with statusUrl + verified payment state
-  res.status(202).json({ jobId, statusUrl, paymentVerified: verified, paymentId, txHash, status: job.status })
+  res
+    .status(202)
+    .json({ jobId, statusUrl, paymentVerified: verified, paymentId, txHash, status: job.status })
 
   // Fire-and-forget execution (preserves verified x402 settlement, does not block 202)
   ;(async () => {
@@ -1054,7 +1366,7 @@ app.post('/jobs', async (req: Request, res: Response) => {
     try {
       const requestBody: Record<string, unknown> = { q: cleanQ, num: safeCount }
       if (freshness) {
-        const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
+        const dateFilters: Record<string, string> = { pd: 'qdr:d', pw: 'qdr:w', pm: 'qdr:m' }
         if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
       }
       const serperRes = await fetchSerper('/search', {
@@ -1074,7 +1386,17 @@ app.post('/jobs', async (req: Request, res: Response) => {
       if (stats.latencies.length > 200) stats.latencies.shift()
       const results = normalizeOrganicResults(data)
       const queryMeta = normalizeQueryMetadata(data, cleanQ)
-      addRecentReceipt({ id: txHash || jobId, query: queryMeta.originalQuery, txHash, amount: AMOUNT_USDC, currency: 'USDC', network: NETWORK, timestamp: new Date().toISOString(), latencyMs, count: results.length })
+      addRecentReceipt({
+        id: txHash || jobId,
+        query: queryMeta.originalQuery,
+        txHash,
+        amount: AMOUNT_USDC,
+        currency: 'USDC',
+        network: NETWORK,
+        timestamp: new Date().toISOString(),
+        latencyMs,
+        count: results.length,
+      })
       const responseBody: SearchResponse = {
         query: queryMeta.executedQuery,
         originalQuery: queryMeta.originalQuery,
@@ -1113,7 +1435,9 @@ app.get('/jobs/:id', (req: Request, res: Response) => {
 })
 
 app.get('/jobs', (_req: Request, res: Response) => {
-  const jobs = Array.from(jobStore.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 50)
+  const jobs = Array.from(jobStore.values())
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 50)
   return res.json({ jobs, count: jobs.length })
 })
 
@@ -1125,22 +1449,25 @@ app.get('/health', async (_req: Request, res: Response) => {
   const orderedLatencies = [...stats.latencies].sort((a, b) => a - b)
   const percentile = (fraction: number) => {
     if (!orderedLatencies.length) return 0
-    return orderedLatencies[Math.min(orderedLatencies.length - 1, Math.ceil(orderedLatencies.length * fraction) - 1)]
+    return orderedLatencies[
+      Math.min(orderedLatencies.length - 1, Math.ceil(orderedLatencies.length * fraction) - 1)
+    ]
   }
   const readiness = await getReadiness()
 
   const up = Math.floor((Date.now() - stats.startTime) / 1000)
-  const uptime = up < 60 ? `${up}s` : up < 3600 ? `${Math.floor(up / 60)}m` : `${Math.floor(up / 3600)}h`
+  const uptime =
+    up < 60 ? `${up}s` : up < 3600 ? `${Math.floor(up / 60)}m` : `${Math.floor(up / 3600)}h`
 
   res.json({
-    status:                    readiness.status,
-    network:                   NETWORK,
-    pricePerQuery:             '0.001 USDC',
-    protocol:                  'x402',
-    facilitator:               FACILITATOR_URL,
-    totalQueries:              stats.totalQueries,
-    totalUsdcSettled:          stats.totalUsdcSettled.toFixed(4),
-    avgLatencyMs:              avg,
+    status: readiness.status,
+    network: NETWORK,
+    pricePerQuery: '0.001 USDC',
+    protocol: 'x402',
+    facilitator: FACILITATOR_URL,
+    totalQueries: stats.totalQueries,
+    totalUsdcSettled: stats.totalUsdcSettled.toFixed(4),
+    avgLatencyMs: avg,
     latency: {
       samples: orderedLatencies.length,
       avgMs: avg,
@@ -1155,10 +1482,10 @@ app.get('/health', async (_req: Request, res: Response) => {
       timestamp: readiness.timestamp,
     },
     uptime,
-    serperApiConfigured:       !!SERPER_API_KEY,
-    groqApiConfigured:         !!GROQ_API_KEY,
+    serperApiConfigured: !!SERPER_API_KEY,
+    groqApiConfigured: !!GROQ_API_KEY,
     receivingAddressConfigured: !!RECEIVING_ADDRESS,
-    serperCircuitBreaker:      getSerperBreakerState(),
+    serperCircuitBreaker: getSerperBreakerState(),
   })
 })
 
@@ -1175,7 +1502,9 @@ app.get('/metrics', (_req: Request, res: Response) => {
   const orderedLatencies = [...stats.latencies].sort((a, b) => a - b)
   const percentile = (fraction: number) => {
     if (!orderedLatencies.length) return 0
-    return orderedLatencies[Math.min(orderedLatencies.length - 1, Math.ceil(orderedLatencies.length * fraction) - 1)]
+    return orderedLatencies[
+      Math.min(orderedLatencies.length - 1, Math.ceil(orderedLatencies.length * fraction) - 1)
+    ]
   }
   res.setHeader('Cache-Control', 'no-store')
   res.json({
@@ -1211,16 +1540,13 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   }
 
   // Available models whitelist
-  const AVAILABLE_MODELS = [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
-    'mixtral-8x7b-32768',
-  ]
-  
+  const AVAILABLE_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
+
   // Use requested model if valid, otherwise fall back to default
-  const model = requestedModel && AVAILABLE_MODELS.includes(requestedModel)
-    ? requestedModel
-    : 'llama-3.3-70b-versatile'
+  const model =
+    requestedModel && AVAILABLE_MODELS.includes(requestedModel)
+      ? requestedModel
+      : 'llama-3.3-70b-versatile'
 
   const wantsStream =
     (req.headers.accept || '').includes('text/event-stream') ||
@@ -1241,7 +1567,7 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
       const completion = await groq.chat.completions.create({
         model,
         messages: groqMessages,
-        max_tokens:  512,
+        max_tokens: 512,
         temperature: 0.7,
       })
 
@@ -1275,11 +1601,11 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
       {
         model,
         messages: groqMessages,
-        max_tokens:  512,
+        max_tokens: 512,
         temperature: 0.7,
         stream: true,
       },
-      { signal: controller.signal },
+      { signal: controller.signal }
     )
 
     for await (const chunk of stream) {
@@ -1296,30 +1622,35 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   }
 })
 
-
-
-
 // ─── GET / ────────────────────────────────────────────────────────────────
 app.get('/', (_req: Request, res: Response) => {
   res.json({
-    name:        'StellarSearch',
-    version:     '1.0.0',
+    name: 'StellarSearch',
+    version: '1.0.0',
     description: 'Pay-per-query web search for AI agents via x402 on Stellar',
     endpoints: {
       'GET /search?q=<query>': '0.001 USDC via x402',
       'GET /images?q=<query>': '0.001 USDC via x402 — image results',
-      'GET /news?q=<query>':   '0.001 USDC via x402 — news articles',
-      'POST /search/batch':    '0.001 USDC per query (max 10), JSONL streaming — versioned quote/settlement/result/error/done events, idempotency & aggregate limits',
-      'POST /jobs':            '0.001 USDC via x402 — async job, returns 202 + statusUrl + verified payment state',
-      'GET /jobs/:id':         'Job status + verified payment state (webhook signed, replay/SSRF protected)',
-      'GET /jobs':             'List recent jobs (capped at 50)',
-      'POST /ai/chat':         'Groq AI — free',
-      'GET /health':           'Live server stats',
+      'GET /news?q=<query>': '0.001 USDC via x402 — news articles',
+      'POST /search/batch':
+        '0.001 USDC per query (max 10), JSONL streaming — versioned quote/settlement/result/error/done events, idempotency & aggregate limits',
+      'POST /jobs':
+        '0.001 USDC via x402 — async job, returns 202 + statusUrl + verified payment state',
+      'GET /jobs/:id':
+        'Job status + verified payment state (webhook signed, replay/SSRF protected)',
+      'GET /jobs': 'List recent jobs (capped at 50)',
+      'POST /ai/chat': 'Groq AI — free',
+      'GET /health': 'Live server stats',
     },
     mcp: {
-      resources: ['stellar-search://capabilities', 'stellar-search://schema/search', 'stellar-search://receipts/recent (opted-in)'],
+      resources: [
+        'stellar-search://capabilities',
+        'stellar-search://schema/search',
+        'stellar-search://receipts/recent (opted-in)',
+      ],
       prompts: ['research_brief (no silent payment)', 'summarize_results', 'compare_sources'],
-      progress: 'notifications/progress bounded to 4 phases (challenge→signing→settlement→search), cancellation/error terminates cleanly without false completion',
+      progress:
+        'notifications/progress bounded to 4 phases (challenge→signing→settlement→search), cancellation/error terminates cleanly without false completion',
     },
   })
 })
@@ -1331,7 +1662,7 @@ if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
     console.log(`   Network:     ${NETWORK}`)
     console.log(`   Facilitator: ${FACILITATOR_URL}`)
     console.log(`   Serper:      ${SERPER_API_KEY ? '✓' : '✗ MISSING'}`)
-    console.log(`   Groq:        ${GROQ_API_KEY  ? '✓' : '✗ MISSING'}`)
+    console.log(`   Groq:        ${GROQ_API_KEY ? '✓' : '✗ MISSING'}`)
     console.log(`   Receiving:   ${RECEIVING_ADDRESS || '✗ MISSING'}`)
     console.log(`   ${getCorsStartupMessage()}\n`)
   })

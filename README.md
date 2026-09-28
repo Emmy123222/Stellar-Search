@@ -12,6 +12,7 @@
 StellarSearch is a pay-per-query web search API for autonomous AI agents. Every search costs **0.001 USDC**, settled on Stellar in ~5 seconds using the x402 protocol. No subscriptions, no API keys for the end user — agents pay per request and get real web search results back.
 
 **Security & Quality:**
+
 - Only secure `http`/`https` URLs are clickable to protect users.
 - Search result fields (titles, snippets, dates) are normalized consistently across Express and Vercel endpoints.
 
@@ -93,21 +94,21 @@ The CLI supports `discovery`, `quote`, and `search` modes, emits machine-readabl
 
 All environment variables are read from a local `.env` (see the sanitized `.env.example` template). Variables prefixed with `VITE_` are exposed to the browser by Vite; all others are server-side only. Startup validates configuration before Express, Vercel paid routes, or MCP tools begin serving requests. Errors list only variable **names**, never values.
 
-| Variable | Required | Default | Description | Example |
-|---|---|---|---|---|
-| `SERPER_API_KEY` | **Yes** | — | API key for [Serper.dev](https://serper.dev/) web search. Without this, all search, image, and news endpoints return `500`. | `your_serper_api_key_here` |
-| `GROQ_API_KEY` | No | — | API key for [Groq](https://console.groq.com/keys) AI (Llama 3). When absent, search remains available and AI endpoints return `503`. | `gsk_xxxxxxxxxxxxxxxxxxxxxxxx` |
-| `STELLAR_RECEIVING_ADDRESS` | **Yes** | — | Stellar public key that receives 0.001 USDC per query. Without this, the x402 payment middleware has no `payTo` address and payments fail. Server prints `Receiving: ✗ MISSING` on startup. | `GDXA3V2LI3VN3GBH5BMOF25QSFJV7S7ZOWMHHQMJRPP4BVORDDRTIIMU` |
-| `STELLAR_NETWORK` | No | `stellar:testnet` | Stellar network for the server-side x402 middleware. Accepts `stellar:testnet` or `stellar:mainnet`. Falls back to testnet if missing. | `stellar:testnet` |
-| `VITE_STELLAR_NETWORK` | No | `stellar:testnet` | Frontend copy of `STELLAR_NETWORK` (must be prefixed `VITE_` for browser access). Falls back to testnet if missing. | `stellar:testnet` |
-| `FACILITATOR_URL` | No | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Validated against `STELLAR_NETWORK` at startup and request time; incompatible configuration (e.g. testnet facilitator on mainnet) blocks paid routes with an actionable `503` readiness error. | `https://www.x402.org/facilitator` |
-| `PORT` | No | `3001` | Express server listen port. Falls back to `3001` if missing. | `3001` |
-| `TRUST_PROXY_HOPS` | No | `0` | Reverse-proxy hops to trust so the rate limiter resolves real client IPs (e.g. `1` for Vercel). `0`/unset disables trusting `X-Forwarded-For` (spoof-safe); `true` trusts all proxies. | `1` |
-| `RATE_LIMIT_PER_MINUTE` | No | `30` | Positive request limit applied by Express. | `30` |
-| `PAYMENT_AMOUNT_USDC` | No | `0.001` | Positive USDC amount. Must exactly equal `PAYMENT_AMOUNT_STROOPS / 10^7`. | `0.001` |
-| `PAYMENT_AMOUNT_STROOPS` | No | `10000` | Positive Stellar stroop amount paired with `PAYMENT_AMOUNT_USDC`. | `10000` |
-| `VITE_SERVER_URL` | No | `/api` | Browser-safe API base URL. Defaults to same-origin `/api`, which works for custom domains and subpaths; Vite proxies it to Express locally. | `/api` or `https://api.example.com/stellar` |
-| `MCP_ENABLE_RECEIPTS` | No | `0` | Set `1` to opt-in MCP local receipt storage for `stellar-search://receipts/recent` (in-memory capped at 50) | `1` |
+| Variable                    | Required | Default                            | Description                                                                                                                                                                                                                                      | Example                                                    |
+| --------------------------- | -------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `SERPER_API_KEY`            | **Yes**  | —                                  | API key for [Serper.dev](https://serper.dev/) web search. Without this, all search, image, and news endpoints return `500`.                                                                                                                      | `your_serper_api_key_here`                                 |
+| `GROQ_API_KEY`              | No       | —                                  | API key for [Groq](https://console.groq.com/keys) AI (Llama 3). When absent, search remains available and AI endpoints return `503`.                                                                                                             | `gsk_xxxxxxxxxxxxxxxxxxxxxxxx`                             |
+| `STELLAR_RECEIVING_ADDRESS` | **Yes**  | —                                  | Stellar public key that receives 0.001 USDC per query. Without this, the x402 payment middleware has no `payTo` address and payments fail. Server prints `Receiving: ✗ MISSING` on startup.                                                      | `GDXA3V2LI3VN3GBH5BMOF25QSFJV7S7ZOWMHHQMJRPP4BVORDDRTIIMU` |
+| `STELLAR_NETWORK`           | No       | `stellar:testnet`                  | Stellar network for the server-side x402 middleware. Accepts `stellar:testnet` or `stellar:mainnet`. Falls back to testnet if missing.                                                                                                           | `stellar:testnet`                                          |
+| `VITE_STELLAR_NETWORK`      | No       | `stellar:testnet`                  | Frontend copy of `STELLAR_NETWORK` (must be prefixed `VITE_` for browser access). Falls back to testnet if missing.                                                                                                                              | `stellar:testnet`                                          |
+| `FACILITATOR_URL`           | No       | `https://www.x402.org/facilitator` | x402 facilitator endpoint for payment settlement. Validated against `STELLAR_NETWORK` at startup and request time; incompatible configuration (e.g. testnet facilitator on mainnet) blocks paid routes with an actionable `503` readiness error. | `https://www.x402.org/facilitator`                         |
+| `PORT`                      | No       | `3001`                             | Express server listen port. Falls back to `3001` if missing.                                                                                                                                                                                     | `3001`                                                     |
+| `TRUST_PROXY_HOPS`          | No       | `0`                                | Reverse-proxy hops to trust so the rate limiter resolves real client IPs (e.g. `1` for Vercel). `0`/unset disables trusting `X-Forwarded-For` (spoof-safe); `true` trusts all proxies.                                                           | `1`                                                        |
+| `RATE_LIMIT_PER_MINUTE`     | No       | `30`                               | Positive request limit applied by Express.                                                                                                                                                                                                       | `30`                                                       |
+| `PAYMENT_AMOUNT_USDC`       | No       | `0.001`                            | Positive USDC amount. Must exactly equal `PAYMENT_AMOUNT_STROOPS / 10^7`.                                                                                                                                                                        | `0.001`                                                    |
+| `PAYMENT_AMOUNT_STROOPS`    | No       | `10000`                            | Positive Stellar stroop amount paired with `PAYMENT_AMOUNT_USDC`.                                                                                                                                                                                | `10000`                                                    |
+| `VITE_SERVER_URL`           | No       | `/api`                             | Browser-safe API base URL. Defaults to same-origin `/api`, which works for custom domains and subpaths; Vite proxies it to Express locally.                                                                                                      | `/api` or `https://api.example.com/stellar`                |
+| `MCP_ENABLE_RECEIPTS`       | No       | `0`                                | Set `1` to opt-in MCP local receipt storage for `stellar-search://receipts/recent` (in-memory capped at 50)                                                                                                                                      | `1`                                                        |
 
 ### Deployment configuration
 
@@ -155,13 +156,13 @@ Before signing, a bounded preflight verifies the active account, expected networ
 
 While connected, the browser watches Freighter for account/network updates. A network switch immediately updates the search controls and cancels any in-flight payment creation before its signature can be sent. Express, Vercel, and MCP paid-route settlement remain unchanged: only the browser-side request is stopped before submission.
 
-| Preflight check | Required state | Targeted recovery action |
-|---|---|---|
-| Active account | A Freighter account is selected | Connect Freighter and select an account |
-| Expected network | Freighter network matches `VITE_STELLAR_NETWORK` (default `stellar:testnet`) | Switch Freighter to the configured Stellar network |
-| USDC trustline | Trustline to the Soroban USDC contract exists | Add the USDC trustline in Freighter |
-| Spendable amount | USDC balance ≥ 0.001 USDC (`AMOUNT_STROOPS=10000`) | Fund the wallet with testnet USDC |
-| Signer availability | Freighter can sign Soroban authorization entries | Unlock Freighter and approve the request |
+| Preflight check     | Required state                                                               | Targeted recovery action                           |
+| ------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------- |
+| Active account      | A Freighter account is selected                                              | Connect Freighter and select an account            |
+| Expected network    | Freighter network matches `VITE_STELLAR_NETWORK` (default `stellar:testnet`) | Switch Freighter to the configured Stellar network |
+| USDC trustline      | Trustline to the Soroban USDC contract exists                                | Add the USDC trustline in Freighter                |
+| Spendable amount    | USDC balance ≥ 0.001 USDC (`AMOUNT_STROOPS=10000`)                           | Fund the wallet with testnet USDC                  |
+| Signer availability | Freighter can sign Soroban authorization entries                             | Unlock Freighter and approve the request           |
 
 1. Agent hits `/search` — the `@x402/express` middleware intercepts
 2. Returns `HTTP 402 Payment Required` with price + network + payTo address
@@ -200,7 +201,7 @@ and in the Vercel functions (`api/search.ts`, `api/search/batch.ts`,
   `SERPER_BREAKER_HALF_OPEN_PROBES` request(s) are let through as a probe. A
   successful probe closes the breaker; a failed one re-opens it immediately.
 
-A **4xx** from Serper (e.g. a malformed query) does *not* count as a breaker
+A **4xx** from Serper (e.g. a malformed query) does _not_ count as a breaker
 failure — Serper answered, so that's not a signal the dependency is down.
 
 Breaker state is exposed on `GET /health` (Express) and `/api/health`
@@ -209,6 +210,7 @@ openDurationMs, halfOpenMaxProbes, openedAt, nextAttemptAt }` for
 monitoring/alerting. The browser and MCP server never call Serper directly —
 they call these `/search`/`/images`/`/news` endpoints — so they inherit the
 fast-fail behavior transitively without their own breaker.
+
 ### Client-side duplicate submission guard
 
 The server-side throttling above assumes a request actually reaches it — but
@@ -234,14 +236,14 @@ a completed or failed search always unblocks the next one.
 
 Every endpoint explicitly handles `OPTIONS` (preflight) and returns `405 Method Not Allowed` with a correct `Allow` header for unsupported methods. This keeps Express, Vercel, browser, and MCP behaviour aligned:
 
-| Endpoint | Allowed Methods |
-|---|---|
-| `GET /search` | `GET, OPTIONS` |
-| `GET /images` | `GET, OPTIONS` |
-| `GET /news` | `GET, OPTIONS` |
-| `GET /health` | `GET, OPTIONS` |
+| Endpoint        | Allowed Methods |
+| --------------- | --------------- |
+| `GET /search`   | `GET, OPTIONS`  |
+| `GET /images`   | `GET, OPTIONS`  |
+| `GET /news`     | `GET, OPTIONS`  |
+| `GET /health`   | `GET, OPTIONS`  |
 | `POST /ai/chat` | `POST, OPTIONS` |
-| `GET /` | `GET, OPTIONS` |
+| `GET /`         | `GET, OPTIONS`  |
 
 405 responses include a common error body: `{ "error": "Method not allowed" }`.
 
@@ -261,7 +263,7 @@ Dashboard transaction history is **paginated with Horizon cursors** to lift the 
 
 - **Cursor:** `useFreighterWallet.ts:134` builds `Horizon.Server.operations().forAccount(pub).order('desc').limit(15).cursor(paging_token)` where `paging_token` is the last operation's `paging_token` (fallback `id`). Initial load uses no cursor; `loadMore` appends older records via the stored cursor.
 - **Deduplication:** Appended pages are deduplicated by `op.id` (`useFreighterWallet.ts:238`) so Horizon overlap or filtered `manage_offer` gaps never duplicate rows.
-- **States:** `txLoading` (initial), `txLoadingMore` (pagination), `txHasMore` (records.length === 15), `txError` with retry, and account-switch reset (`currentPublicKeyRef`) are all tested (`src/hooks/useFreighterWallet.test.ts`, `src/pages/DashboardPage.test.tsx`). Dashboard shows *Load older transactions*, *Loading...*, *End of history*, and *Retry* (`DashboardPage.tsx:210`).
+- **States:** `txLoading` (initial), `txLoadingMore` (pagination), `txHasMore` (records.length === 15), `txError` with retry, and account-switch reset (`currentPublicKeyRef`) are all tested (`src/hooks/useFreighterWallet.test.ts`, `src/pages/DashboardPage.test.tsx`). Dashboard shows _Load older transactions_, _Loading..._, _End of history_, and _Retry_ (`DashboardPage.tsx:210`).
 - **Alignment:** Horizon history is a browser concern only; Express (`server/index.ts`), Vercel (`api/search.ts`), and MCP (`mcp-server/index.ts`) share the same `STELLAR_NETWORK`/`HORIZON_URL` constants but do not paginate transactions, so no cross-runtime divergence. x402 settlement semantics remain unchanged.
 
 ### Sequence diagram
@@ -336,11 +338,11 @@ challenge is ever issued and before any payment payload is consumed.
 
 ### Runtime availability
 
-| Endpoint | Express (`npm run server`) | Vercel (`api/`) | MCP tool |
-|---|:--:|:--:|---|
-| `GET /search` | ✅ | ✅ `GET /api/search` | `web_search` |
-| `GET /images` | ✅ | ❌ *not deployed* | `image_search` |
-| `GET /news` | ✅ | ❌ *not deployed* | `news_search` |
+| Endpoint      | Express (`npm run server`) |   Vercel (`api/`)    | MCP tool       |
+| ------------- | :------------------------: | :------------------: | -------------- |
+| `GET /search` |             ✅             | ✅ `GET /api/search` | `web_search`   |
+| `GET /images` |             ✅             |  ❌ _not deployed_   | `image_search` |
+| `GET /news`   |             ✅             |  ❌ _not deployed_   | `news_search`  |
 
 > **Compatibility note:** `/images` and `/news` currently have **no Vercel
 > serverless equivalent** — `api/` only implements `search`, `search/batch`,
@@ -351,19 +353,19 @@ challenge is ever issued and before any payment payload is consumed.
 
 ### Parameters and limits
 
-| Endpoint | `q` (required) | `count` | `freshness` |
-|---|---|---|---|
-| `GET /search` | 1–256 chars | integer `1..20`, default `5` | `pd` \| `pw` \| `pm` |
-| `GET /images` | 1–256 chars | integer `1..10`, default `10` | **not supported** — ignored |
-| `GET /news` | 1–256 chars | integer `1..20`, default `10` | `pd` \| `pw` \| `pm` |
+| Endpoint      | `q` (required) | `count`                       | `freshness`                 |
+| ------------- | -------------- | ----------------------------- | --------------------------- |
+| `GET /search` | 1–256 chars    | integer `1..20`, default `5`  | `pd` \| `pw` \| `pm`        |
+| `GET /images` | 1–256 chars    | integer `1..10`, default `10` | **not supported** — ignored |
+| `GET /news`   | 1–256 chars    | integer `1..20`, default `10` | `pd` \| `pw` \| `pm`        |
 
 - **`q`** — required. Trimmed; ASCII control characters and null bytes are
   stripped. Empty, missing, non-string, or longer than 256 characters → `400`.
   Must be URL-encoded (use `curl --data-urlencode`, see below).
-- **`count`** — optional. Must be a *single* integer inside the route's bounds.
+- **`count`** — optional. Must be a _single_ integer inside the route's bounds.
   Out-of-range (`0`, `-1`, `999`), non-integer (`abc`, `1.5`, `1e3`), and
   repeated params (`?count=1&count=2`) are **rejected with `400`** — they are
-  *not* silently clamped. Forwarded to Serper as `num`.
+  _not_ silently clamped. Forwarded to Serper as `num`.
 - **`freshness`** — optional. Maps to the Serper `tbs` date filter:
   `pd` → `qdr:d` (past day), `pw` → `qdr:w` (past week), `pm` → `qdr:m` (past
   month). Any other value, or a repeated param, is **rejected with `400`**.
@@ -378,19 +380,19 @@ paid route on both runtimes — see
 
 ### Error responses
 
-| Status | Body | When |
-|---|---|---|
-| `400` | `{"error":"Missing required parameter: q"}` | `q` absent or blank |
-| `400` | `{"error":"Query too long. Maximum 256 characters."}` | `q` over 256 chars |
-| `400` | `{"error":"count must be between 1 and 10"}` | `/images?count=999` |
-| `400` | `{"error":"count must be an integer"}` | `?count=1.5` |
-| `400` | `{"error":"count must be a single value"}` | `?count=1&count=2` |
-| `400` | `{"error":"freshness must be one of: pd, pw, pm"}` | `?freshness=yesterday` |
-| `402` | `{}` + `PAYMENT-REQUIRED` header | no payment presented |
-| `402` | `{"error":"Payment payload already consumed"}` | payment header replayed |
-| `429` | `{"error":"Too many requests, please try again later."}` | rate limited |
-| `502` | `{"error":"Serper.dev API error: <status>"}` | upstream Serper failure |
-| `500` | `{"error":"Image search failed. Check server logs."}` | unexpected server error |
+| Status | Body                                                     | When                    |
+| ------ | -------------------------------------------------------- | ----------------------- |
+| `400`  | `{"error":"Missing required parameter: q"}`              | `q` absent or blank     |
+| `400`  | `{"error":"Query too long. Maximum 256 characters."}`    | `q` over 256 chars      |
+| `400`  | `{"error":"count must be between 1 and 10"}`             | `/images?count=999`     |
+| `400`  | `{"error":"count must be an integer"}`                   | `?count=1.5`            |
+| `400`  | `{"error":"count must be a single value"}`               | `?count=1&count=2`      |
+| `400`  | `{"error":"freshness must be one of: pd, pw, pm"}`       | `?freshness=yesterday`  |
+| `402`  | `{}` + `PAYMENT-REQUIRED` header                         | no payment presented    |
+| `402`  | `{"error":"Payment payload already consumed"}`           | payment header replayed |
+| `429`  | `{"error":"Too many requests, please try again later."}` | rate limited            |
+| `502`  | `{"error":"Serper.dev API error: <status>"}`             | upstream Serper failure |
+| `500`  | `{"error":"Image search failed. Check server logs."}`    | unexpected server error |
 
 ### Step 1 — the 402 challenge
 
@@ -431,19 +433,19 @@ curl -sD - -o /dev/null --get \
   "resource": {
     "url": "http://localhost:3001/images?q=stellar%20lumens",
     "description": "StellarSearch: pay-per-query image search — 0.001 USDC on Stellar",
-    "mimeType": ""
+    "mimeType": "",
   },
   "accepts": [
     {
       "scheme": "exact",
       "network": "stellar:testnet",
-      "amount": "10000",                                          // stroops, not dollars
+      "amount": "10000", // stroops, not dollars
       "asset": "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA", // Soroban USDC contract
-      "payTo": "G...",                                            // STELLAR_RECEIVING_ADDRESS
+      "payTo": "G...", // STELLAR_RECEIVING_ADDRESS
       "maxTimeoutSeconds": 300,
-      "extra": { "areFeesSponsored": true }
-    }
-  ]
+      "extra": { "areFeesSponsored": true },
+    },
+  ],
 }
 ```
 
@@ -456,11 +458,11 @@ Sign the Soroban authorization entry from `accepts[0]` (Freighter in the
 browser, `@x402/fetch` for agents) and replay the request with the signed
 payload. The server accepts the payload on any of these request headers:
 
-| Header | Notes |
-|---|---|
+| Header              | Notes                                             |
+| ------------------- | ------------------------------------------------- |
 | `PAYMENT-SIGNATURE` | x402 **v2** — what `@x402/fetch` sends by default |
-| `X-PAYMENT` | x402 **v1** compatibility |
-| `Authorization` | accepted by the replay guard for legacy clients |
+| `X-PAYMENT`         | x402 **v1** compatibility                         |
+| `Authorization`     | accepted by the replay guard for legacy clients   |
 
 The facilitator's settlement receipt comes back on the **`X-PAYMENT-RESPONSE`**
 response header, and the server echoes it into the JSON body as `txHash`.
@@ -553,16 +555,16 @@ Envelope fields shared by `/search`, `/images`, and `/news`
 (`SearchResponse` / `ImageSearchResponse` / `NewsSearchResponse` in
 `src/types/index.ts`):
 
-| Field | Type | Description |
-|---|---|---|
-| `query` | `string` | The sanitized query actually sent upstream |
-| `results` | `array` | Normalized rows — see the per-endpoint tables below |
-| `count` | `number` | `results.length` **after** normalization, so it can be lower than the requested `count` |
-| `network` | `string` | `stellar:testnet` or `stellar:mainnet` |
-| `paidAmount` | `string` | USDC settled for this request, e.g. `"0.001"` |
-| `currency` | `string` | Always `"USDC"` |
-| `txHash` | `string \| null` | Settlement tx from `X-PAYMENT-RESPONSE`; `null` if the facilitator sent none |
-| `latencyMs` | `number` | Upstream Serper round-trip, excluding payment settlement |
+| Field        | Type             | Description                                                                             |
+| ------------ | ---------------- | --------------------------------------------------------------------------------------- |
+| `query`      | `string`         | The sanitized query actually sent upstream                                              |
+| `results`    | `array`          | Normalized rows — see the per-endpoint tables below                                     |
+| `count`      | `number`         | `results.length` **after** normalization, so it can be lower than the requested `count` |
+| `network`    | `string`         | `stellar:testnet` or `stellar:mainnet`                                                  |
+| `paidAmount` | `string`         | USDC settled for this request, e.g. `"0.001"`                                           |
+| `currency`   | `string`         | Always `"USDC"`                                                                         |
+| `txHash`     | `string \| null` | Settlement tx from `X-PAYMENT-RESPONSE`; `null` if the facilitator sent none            |
+| `latencyMs`  | `number`         | Upstream Serper round-trip, excluding payment settlement                                |
 
 `/search` additionally returns `originalQuery`, `executedQuery`,
 `suggestedQuery`, `isCorrected`, and `suggestions` — see
@@ -571,28 +573,28 @@ Envelope fields shared by `/search`, `/images`, and `/news`
 **`ImageResult`** — rows without a valid `http(s)` `imageUrl` are dropped by
 `normalizeImageResults`:
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | `string` | 1-based index within this response |
-| `title` | `string` | Image title, or `"No title"` |
-| `imageUrl` | `string` | Full-resolution image URL (validated `http(s)`) |
-| `thumbnailUrl` | `string` | Thumbnail URL; falls back to `imageUrl` |
-| `sourceUrl` | `string` | Page hosting the image; falls back to `imageUrl` |
-| `source` | `string` | Source domain |
-| `width` / `height` | `number?` | Pixel dimensions when Serper reports them |
+| Field              | Type      | Description                                      |
+| ------------------ | --------- | ------------------------------------------------ |
+| `id`               | `string`  | 1-based index within this response               |
+| `title`            | `string`  | Image title, or `"No title"`                     |
+| `imageUrl`         | `string`  | Full-resolution image URL (validated `http(s)`)  |
+| `thumbnailUrl`     | `string`  | Thumbnail URL; falls back to `imageUrl`          |
+| `sourceUrl`        | `string`  | Page hosting the image; falls back to `imageUrl` |
+| `source`           | `string`  | Source domain                                    |
+| `width` / `height` | `number?` | Pixel dimensions when Serper reports them        |
 
 **`NewsResult`** — rows without a valid `http(s)` `link` are dropped by
 `normalizeNewsResults`:
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | `string` | 1-based index within this response |
-| `title` | `string` | Headline, or `"No title"` |
-| `url` | `string` | Article URL (validated `http(s)`) |
-| `snippet` | `string` | Article excerpt; `""` when absent |
-| `source` | `string` | Publication name; falls back to the URL hostname |
+| Field         | Type      | Description                                              |
+| ------------- | --------- | -------------------------------------------------------- |
+| `id`          | `string`  | 1-based index within this response                       |
+| `title`       | `string`  | Headline, or `"No title"`                                |
+| `url`         | `string`  | Article URL (validated `http(s)`)                        |
+| `snippet`     | `string`  | Article excerpt; `""` when absent                        |
+| `source`      | `string`  | Publication name; falls back to the URL hostname         |
 | `publishedAt` | `string?` | Relative age as reported by Serper, e.g. `"2 hours ago"` |
-| `imageUrl` | `string?` | Article thumbnail when present |
+| `imageUrl`    | `string?` | Article thumbnail when present                           |
 
 ### Settlement guarantees
 
@@ -610,7 +612,7 @@ Four runtimes share one set of contracts. Anything under `src/lib/` is
 functions, and the MCP server alike — so a change there must keep all four
 aligned. Everything else is runtime-specific.
 
-```
+````
 stellar-search/
 ├── src/                              # SHARED types/logic + React frontend (browser)
 │   ├── lib/                          # ── shared by browser, Express, Vercel, MCP ──
@@ -724,9 +726,10 @@ docker build -t stellar-search .
 npm run docker:run
 # Or directly with Docker CLI:
 docker run -d --name stellar-search -p 3001:3001 --env-file .env stellar-search
-```
+````
 
 ### Container Specifications
+
 - **Multi-Stage Build**: Separates build tools (`node:20-alpine AS builder`) from the lightweight production runtime (`node:20-alpine AS runner`).
 - **Non-Root User**: Runs under the unprivileged `nodejs` user (`UID:GID 1001`) for enhanced security.
 - **Port**: Listens on port `3001` (configurable via `PORT` environment variable).
@@ -743,6 +746,127 @@ Production deployments are managed with a checked-in `vercel.json` deployment ma
 - **Security Headers**: Standard defense-in-depth headers configured globally (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`, CSP).
 - **Cache Headers**: Long-term immutable caching (`public, max-age=31536000, immutable`) for `/assets/(.*)` static assets and `no-store` for dynamic `/api/(.*)` endpoints.
 - **x402 CORS Headers**: `/api/(.*)` routes expose `PAYMENT-REQUIRED` and `X-Payment-Response` headers with permissive CORS to preserve verified x402 settlement semantics.
+
+---
+
+## Local (Express) vs. Vercel (Serverless) Behavior Matrix (#236)
+
+StellarSearch runs in two primary server environments:
+
+1. **Local / Containerized Node.js (`server/index.ts`)**: Stateful Express application running long-lived background tasks, batch streaming, and in-memory caching.
+2. **Vercel Serverless Functions (`api/*.ts`)**: Ephemeral, auto-scaling serverless execution environment with declarative routing via `vercel.json`.
+
+While both environments share core business logic and cryptographic payment validation from `src/lib/`, their runtime characteristics diverge across routing, middleware, streaming, and observability. This matrix documents the exact behavior across both runtimes and provides reproducible commands for verification.
+
+### 1. Routes & Endpoints Matrix
+
+| Route / Method          | Express (`server/index.ts`) |   Vercel Serverless (`api/`)    | Status & Parity Notes                                                                                                                                                                                                        |                                                          Tracking Issue                                                           |
+| ----------------------- | :-------------------------: | :-----------------------------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------: |
+| `GET /search`           |        ✅ Supported         | ✅ Supported (`api/search.ts`)  | Full parity. Rewritten via `vercel.json` to `/api/search`. Normalizes organic results, answer boxes, and knowledge graphs.                                                                                                   |                                                                 —                                                                 |
+| `GET /images`           |        ✅ Supported         |         ❌ Not Deployed         | **Gap**: Returns 404 on Vercel. Image search requires Serper image normalization adapter not currently ported to serverless. Target Express or MCP `image_search`.                                                           | [#237](https://github.com/Emmy123222/Stellar-Search/issues/237) / [#330](https://github.com/Emmy123222/Stellar-Search/issues/330) |
+| `GET /news`             |        ✅ Supported         |         ❌ Not Deployed         | **Gap**: Returns 404 on Vercel. News search with date parsing is only mounted in Express. Target Express or MCP `news_search`.                                                                                               | [#238](https://github.com/Emmy123222/Stellar-Search/issues/238) / [#331](https://github.com/Emmy123222/Stellar-Search/issues/331) |
+| `POST /search/batch`    |        ✅ Supported         |    ⚠️ Express-only streaming    | **Gap**: Bounded JSONL streaming (`application/x-ndjson`) with per-item settlement, disconnect abort (`req.on('close')`), and spending limits. Serverless buffering and execution timeouts limit long-lived batch streaming. |                                  [#325](https://github.com/Emmy123222/Stellar-Search/issues/325)                                  |
+| `POST /jobs`            |        ✅ Supported         |         ❌ Not Deployed         | **Gap**: Asynchronous paid search jobs (202 Accepted) with webhook delivery require an active background queue; stateless serverless instances cannot sustain background workers without durable queues.                     |                                  [#324](https://github.com/Emmy123222/Stellar-Search/issues/324)                                  |
+| `GET /jobs/:id`         |        ✅ Supported         |         ❌ Not Deployed         | **Gap**: Polls job status from in-memory `jobStore`. Unavailable on Vercel until durable storage (KV/Postgres) is configured.                                                                                                |                                  [#324](https://github.com/Emmy123222/Stellar-Search/issues/324)                                  |
+| `POST /ai/chat`         |        ✅ Supported         | ✅ Supported (`api/ai/chat.ts`) | Full parity. Groq Llama-3 AI completions with Server-Sent Events (SSE) streaming or JSON mode.                                                                                                                               |                                                                 —                                                                 |
+| `GET /health`           |        ✅ Supported         | ✅ Supported (`api/health.ts`)  | Parity on configuration checks; intentionally diverges on activity stats (see Metrics below).                                                                                                                                |                                  [#236](https://github.com/Emmy123222/Stellar-Search/issues/236)                                  |
+| `GET /.well-known/x402` |        ✅ Supported         |          ✅ Supported           | Full parity. Serves runtime-generated x402 resource discovery document for autonomous agents.                                                                                                                                |                                                                 —                                                                 |
+
+---
+
+### 2. Payment Middleware Comparison
+
+Both runtimes enforce identical x402 payment semantics (`AMOUNT_STROOPS = "10000"` → `0.001 USDC`, `USDC_CONTRACT`, `STELLAR_NETWORK = "stellar:testnet"`), but their middleware plumbing differs:
+
+| Feature / Property       | Express (`server/index.ts`)                                                                                                                | Vercel (`api/search.ts`)                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| **Middleware Engine**    | `@x402/express` (`paymentMiddlewareFromConfig`) with `ExactStellarScheme`                                                                  | Lightweight custom serverless handler with `HTTPFacilitatorClient` verification & settlement                        |
+| **Validation Order**     | **Validation Precedes Payment**: `PAID_ROUTE_PARAMS` middleware validates `q`, `count`, and `freshness` _before_ the x402 middleware runs. | **Validation Precedes Payment**: `validateQuery` and `paidParams` validate inputs _before_ parsing payment headers. |
+| **Early Rejection**      | Returns `400 Bad Request` immediately; never contacts facilitator or consumes client signature.                                            | Returns `400 Bad Request` immediately; never contacts facilitator or consumes client signature.                     |
+| **Challenge Format**     | Returns `402 Payment Required` with standard base64 `PAYMENT-REQUIRED` response header (x402 v2).                                          | Returns `402 Payment Required` with standard base64 `PAYMENT-REQUIRED` response header (x402 v2).                   |
+| **Replay Protection**    | In-memory `consumePaymentPayload` cache with 300s expiration and deterministic hashing.                                                    | In-memory `consumePaymentPayload` cache with 300s expiration per warm container instance.                           |
+| **Settlement Guarantee** | Real-time facilitator settlement via OpenZeppelin facilitator (`channels.openzeppelin.com` or local stub).                                 | Real-time facilitator settlement via `HTTPFacilitatorClient.settle()`.                                              |
+
+---
+
+### 3. Streaming Features
+
+| Feature                        | Express (`server/index.ts`)                                                                                                                  | Vercel Serverless (`api/`)                                                                           | Notes & Limitations                                                                                                                                                                  |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **JSONL Batch Streaming**      | Native chunked HTTP streaming (`application/x-ndjson`). Emits versioned events: `quote` → `settlement` → per-item `result`/`error` → `done`. | Not supported.                                                                                       | Express utilizes Node.js stream flushing (`res.flushHeaders()`, `res.write()`). Vercel buffers responses unless running edge runtime or streaming headers (`X-Accel-Buffering: no`). |
+| **Client Disconnect Handling** | Listens to `req.on('close')`, terminates downstream Serper calls via `AbortController`, and emits `CLIENT_DISCONNECT` events.                | Handled via platform request cancellation.                                                           | Serverless functions are abruptly terminated by the host when client disconnects; state cleanup is non-guaranteed.                                                                   |
+| **AI Chat Streaming**          | Server-Sent Events (`text/event-stream`). Flushes SSE chunks as Groq generates tokens.                                                       | Server-Sent Events (`text/event-stream`) with `Cache-Control: no-cache` and `X-Accel-Buffering: no`. | Subject to Vercel function timeout limits (10s on Hobby tier, 60s on Pro tier).                                                                                                      |
+
+---
+
+### 4. Metrics & Health Diagnostics
+
+| Metric / Field                                                                                                      |                    Express (`GET /health`)                     |                    Vercel (`GET /api/health`)                    | Architectural Reason                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------: | :--------------------------------------------------------------: | --------------------------------------------------------------------------------------------------------------------------- |
+| **Configuration Facts** (`status`, `network`, `pricePerQuery`, `serperApiConfigured`, `receivingAddressConfigured`) |                          ✅ Reported                           |                           ✅ Reported                            | Derived from static configuration and verified environment variables at runtime boot.                                       |
+| **`statsSupported`**                                                                                                |                             `true`                             |                             `false`                              | Declared explicitly via `src/lib/serverHealth.ts`.                                                                          |
+| **`unsupportedFields`**                                                                                             |                              `[]`                              | `["totalQueries", "totalUsdcSettled", "avgLatencyMs", "uptime"]` | Prevents presenting fake zeros (`0 queries · $0.00 settled`) in dashboards.                                                 |
+| **`statsUnavailableReason`**                                                                                        |                          `undefined`                           |                Human-readable explanation string                 | Informs consumers that ephemeral serverless instances scale to zero and cannot track cross-request counters in memory.      |
+| **Activity Counters** (`totalQueries`, `totalUsdcSettled`, `avgLatencyMs`, `uptime`)                                | ✅ Real in-memory counters (200-sample latency rolling window) |                            ❌ Omitted                            | Serverless cold starts reset memory; without a shared store (e.g. Redis), reporting per-instance stats would be misleading. |
+
+---
+
+### 5. CORS & Preflight Handling
+
+| Rule / Behavior           | Express (`server/corsConfig.ts`)                                                                                                     | Vercel (`vercel.json` + `api/`)                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| **Origin Policy**         | Dynamically checks origin against whitelist (`localhost:5173`, `localhost:3000`, `127.0.0.1:*`, production domains, `*.vercel.app`). | Wildcard `Access-Control-Allow-Origin: *` configured globally for `/api/(.*)`.                                          |
+| **Preflight (`OPTIONS`)** | Intercepted by CORS middleware; immediately responds with `204 No Content`.                                                          | Handled at Vercel routing edge via headers, plus programmatic `OPTIONS` handler in `api/*.ts` returning `204` or `200`. |
+| **Exposed Headers**       | `PAYMENT-REQUIRED`, `X-Payment-Required`, `X-Payment-Response`, `X-Request-Id`, `Retry-After`.                                       | `PAYMENT-REQUIRED`, `X-Payment-Required`, `X-Payment-Response`, `X-Request-Id`, `Retry-After`.                          |
+| **Allowed Headers**       | `Content-Type`, `Authorization`, `X-Payment`, `Payment-Signature`, `Idempotency-Key`, `X-Request-Id`.                                | Identical set declared in `vercel.json` header rules.                                                                   |
+
+---
+
+### 6. Reproducible Verification Commands
+
+Use these exact commands to verify behavior across runtimes:
+
+#### A. Verify Express Local Server (`http://localhost:3001`)
+
+```bash
+# 1. Start local server
+npm run server
+
+# 2. Check health (must report statsSupported: true and live activity counters)
+curl -s http://localhost:3001/health | jq .
+
+# 3. Test parameter early rejection (must return 400 before payment check, not 402)
+curl -i "http://localhost:3001/search?q=stellar&count=999"
+
+# 4. Test 402 challenge (must return 402 with base64 PAYMENT-REQUIRED header)
+curl -i "http://localhost:3001/search?q=stellar"
+
+# 5. Run full server x402 payment flow integration tests (Issue #26)
+npx vitest run server/x402PaymentFlow.integration.test.ts
+
+# 6. Run shared parameter validation matrix (Issue #188)
+npx vitest run server/parameterMatrix.test.ts
+```
+
+#### B. Verify Vercel Serverless Deployment (`https://<deployment-url>`)
+
+```bash
+# 1. Check health (must declare statsSupported: false and unsupportedFields)
+curl -s https://<deployment-url>/api/health | jq .
+
+# 2. Verify early rejection (must return 400 before payment check)
+curl -i "https://<deployment-url>/api/search?q=stellar&count=999"
+
+# 3. Verify 402 challenge with exposed headers
+curl -i "https://<deployment-url>/api/search?q=stellar"
+
+# 4. Verify Express-only gap returns 404 on Vercel (Issue #237 / #238)
+curl -i "https://<deployment-url>/api/images?q=stellar"
+curl -i "https://<deployment-url>/api/news?q=stellar"
+
+# 5. Run preview smoke verification suite
+npm run test:smoke -- https://<deployment-url>
+```
 
 ---
 
@@ -790,12 +914,12 @@ Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it ca
 
 Paid MCP tools (`web_search`, `image_search`, `news_search`) emit **bounded** `notifications/progress` events for actual payment/search phases **only when the client sends `_meta.progressToken`**:
 
-| progress | total | phase | message |
-|---:|---:|---|---|
-| 1 | 4 | challenge | Requesting payment challenge |
-| 2 | 4 | signing | Signing Soroban auth |
-| 3 | 4 | settlement | Settling 0.001 USDC on Stellar |
-| 4 | 4 | search | Searching Serper |
+| progress | total | phase      | message                        |
+| -------: | ----: | ---------- | ------------------------------ |
+|        1 |     4 | challenge  | Requesting payment challenge   |
+|        2 |     4 | signing    | Signing Soroban auth           |
+|        3 |     4 | settlement | Settling 0.001 USDC on Stellar |
+|        4 |     4 | search     | Searching Serper               |
 
 Cancellation (`notifications/cancelled`) and errors terminate progress cleanly **without false completion** — the tool returns `isError: true` and no additional progress after abort. Progress is never sent without a `progressToken`; free tools never emit progress.
 
@@ -803,11 +927,11 @@ Cancellation (`notifications/cancelled`) and errors terminate progress cleanly *
 
 Every external network call the MCP server makes — StellarSearch endpoints, Horizon, `/health`, and Groq — receives an **`AbortSignal` with a tool-specific deadline** (see `TOOL_TIMEOUTS` in `mcp-server/index.ts`):
 
-| Tool | Deadline |
-|---|---:|
-| `web_search`, `image_search`, `news_search`, `ai_summarize` | 30 s |
-| `check_balance` (Horizon) | 15 s |
-| `get_search_stats` (`/health`) | 10 s |
+| Tool                                                        | Deadline |
+| ----------------------------------------------------------- | -------: |
+| `web_search`, `image_search`, `news_search`, `ai_summarize` |     30 s |
+| `check_balance` (Horizon)                                   |     15 s |
+| `get_search_stats` (`/health`)                              |     10 s |
 
 The deadline signal aborts when **either** the deadline elapses **or** the client cancels the tool call (`notifications/cancelled`), so a hung or cancelled request returns promptly with `isError: true` (`timed out` / `cancelled`) and **never** emits a delayed success result, receipt, or stray progress. Deadlines are released (`clear()`) on completion so successful calls never abort late.
 
@@ -855,7 +979,6 @@ curl -N -X POST http://localhost:3001/search/batch \
 
 ### Async paid search jobs with webhooks (#324)
 
-
 ```
 POST /jobs  → 202 { jobId, statusUrl, paymentVerified, paymentId, txHash }
 GET  /jobs/:id → { job, paymentVerified, statusUrl }
@@ -881,8 +1004,14 @@ Webhook verification (receiver):
 ```js
 import crypto from 'crypto'
 function verify(payload, signature, secret, tsHeader) {
-  const expected = crypto.createHmac('sha256', secret).update(`${tsHeader}.${payload}`).digest('hex')
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature)) && Date.now() - parseInt(tsHeader) < 5*60*1000
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(`${tsHeader}.${payload}`)
+    .digest('hex')
+  return (
+    crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature)) &&
+    Date.now() - parseInt(tsHeader) < 5 * 60 * 1000
+  )
 }
 ```
 
@@ -899,6 +1028,7 @@ When upstream search providers auto-correct or suggest queries ("Did you mean?")
 - `query` — preserved for backwards compatibility (maps to executed query)
 
 **User Confirmation Mechanics:**
+
 - **Auto-Correction**: Displays an informative banner explaining that results were auto-corrected, with a one-click option to search the original query with explicit wallet confirmation.
 - **Did You Mean Suggestions**: Displays the suggested correction alongside "Search Suggestion" (which invokes the explicit Freighter confirmation flow) and a "Dismiss" action that closes the suggestion with **0 additional cost and no second payment**.
 - No automatic or silent payments are ever executed.
@@ -931,12 +1061,13 @@ Reports are generated to `coverage/` (`text`, `json`, `html`, `lcov`). CI upload
 
 CI runs typecheck, lint, and test jobs across a matrix of Node versions:
 
-| Node version | Role |
-|---|---|
-| **20** | Minimum supported (per `package.json` engines) |
-| **22** | Current LTS |
+| Node version | Role                                           |
+| ------------ | ---------------------------------------------- |
+| **20**       | Minimum supported (per `package.json` engines) |
+| **22**       | Current LTS                                    |
 
 Unsupported versions fail early via `node scripts/check-node-version.js` before any build or test steps run.
+
 ### Parameter validation on paid endpoints (#188)
 
 All paid routes (`GET /search`, `GET /images`, `GET /news`, `POST /search/batch`, `POST /jobs`, and `GET /api/search`) share one validation contract via `src/lib/paramValidation.ts`:
@@ -949,35 +1080,35 @@ All paid routes (`GET /search`, `GET /images`, `GET /news`, `POST /search/batch`
 
 Global thresholds are deliberately modest initially and ratchet upward as payment/wallet/API/MCP/UI tests land:
 
-| Scope | Statements | Branches | Functions | Lines |
-|---|---:|---:|---:|---:|
-| **Global** | 40% | 35% | 30% | 40% |
-| `src/lib/constants.ts` | 90% | 60% | 100% | 90% |
-| `src/lib/facilitatorValidation.ts` | 85% | 70% | 75% | 85% |
-| `src/lib/stellar.ts` | 85% | 75% | 85% | 85% |
-| `src/lib/paymentIntegrity.ts` | 90% | 85% | 95% | 90% |
-| `src/lib/serperNormalizer.ts` | 95% | 90% | 100% | 95% |
-| `src/lib/paramValidation.ts` | 95% | 90% | 100% | 95% |
-| `src/lib/serverHealth.ts` | 95% | 90% | 100% | 95% |
-| `server/corsConfig.ts` | 90% | 85% | 95% | 90% |
-| `src/components/search/SearchBar.tsx` | 80% | 80% | 90% | 80% |
-| `src/components/search/SpellingCorrectionBanner.tsx` | 85% | 90% | 70% | 85% |
-| `src/components/ui/StatsGrid.tsx` | 90% | 90% | 100% | 95% |
-| `src/pages/SearchPage.tsx` | 65% | 65% | 70% | 75% |
-| `src/pages/DashboardPage.tsx` | 70% | 55% | 55% | 75% |
-| `src/lib/spendingLimits.ts` | 90% | 75% | 95% | 90% |
-| `src/hooks/useSpendingLimits.ts` | 90% | 80% | 95% | 90% |
-| `server/index.ts` | 30% | 24% | 25% | 35% |
-| `api/search.ts` | 90% | 75% | 80% | 90% |
-| `api/search/batch.ts` | 60% | 50% | 45% | 65% |
-| `api/jobs.ts` | 45% | 30% | 30% | 55% |
-| `api/jobs/[id].ts` | 95% | 90% | 100% | 95% |
-| `api/health.ts` | 95% | 90% | 100% | 95% |
-| `api/index.ts` | 95% | 90% | 100% | 95% |
-| `api/ai/chat.ts` | 95% | 80% | 100% | 95% |
-| `mcp-server/index.ts` | 30% | 20% | 20% | 30% |
-| `src/hooks/useFreighterWallet.ts` | 85% | 65% | 90% | 85% |
-| `src/hooks/useSearch.ts` | 85% | 65% | 90% | 85% |
+| Scope                                                | Statements | Branches | Functions | Lines |
+| ---------------------------------------------------- | ---------: | -------: | --------: | ----: |
+| **Global**                                           |        40% |      35% |       30% |   40% |
+| `src/lib/constants.ts`                               |        90% |      60% |      100% |   90% |
+| `src/lib/facilitatorValidation.ts`                   |        85% |      70% |       75% |   85% |
+| `src/lib/stellar.ts`                                 |        85% |      75% |       85% |   85% |
+| `src/lib/paymentIntegrity.ts`                        |        90% |      85% |       95% |   90% |
+| `src/lib/serperNormalizer.ts`                        |        95% |      90% |      100% |   95% |
+| `src/lib/paramValidation.ts`                         |        95% |      90% |      100% |   95% |
+| `src/lib/serverHealth.ts`                            |        95% |      90% |      100% |   95% |
+| `server/corsConfig.ts`                               |        90% |      85% |       95% |   90% |
+| `src/components/search/SearchBar.tsx`                |        80% |      80% |       90% |   80% |
+| `src/components/search/SpellingCorrectionBanner.tsx` |        85% |      90% |       70% |   85% |
+| `src/components/ui/StatsGrid.tsx`                    |        90% |      90% |      100% |   95% |
+| `src/pages/SearchPage.tsx`                           |        65% |      65% |       70% |   75% |
+| `src/pages/DashboardPage.tsx`                        |        70% |      55% |       55% |   75% |
+| `src/lib/spendingLimits.ts`                          |        90% |      75% |       95% |   90% |
+| `src/hooks/useSpendingLimits.ts`                     |        90% |      80% |       95% |   90% |
+| `server/index.ts`                                    |        30% |      24% |       25% |   35% |
+| `api/search.ts`                                      |        90% |      75% |       80% |   90% |
+| `api/search/batch.ts`                                |        60% |      50% |       45% |   65% |
+| `api/jobs.ts`                                        |        45% |      30% |       30% |   55% |
+| `api/jobs/[id].ts`                                   |        95% |      90% |      100% |   95% |
+| `api/health.ts`                                      |        95% |      90% |      100% |   95% |
+| `api/index.ts`                                       |        95% |      90% |      100% |   95% |
+| `api/ai/chat.ts`                                     |        95% |      80% |      100% |   95% |
+| `mcp-server/index.ts`                                |        30% |      20% |       20% |   30% |
+| `src/hooks/useFreighterWallet.ts`                    |        85% |      65% |       90% |   85% |
+| `src/hooks/useSearch.ts`                             |        85% |      65% |       90% |   85% |
 
 > **Ratchet policy:** When a module's real coverage exceeds its threshold, bump the threshold in `vite.config.ts` in the same PR. Global thresholds ratchet `15 → 25 → 35` as payment, wallet, API, MCP, and UI behavior moves from untested to tested. Keep Express (`server/`), Vercel (`api/`), browser (`src/`), and MCP (`mcp-server/`) constants aligned (`STELLAR_NETWORK`, `USDC_CONTRACT`, `AMOUNT_STROOPS=10000` → `0.001 USDC`).
 
@@ -1014,11 +1145,11 @@ threw a `TypeError` on the absent field and surfaced as a misleading
 `src/lib/serverHealth.ts` holds the shared contract. Each `/health` response
 now carries a declaration:
 
-| Field | Type | Meaning |
-|---|---|---|
-| `statsSupported` | `boolean` | Whether this runtime measures the activity statistics |
-| `unsupportedFields` | `string[]` | Which of `totalQueries`, `totalUsdcSettled`, `avgLatencyMs`, `uptime` it does not measure — empty when `statsSupported` is `true` |
-| `statsUnavailableReason` | `string?` | Human-readable explanation; present only when something is unsupported |
+| Field                    | Type       | Meaning                                                                                                                           |
+| ------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `statsSupported`         | `boolean`  | Whether this runtime measures the activity statistics                                                                             |
+| `unsupportedFields`      | `string[]` | Which of `totalQueries`, `totalUsdcSettled`, `avgLatencyMs`, `uptime` it does not measure — empty when `statsSupported` is `true` |
+| `statsUnavailableReason` | `string?`  | Human-readable explanation; present only when something is unsupported                                                            |
 
 **Express** (`GET /health`) — measures everything:
 
@@ -1033,7 +1164,7 @@ now carries a declaration:
   "avgLatencyMs": 384,
   "uptime": "7m",
   "statsSupported": true,
-  "unsupportedFields": []
+  "unsupportedFields": [],
 }
 ```
 
@@ -1048,7 +1179,7 @@ now carries a declaration:
   "timestamp": "2026-09-02T12:00:00.000Z",
   "statsSupported": false,
   "unsupportedFields": ["totalQueries", "totalUsdcSettled", "avgLatencyMs", "uptime"],
-  "statsUnavailableReason": "Serverless functions are stateless and scale to zero, so per-instance counters would reset on every cold start instead of reporting deployment activity. Run the Express server (npm run server) for live counters."
+  "statsUnavailableReason": "Serverless functions are stateless and scale to zero, so per-instance counters would reset on every cold start instead of reporting deployment activity. Run the Express server (npm run server) for live counters.",
 }
 ```
 
@@ -1062,12 +1193,12 @@ Consumers call `resolveStat(health, field)` instead of reading the field
 directly. It returns either `{ available: true, value }` or
 `{ available: false, reason }`, which keeps the three states apart:
 
-| State | `resolveStat` | UI |
-|---|---|---|
-| Measured, non-zero | `{ available: true, value: 1234 }` | `1,234` with the live pulse |
-| **Measured, genuinely zero** | `{ available: true, value: 0 }` | `0` with the live pulse |
-| **Not measured** | `{ available: false, reason }` | `n/a`, dimmed, no pulse, reason on hover |
-| Server unreachable | `{ available: false, reason }` | `n/a`, `SERVER OFFLINE` |
+| State                        | `resolveStat`                      | UI                                       |
+| ---------------------------- | ---------------------------------- | ---------------------------------------- |
+| Measured, non-zero           | `{ available: true, value: 1234 }` | `1,234` with the live pulse              |
+| **Measured, genuinely zero** | `{ available: true, value: 0 }`    | `0` with the live pulse                  |
+| **Not measured**             | `{ available: false, reason }`     | `n/a`, dimmed, no pulse, reason on hover |
+| Server unreachable           | `{ available: false, reason }`     | `n/a`, `SERVER OFFLINE`                  |
 
 The second and third rows are the distinction that matters: a freshly started
 Express server that has served no queries **really has** served no queries, and
@@ -1123,20 +1254,20 @@ before it can merge.
 
 ### What it checks
 
-| # | Check | Endpoint | Expected | Catches |
-|---|---|---|---|---|
-| 1 | SPA shell | `GET /` | `200` `text/html` with `#root` | broken build output / `outputDirectory` |
-| 2 | Static asset | `GET /favicon.svg` | `200` `image/svg+xml` | assets not published |
-| 3 | SPA rewrite | `GET /docs` | `200` `text/html` | missing `rewrites` in `vercel.json` |
-| 4 | Service descriptor | `GET /api` | `200` JSON, `name: StellarSearch` | serverless routing not wired |
-| 5 | Environment wiring + stats declaration | `GET /api/health` | `200`, `status: ok`, `protocol: x402`, and a valid `statsSupported` declaration | missing `STELLAR_RECEIVING_ADDRESS` / `SERPER_API_KEY`; counters omitted without being declared (see [Health and statistics](#health-and-statistics-health)) |
-| 6 | CORS preflight | `OPTIONS /api/search` | `200`/`204` allowing `payment-signature` + `x-payment` | browser clients unable to send the signed payload |
-| 7 | Method guard | `POST /api/search` | `405` | handler-level regressions |
-| 8 | Missing `q` | `GET /api/search` | `400` | validation not reached |
-| 9 | `count` out of bounds | `GET /api/search?count=999` | `400` **not** `402` | validation running after the payment gate |
-| 10 | Repeated `count` | `?count=1&count=2` | `400` | array coercion regressions |
-| 11 | Unknown `freshness` | `?freshness=yesterday` | `400` | enum drift |
-| 12 | **x402 challenge** | `GET /api/search?q=…` | `402` + valid `PAYMENT-REQUIRED` | settlement-semantics drift (see below) |
+| #   | Check                                  | Endpoint                    | Expected                                                                        | Catches                                                                                                                                                      |
+| --- | -------------------------------------- | --------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | SPA shell                              | `GET /`                     | `200` `text/html` with `#root`                                                  | broken build output / `outputDirectory`                                                                                                                      |
+| 2   | Static asset                           | `GET /favicon.svg`          | `200` `image/svg+xml`                                                           | assets not published                                                                                                                                         |
+| 3   | SPA rewrite                            | `GET /docs`                 | `200` `text/html`                                                               | missing `rewrites` in `vercel.json`                                                                                                                          |
+| 4   | Service descriptor                     | `GET /api`                  | `200` JSON, `name: StellarSearch`                                               | serverless routing not wired                                                                                                                                 |
+| 5   | Environment wiring + stats declaration | `GET /api/health`           | `200`, `status: ok`, `protocol: x402`, and a valid `statsSupported` declaration | missing `STELLAR_RECEIVING_ADDRESS` / `SERPER_API_KEY`; counters omitted without being declared (see [Health and statistics](#health-and-statistics-health)) |
+| 6   | CORS preflight                         | `OPTIONS /api/search`       | `200`/`204` allowing `payment-signature` + `x-payment`                          | browser clients unable to send the signed payload                                                                                                            |
+| 7   | Method guard                           | `POST /api/search`          | `405`                                                                           | handler-level regressions                                                                                                                                    |
+| 8   | Missing `q`                            | `GET /api/search`           | `400`                                                                           | validation not reached                                                                                                                                       |
+| 9   | `count` out of bounds                  | `GET /api/search?count=999` | `400` **not** `402`                                                             | validation running after the payment gate                                                                                                                    |
+| 10  | Repeated `count`                       | `?count=1&count=2`          | `400`                                                                           | array coercion regressions                                                                                                                                   |
+| 11  | Unknown `freshness`                    | `?freshness=yesterday`      | `400`                                                                           | enum drift                                                                                                                                                   |
+| 12  | **x402 challenge**                     | `GET /api/search?q=…`       | `402` + valid `PAYMENT-REQUIRED`                                                | settlement-semantics drift (see below)                                                                                                                       |
 
 Check 12 decodes the base64 `PAYMENT-REQUIRED` header and asserts the
 **verified x402 settlement semantics** that a bad deploy silently breaks:

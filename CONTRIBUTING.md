@@ -313,19 +313,11 @@ chore/update-docs
 
 Use concise conventional-style commit subjects, for example:
 
-## Testing
-
-Vitest + @vitest/coverage-v8 enforces **coverage thresholds for statements, branches, functions, and lines**. Configuration lives in `vite.config.ts:6` and is documented in `README.md#testing--coverage`.
-
-````bash
-npm run test              # run tests without coverage
-npm run test:coverage     # run with coverage + thresholds (CI gate)
-node scripts/check-node-version.js  # validate Node version against engines
-# reports in coverage/ (text, json, html, lcov)
-open coverage/index.html  # view HTML report
 ```text
 fix: handle rejected Freighter signatures
-````
+feat: add x402 payment flow integration tests
+docs: document local vs Vercel runtime matrix
+```
 
 ### PR naming convention
 
@@ -529,6 +521,66 @@ npx tsc --noEmit
 ```bash
 # Requires all .env keys to be set and server running
 npm run test:search "Stellar blockchain"
+```
+
+---
+
+## Runtime Parity Guidelines & Behavior Matrix (Express vs. Vercel) (#236)
+
+StellarSearch runs in both a long-lived Node.js Express server (`server/index.ts`) and on Vercel Serverless Functions (`api/*.ts`). Contributors adding or modifying routes, payment flows, or diagnostic checks must observe the following parity rules:
+
+### 1. Parity Rules for Contributors
+
+1. **Shared Logic in `src/lib/`**:
+   - Parameter validation (`src/lib/paramValidation.ts`), payment integrity & replay protection (`src/lib/paymentIntegrity.ts`), health contracts (`src/lib/serverHealth.ts`), and result normalization (`src/lib/serperNormalization.ts`) MUST remain runtime-agnostic.
+   - Never duplicate core validation or settlement logic between `server/` and `api/`. Always import from `src/lib/`.
+
+2. **Validation Precedes Payment**:
+   - On every paid route across both runtimes, **parameter validation MUST execute before payment processing**:
+     `Request → Parameter Validation (400) → Payment Challenge / Verification (402) → Replay Guard (402) → Provider Call → 200`
+   - Invalid requests must be rejected immediately with HTTP 400. An invalid request must NEVER invoke the facilitator, consume a payment signature, or trigger an upstream provider call.
+
+3. **Handling Runtime Gaps**:
+   - If a feature can only run on Express due to runtime constraints (e.g. background worker queues or persistent JSONL streaming), contributors must:
+     - Document the gap in `README.md`, `CONTRIBUTING.md`, and `TROUBLESHOOTING.md`.
+     - Link the gap to an active tracking issue:
+       - Image search serverless port: [#237](https://github.com/Emmy123222/Stellar-Search/issues/237) / [#330](https://github.com/Emmy123222/Stellar-Search/issues/330)
+       - News search serverless port: [#238](https://github.com/Emmy123222/Stellar-Search/issues/238) / [#331](https://github.com/Emmy123222/Stellar-Search/issues/331)
+       - Asynchronous jobs queue: [#324](https://github.com/Emmy123222/Stellar-Search/issues/324)
+       - Streaming batch search: [#325](https://github.com/Emmy123222/Stellar-Search/issues/325)
+     - On `/health`, declare unmeasured serverless activity statistics via `declareStatsUnsupported()`.
+
+4. **Preserve x402 Settlement Semantics**:
+   - All runtimes must settle exact amounts: 0.001 USDC (`AMOUNT_STROOPS = "10000"`, `AMOUNT_USDC = "0.001"`).
+   - All runtimes must emit canonical base64 `PAYMENT-REQUIRED` headers (x402 v2).
+
+### 2. Contributor Verification Commands
+
+Run these targeted verification commands before submitting your PR:
+
+```bash
+# 1. Typecheck the entire codebase (frontend, server, api, scripts)
+npm run typecheck
+
+# 2. Run the full unit and integration test suite
+npm test
+
+# 3. Run the full server x402 payment flow integration tests (Issue #26)
+npx vitest run server/x402PaymentFlow.integration.test.ts
+
+# 4. Run parameter validation matrix across all paid routes (Issue #188)
+npx vitest run server/parameterMatrix.test.ts
+
+# 5. Run ESLint checks (zero warnings allowed)
+npm run lint
+
+# 6. Verify local server health and 402 challenge
+npm run server &
+SERVER_PID=$!
+sleep 2
+curl -s http://localhost:3001/health | jq .
+curl -i "http://localhost:3001/search?q=stellar"
+kill $SERVER_PID
 ```
 
 ---

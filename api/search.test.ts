@@ -20,7 +20,12 @@ vi.mock("../src/lib/constants", async () => {
 // ─── Mock x402 facilitator ──────────────────────────────────────────────
 const { mockVerify, mockSettle, mockDecode } = vi.hoisted(() => ({
   mockVerify: vi.fn().mockResolvedValue({ isValid: true }),
-  mockSettle: vi.fn().mockResolvedValue({ success: true, transaction: 'tx_ok', network: 'stellar:testnet' }),
+  mockSettle: vi.fn().mockImplementation(async (payload: any) => {
+    const p = payload?.payload || payload
+    if (p?.shouldFail) return { success: false, errorReason: 'mock failure' }
+    if (p?.shouldTimeout) throw new Error('fetch timeout')
+    return { success: true, transaction: 'tx_ok', network: 'stellar:testnet' }
+  }),
   mockDecode: vi.fn((header: string) => {
     try {
       const decoded = Buffer.from(header, 'base64').toString('utf8')
@@ -108,7 +113,12 @@ describe("api/search — Vercel x402 settlement (aligned with Express)", () => {
     } as any)
     // Default: facilitator verify and settle succeed
     mockVerify.mockResolvedValue({ isValid: true })
-    mockSettle.mockResolvedValue({ success: true, transaction: 'tx_ok', network: 'stellar:testnet' })
+    mockSettle.mockImplementation(async (payload: any) => {
+      const p = payload?.payload || payload
+      if (p?.shouldFail) return { success: false, errorReason: 'mock failure' }
+      if (p?.shouldTimeout) throw new Error('fetch timeout')
+      return { success: true, transaction: 'tx_ok', network: 'stellar:testnet' }
+    })
   })
 
   it("handles OPTIONS preflight", async () => {

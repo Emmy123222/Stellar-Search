@@ -8,7 +8,8 @@ The **"Failed to parse payment requirements"** error occurs when client header r
 
 #### ✅ **Correct x402 & Freighter Integration**
 
-1. **Proper Signer & Base64 Auth Entry**: 
+1. **Proper Signer & Base64 Auth Entry**:
+
 ```typescript
 import { signAuthEntry } from '@stellar/freighter-api'
 
@@ -19,15 +20,15 @@ const signer = {
     const result = await signAuthEntry(entryXdr, opts)
     if (result.error) throw new Error(result.error.message)
     const raw = result.signedAuthEntry
-    const signedAuthEntry = typeof raw === 'string'
-      ? raw
-      : Buffer.from(raw as unknown as Uint8Array).toString('base64')
+    const signedAuthEntry =
+      typeof raw === 'string' ? raw : Buffer.from(raw as unknown as Uint8Array).toString('base64')
     return { signedAuthEntry, signerAddress: walletAddress }
-  }
+  },
 }
 ```
 
 2. **Scheme Registration**:
+
 ```typescript
 import { x402Client } from '@x402/fetch'
 import { ExactStellarScheme } from '@x402/stellar/exact/client'
@@ -39,6 +40,7 @@ const client = new x402Client().register(
 ```
 
 3. **Network Verification via `@stellar/freighter-api`**:
+
 ```typescript
 import { getNetworkDetails } from '@stellar/freighter-api'
 
@@ -55,13 +57,13 @@ if (net.network !== 'TESTNET') {
 
 StellarSearch implements x402 v2 specification headers across Express (`server/`), Vercel serverless (`api/`), Browser client (`src/`), and MCP server (`mcp-server/`):
 
-| Type | Header Name | Version | Description & Role |
-|---|---|---|---|
-| **Response** | `PAYMENT-REQUIRED` | **x402 v2 Canonical** | Base64-encoded JSON containing `x402Version: 2`, `resource`, and `accepts` requirements. |
-| **Response** | `X-Payment-Required` | Legacy Alias | Backward-compatibility response header alias. |
-| **Request** | `X-Payment` | **x402 v2 Canonical** | Base64-encoded payment payload containing signed Soroban auth entry. |
-| **Request** | `x-payment`, `X-PAYMENT` | Case Variants | Case-insensitive request header variants handled by Express/Vercel. |
-| **Request** | `payment-signature` | Legacy Alias | Backward-compatibility request header alias accepted by backend routes. |
+| Type         | Header Name              | Version               | Description & Role                                                                       |
+| ------------ | ------------------------ | --------------------- | ---------------------------------------------------------------------------------------- |
+| **Response** | `PAYMENT-REQUIRED`       | **x402 v2 Canonical** | Base64-encoded JSON containing `x402Version: 2`, `resource`, and `accepts` requirements. |
+| **Response** | `X-Payment-Required`     | Legacy Alias          | Backward-compatibility response header alias.                                            |
+| **Request**  | `X-Payment`              | **x402 v2 Canonical** | Base64-encoded payment payload containing signed Soroban auth entry.                     |
+| **Request**  | `x-payment`, `X-PAYMENT` | Case Variants         | Case-insensitive request header variants handled by Express/Vercel.                      |
+| **Request**  | `payment-signature`      | Legacy Alias          | Backward-compatibility request header alias accepted by backend routes.                  |
 
 ---
 
@@ -72,9 +74,11 @@ StellarSearch implements x402 v2 specification headers across Express (`server/`
 This indicates the x402 client cannot parse or decode the server's payment header.
 
 #### Command 1: Inspect server 402 response header
+
 ```bash
 curl -v "http://localhost:3001/search?q=test" 2>&1 | grep -i payment
 ```
+
 - **Expected Result**:
   ```http
   < PAYMENT-REQUIRED: eyJ4NDAyVmVyc2lvbiI6Miw...
@@ -84,6 +88,7 @@ curl -v "http://localhost:3001/search?q=test" 2>&1 | grep -i payment
   - If connection is refused: Backend server is not running. Start it with `npm run server`.
 
 #### Command 2: Base64 decode response header
+
 ```bash
 echo "eyJ4NDAyVmVyc2lvbiI6Miw..." | base64 -d | jq .
 ```
@@ -252,6 +257,7 @@ When wallet is connected, the app shows a "Network Debugger" panel with real-tim
 ## Link Security & Safe Diagnostics
 
 ### Result shows `[Blocked Link]` in UI or MCP response
+
 - **Why it occurs**: The upstream search result returned a URL with a non-http(s) scheme (e.g. `javascript:`, `data:`), a credential-bearing authority (e.g. `http://user:pass@host`), or a malformed format.
 - **Safety handling**: Blocked rows render as non-interactive `<div>` containers in the UI without `href` attributes, preventing malicious clicks while keeping title and snippet readable.
 - **Safe Diagnostics**: The UI header displays `SAFE DIAGNOSTICS: X SAFE, Y BLOCKED` reflecting the total count of safe vs blocked URLs.
@@ -281,23 +287,23 @@ Save as `test-x402.html` and open in browser:
 <script>
 async function testX402() {
   const result = document.getElementById('result')
-  
+
   try {
     // Check Freighter
     if (!window.freighter) {
       throw new Error('Freighter not installed')
     }
-    
+
     const network = await window.freighter.getNetworkDetails()
     if (network.network !== 'TESTNET') {
       throw new Error(`Wrong network: ${network.network}. Switch to TESTNET.`)
     }
-    
+
     const connected = await window.freighter.isConnected()
     if (!connected.isConnected) {
       throw new Error('Freighter not connected')
     }
-    
+
     // Test search endpoint
     const response = await fetch('http://localhost:3001/search?q=test&count=3')
     if (response.status === 402) {
@@ -305,11 +311,12 @@ async function testX402() {
     } else {
       result.innerHTML = `❌ Unexpected response: ${response.status}`
     }
-    
+
   } catch (error) {
     result.innerHTML = `❌ Error: ${error.message}`
   }
-  ```
+```
+
 - **Failure Interpretation**:
   - If `base64: invalid input`: Header value was corrupted or not base64 encoded by the server handler.
   - If missing `x402Version`, `scheme`, `amount`, or `payTo`: Requirements structure does not meet x402 v2 specification.
@@ -323,11 +330,13 @@ This HTTP 402 response is expected for initial requests before payment headers a
 #### 1. ✅ Check Freighter Network via `@stellar/freighter-api`
 
 Run the following in the browser console:
+
 ```javascript
 import { getNetworkDetails } from '@stellar/freighter-api'
 const details = await getNetworkDetails()
 console.log('Network details:', details)
 ```
+
 - **Expected Result**: `{ network: 'TESTNET' }`
 - **Failure Interpretation**:
   - If `{ network: 'PUBLIC' }`: Wallet is on Mainnet. Open Freighter settings -> Network -> Switch to "Testnet".
@@ -340,6 +349,7 @@ import { isConnected } from '@stellar/freighter-api'
 const status = await isConnected()
 console.log('Connection status:', status)
 ```
+
 - **Expected Result**: `{ isConnected: true }`
 - **Failure Interpretation**:
   - If `isConnected: false`: Click "CONNECT FREIGHTER" in the app header and approve connection prompt.
@@ -351,6 +361,7 @@ import { getAddress } from '@stellar/freighter-api'
 const addr = await getAddress()
 console.log('Address:', addr.address)
 ```
+
 - **Expected Result**: Returns a valid 56-character Stellar public key starting with `G` (e.g. `GBXXX...`).
 - **Failure Interpretation**:
   - If `addr.error`: Freighter popup was dismissed or locked.
@@ -359,9 +370,11 @@ console.log('Address:', addr.address)
 #### 4. ✅ Verify Backend Environment Setup
 
 Run health check command:
+
 ```bash
 curl -s http://localhost:3001/health | jq .
 ```
+
 - **Expected Result**:
   ```json
   {
@@ -385,12 +398,12 @@ curl -s http://localhost:3001/health | jq .
 
 ## Standard Error Messages & Fix Matrix
 
-| Error Message | Root Cause | Stated Fix |
-|---|---|---|
-| `"Switch Freighter to TESTNET"` | Wallet network set to `PUBLIC` or Custom RPC | Open Freighter settings and switch active network to `Testnet`. |
+| Error Message                     | Root Cause                                          | Stated Fix                                                                          |
+| --------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `"Switch Freighter to TESTNET"`   | Wallet network set to `PUBLIC` or Custom RPC        | Open Freighter settings and switch active network to `Testnet`.                     |
 | `"Freighter extension not found"` | `@stellar/freighter-api` failed to detect extension | Install the extension from [freighter.app](https://freighter.app) and refresh page. |
-| `"Wallet not connected"` | Site domain unapproved in Freighter | Click **Connect Wallet** button and accept prompt in Freighter. |
-| `"User declined signature"` | User cancelled Soroban auth signing prompt | Retry search query and click **Approve** in Freighter popup. |
+| `"Wallet not connected"`          | Site domain unapproved in Freighter                 | Click **Connect Wallet** button and accept prompt in Freighter.                     |
+| `"User declined signature"`       | User cancelled Soroban auth signing prompt          | Retry search query and click **Approve** in Freighter popup.                        |
 
 ---
 
@@ -408,18 +421,19 @@ async function debugStellarWallet() {
     console.error('❌ Wallet disconnected')
     return { ok: false, reason: 'Disconnected' }
   }
-  
+
   const address = await getAddress()
   const net = await getNetworkDetails()
-  
+
   console.log('✅ Connected Address:', address.address)
   console.log('✅ Network:', net.network)
-  
+
   return { ok: net.network === 'TESTNET', address: address.address, network: net.network }
 }
 
 await debugStellarWallet()
 ```
+
 - **Expected Result**: `Diagnostics running...`, outputs address and `{ ok: true, address: "G...", network: "TESTNET" }`.
 - **Failure Interpretation**: Identifies whether connection, network mismatch, or lock state is preventing transaction authorization.
 
@@ -432,6 +446,7 @@ To verify the x402 flow via command line:
 ```bash
 npm run test:search "Stellar blockchain"
 ```
+
 - **Expected Result**:
   ```text
   🔍 Testing StellarSearch x402 payment flow...
@@ -442,3 +457,77 @@ npm run test:search "Stellar blockchain"
 - **Failure Interpretation**:
   - If step 1 fails with 500: Server configuration issue or backend offline.
   - If payment authorization fails: Ensure test wallet has sufficient XLM and USDC testnet balance.
+
+---
+
+## Local (Express) vs. Vercel (Serverless) Runtime Discrepancies (#236)
+
+StellarSearch runs both as a persistent Node.js Express server (`server/index.ts`) and as Vercel Serverless Functions (`api/*.ts`). Diagnostic steps for common divergence scenarios:
+
+### 1. Endpoint Returns 404 on Vercel but Works on Express
+
+- **Symptoms**: `GET /images` or `GET /news` succeeds against `http://localhost:3001`, but returns `404 Not Found` against `https://<vercel-deployment>/api/images` or `/images`.
+- **Root Cause**: `/images`, `/news`, `POST /search/batch`, and `POST /jobs` are currently implemented only in the Express server (`server/index.ts`). Serverless functions in `api/` currently only expose `search`, `health`, and `ai/chat`.
+- **Resolution**:
+  - Run the Express server locally via `npm run server` or Docker (`npm run docker:run`).
+  - Use the MCP server (`mcp-server/index.ts`) configured with `SEARCH_API_URL=http://localhost:3001`.
+  - Track serverless porting progress:
+    - Image search serverless: [#237](https://github.com/Emmy123222/Stellar-Search/issues/237) / [#330](https://github.com/Emmy123222/Stellar-Search/issues/330)
+    - News search serverless: [#238](https://github.com/Emmy123222/Stellar-Search/issues/238) / [#331](https://github.com/Emmy123222/Stellar-Search/issues/331)
+    - Batch streaming: [#325](https://github.com/Emmy123222/Stellar-Search/issues/325)
+    - Async search jobs: [#324](https://github.com/Emmy123222/Stellar-Search/issues/324)
+
+### 2. Activity Statistics Show "n/a" on Vercel Health Checks
+
+- **Symptoms**: The UI dashboard shows `n/a` for total queries and latency on Vercel deployments, while local Express displays live numbers.
+- **Root Cause**: By design. Serverless functions are stateless and scale to zero. Per-instance in-memory counters would reset on every cold start and report misleading partial values. Vercel's `/api/health` deliberately declares `statsSupported: false` via `declareStatsUnsupported()`.
+- **Diagnostic Command**:
+  ```bash
+  curl -s https://<vercel-deployment>/api/health | jq .
+  ```
+- **Expected Result**:
+  ```json
+  {
+    "status": "ok",
+    "statsSupported": false,
+    "unsupportedFields": ["totalQueries", "totalUsdcSettled", "avgLatencyMs", "uptime"],
+    "statsUnavailableReason": "Serverless functions are stateless and scale to zero..."
+  }
+  ```
+
+### 3. Serverless Streaming Timeouts or Truncated Responses
+
+- **Symptoms**: Streaming responses on `/api/ai/chat` or batch endpoints terminate abruptly with `504 Gateway Timeout` or truncated chunks.
+- **Root Cause**: Vercel Serverless Functions have maximum execution durations (default 10s on Hobby tier, 60s on Pro tier). Additionally, intermediate proxies may buffer streaming output if `X-Accel-Buffering: no` or `Cache-Control: no-transform` is omitted.
+- **Resolution**:
+  - Ensure the client sends `Accept: text/event-stream` or `application/x-ndjson`.
+  - For long-running batch search tasks, use Express (`server/index.ts`).
+
+### 4. CORS Preflight & Header Exposure Diagnosis
+
+- **Symptoms**: Browser error: `Refused to get response header 'PAYMENT-REQUIRED'`.
+- **Root Cause**: Missing CORS headers in serverless preflight or misconfigured reverse proxy.
+- **Diagnostic Command**:
+  ```bash
+  curl -i -X OPTIONS "https://<vercel-deployment>/api/search" \
+    -H "Origin: http://localhost:5173" \
+    -H "Access-Control-Request-Method: GET" \
+    -H "Access-Control-Request-Headers: X-Payment"
+  ```
+- **Expected Headers in Response**:
+  ```http
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, POST, OPTIONS
+  Access-Control-Expose-Headers: PAYMENT-REQUIRED, X-Payment-Required, X-Payment-Response, X-Request-Id, Retry-After
+  ```
+
+### 5. Parameter Validation vs. Payment Rejection Proof
+
+- **Diagnosis**: Verify whether an error originates from parameter validation or payment settlement:
+  ```bash
+  # Parameter validation failure: returns 400 immediately (payment never consulted)
+  curl -i "http://localhost:3001/search?q=stellar&count=999"
+
+  # Payment challenge: valid parameters, unpaid -> returns 402 with challenge
+  curl -i "http://localhost:3001/search?q=stellar&count=5"
+  ```
