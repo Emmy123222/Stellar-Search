@@ -111,8 +111,17 @@ export interface NewsSearchResponse {
 export type NewsResponse = NewsSearchResponse
 
 // ─── API Error Response ────────────────────────────────────────────────────
+export enum SerperErrorCode {
+  AUTH_FAILURE = 'SERPER_AUTH_FAILURE',
+  QUOTA_EXCEEDED = 'SERPER_QUOTA_EXCEEDED',
+  RATE_LIMITED = 'SERPER_RATE_LIMITED',
+  PROVIDER_ERROR = 'SERPER_PROVIDER_ERROR',
+  NETWORK_ERROR = 'SERPER_NETWORK_ERROR',
+}
+
 export interface ApiErrorResponse {
   error: string
+  providerCode?: SerperErrorCode
   credit?: CreditReceipt
 }
 

@@ -154,7 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const cleanQ = validation.cleanQ
 
-  const { count, freshness, includeDomains, excludeDomains } = req.query as Record<string, string>
+  const { includeDomains, excludeDomains } = req.query as Record<string, string>
 
   // ─── Parameter validation (#188) ─────────────────────────────────────────
   const validatedCount = validateCount(req.query.count, SEARCH_COUNT)
@@ -223,6 +223,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const requestBody: Record<string, unknown> = {
       q: finalQ,
       num: count,
+    }
 
     if (tbs) requestBody.tbs = tbs
 

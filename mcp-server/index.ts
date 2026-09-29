@@ -126,7 +126,7 @@ export function getCapabilityDoc() {
       "GET /search?q=<query>": `${AMOUNT_USDC} USDC via x402`,
       "GET /images?q=<query>": `${AMOUNT_USDC} USDC via x402 — images`,
       "GET /news?q=<query>": `${AMOUNT_USDC} USDC via x402 — news`,
-      "POST /search/batch": `${AMOUNT_USDC} USDC per query, JSONL streaming (max 10, aggregate ${MAX_BATCH_SIZE * parseFloat(AMOUNT_USDC)} USDC)`,
+      "POST /search/batch": `${AMOUNT_USDC} USDC per query, JSONL streaming (max 10, aggregate ${10 * parseFloat(AMOUNT_USDC)} USDC)`,
       "POST /jobs": `${AMOUNT_USDC} USDC via x402, async job + webhook`,
       "GET /jobs/:id": "job status + verified payment state",
       "POST /ai/chat": "Groq AI — free",
@@ -626,21 +626,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   // Helper to handle abort without false completion
   const isAborted = () => controller.signal.aborted;
 
-  // Keep the externally exposed tools backed by the tested handler
-  // implementations. The remaining branches below handle image, news, and
-  // stats tools which have different response shapes.
-  if (name === 'web_search') {
-    const input = args as { query: string; count?: number; freshness?: string }
-    return webSearch(fetch, SERVER_URL, input.query, input.count ?? 5, input.freshness)
-  }
-  if (name === 'ai_summarize') {
-    const input = args as { text: string; instruction?: string }
-    return aiSummarize(groq, input.text, input.instruction ?? 'summarise')
-  }
-  if (name === 'check_balance') {
-    const input = args as { address: string }
-    return checkBalance(fetch, input.address)
-  }
+
 
   // ── web_search with progress ──────────────────────────────────────────
   if (name === "web_search") {
@@ -696,6 +682,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       await sendProgress(server, progressToken, 'search', `Searching Serper for "${query}"`)
 
+      const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 10)
+      const params = new URLSearchParams({ q: query, count: String(safeCount) })
+      if (freshness) params.set('freshness', freshness)
+      if (locale) params.set('locale', locale)
+      if (country) params.set('country', country)
+      if (language) params.set('language', language)
+
       const res = await fetch(`${SERVER_URL}/search?${params}`, {
         signal: controller.signal,
       });
@@ -736,7 +729,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           {
             type: "text",
             text: [
-              ...headerLines,
+              `Results for "${data.executedQuery || query}":`,
               formatted,
             ].join("\n"),
           },

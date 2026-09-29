@@ -77,6 +77,7 @@ import { buildReconciliationRecord, type ReconciliationRoute } from '../src/lib/
 import { appendReconciliationRecord } from './reconciliationStore.js'
 import { ConcurrencyGate } from './concurrency.js'
 import { getReadiness } from './readiness.js'
+import { getX402DiscoveryMetadata, requestOrigin } from '../src/lib/x402Discovery.js'
 import { validateQuery, MAX_QUERY_LENGTH } from '../src/lib/queryValidation.js'
 
 dotenv.config()
@@ -606,6 +607,7 @@ app.get('/search', async (req: Request, res: Response) => {
     const requestBody: Record<string, unknown> = {
       q: finalQ,
       num: count,
+    }
 
     if (tbs) requestBody.tbs = tbs
 

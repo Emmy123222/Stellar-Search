@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink, Star, Clock, Sparkles, Search } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
@@ -19,6 +19,12 @@ export function SearchResults({ results, query, isLoading }: Props) {
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
+
+  useEffect(() => {
+    setSummary('')
+    setSummaryError(null)
+    setSummarizing(false)
+  }, [query, results])
 
   if (isLoading) {
     return (
