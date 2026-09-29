@@ -129,7 +129,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
             {(session.status === 'complete' || session.status === 'searching') && (
               <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-                <SearchResults results={session.results} query={session.query} isLoading={session.status === 'searching'} />
+                <SearchResults results={session.results} query={session.query} isLoading={session.status === 'searching'} peopleAlsoAsk={session.peopleAlsoAsk} />
               </motion.div>
             )}
 
