@@ -22,6 +22,8 @@ vi.mock('groq-sdk', () => ({
 }))
 vi.mock('./logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  privacySafeIp: vi.fn((ip: string) => ip ? `ip:${ip}` : 'ip:unknown'),
+  privacySafeQuery: vi.fn(() => undefined),
 }))
 
 import { validateQuery, MAX_QUERY_LENGTH } from './index'

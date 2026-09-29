@@ -23,19 +23,8 @@ import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
-import logger from './logger'
+import logger, { privacySafeIp, privacySafeQuery } from './logger'
 import crypto, { randomUUID } from 'crypto'
-
-function privacySafeIp(value: unknown): string {
-  const raw = typeof value === 'string' ? value : ''
-  return raw
-    ? `ip:${crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16)}`
-    : 'ip:unknown'
-}
-
-function privacySafeQuery(_value: unknown): undefined {
-  return undefined
-}
 import { STELLAR_NETWORK, AMOUNT_USDC, AMOUNT_STROOPS, USDC_CONTRACT } from '../src/lib/constants'
 import {
   type CountBounds,
@@ -427,7 +416,6 @@ const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }]
 app.use((req, res, next) => {
   if (req.path === '/search') {
     const { q } = req.query as Record<string, string>
-    const truncatedQ = q ? String(q).substring(0, 50) : ''
 
     res.on('finish', () => {
       let paymentStatus = 'error'
@@ -437,7 +425,7 @@ app.use((req, res, next) => {
       logger.info('Payment attempt', {
         timestamp: new Date().toISOString(),
         ip: privacySafeIp(req.ip),
-        query: privacySafeQuery(truncatedQ),
+        query: privacySafeQuery(q),
         paymentStatus: paymentStatus,
       })
     })
