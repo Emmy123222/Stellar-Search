@@ -241,38 +241,45 @@ export function useSearch(
       const data = await paidRes.json()
       console.log('✅ Search complete!')
 
+      const paymentResponseHeader = paidRes.headers.get('PAYMENT-RESPONSE') || paidRes.headers.get('x-payment-response')
+      const paymentResponse = paymentResponseHeader 
+        ? httpClient.parsePaymentResponseHeader(paymentResponseHeader) 
+        : null
+      const txHash = data.txHash || paymentResponse?.transactionHash || null
+      const paidAmount = data.paidAmount || paymentResponse?.amount || null
+
       // Flow step 6 — result received and rendered
       setSession({
         query,
         results:     data.results    ?? [],
-        txHash:      data.txHash     ?? null,
-        paidAmount:  data.paidAmount ?? null,
+        txHash:      txHash,
+        paidAmount:  paidAmount,
         status:      'complete',
         step:        6,
         durationMs:  Date.now() - t0,
         suggestions: data.suggestions ?? [],
       })
 
-      if (data.txHash) {
-        toast.success(`Payment settled: ${data.paidAmount || '0.001'} USDC`, {
+      if (txHash) {
+        toast.success(`Payment settled: ${paidAmount || '0.001'} USDC`, {
           description: 'View transaction on Stellar network',
           action: {
             label: 'Explorer',
-            onClick: () => window.open(explorerTxUrl(data.txHash), '_blank')
+            onClick: () => window.open(explorerTxUrl(txHash), '_blank')
           }
         })
       }
 
       // Persist receipt
-      if (data.txHash) {
+      if (txHash) {
         try {
           const receiptsRaw = localStorage.getItem('stellarsearch_receipts')
           const receipts: SearchReceipt[] = receiptsRaw ? JSON.parse(receiptsRaw) : []
           
           const newReceipt: SearchReceipt = {
-            txHash: data.txHash,
+            txHash: txHash,
             query: query.trim(),
-            amount: data.paidAmount || '0.001',
+            amount: paidAmount || '0.001',
             timestamp: new Date().toISOString(),
             network: data.network || 'stellar:testnet',
           }
