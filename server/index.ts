@@ -18,6 +18,7 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
+import { createSharedRateLimitStore } from './rateLimitStore'
 import { buildCorsOptions, getCorsStartupMessage } from './corsConfig.js'
 import Groq from 'groq-sdk'
 import { paymentMiddlewareFromConfig } from '@x402/express'
@@ -123,6 +124,8 @@ const limiter = rateLimit({
   max: RATE_LIMIT_PER_MINUTE,
   standardHeaders: true,
   legacyHeaders: true,
+  store: createSharedRateLimitStore(),
+  passOnStoreError: true,
   handler: (_req: Request, res: Response) => {
     res.setHeader('Retry-After', '60')
     res.status(429).json({ error: 'Too many requests, please try again later.' })
