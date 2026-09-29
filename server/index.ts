@@ -513,6 +513,20 @@ app.use((req, res, next) => {
   next()
 })
 
+// Validate requests for query correctness before any payment challenge or settlement
+app.use((req: Request, res: Response, next) => {
+  const paidRoutes = ['/search', '/images', '/news']
+  if (paidRoutes.includes(req.path)) {
+    const { q } = req.query as Record<string, string>
+    const v = validateQuery(q)
+    if (!v.ok) {
+      const errorBody: ApiErrorResponse = { error: v.error }
+      return res.status(400).json(errorBody)
+    }
+  }
+  next()
+})
+
 app.use(paymentMiddlewareFromConfig(x402Routes, facilitatorClient, schemes))
 
 // ─── Payment Replay Protection Middleware ─────────────────────────────────
