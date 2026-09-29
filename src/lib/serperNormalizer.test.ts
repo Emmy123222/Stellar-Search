@@ -6,9 +6,19 @@ import {
   normalizeImageResults,
   normalizeNewsResults,
   normalizeQueryMetadata,
+  normalizePeopleAlsoAsk,
 } from './serperNormalizer'
 
 describe('serperNormalizer helper functions', () => {
+  describe('normalizePeopleAlsoAsk', () => {
+    it('normalizes safe entries and skips malformed or unsafe rows', () => {
+      expect(normalizePeopleAlsoAsk({ peopleAlsoAsk: [
+        { question: 'What is Stellar?', snippet: 'A decentralized network.', title: 'Stellar', link: 'https://stellar.org/learn' },
+        { question: 'Unsafe', snippet: 'Nope', link: 'javascript:alert(1)' },
+      ] })).toEqual([{ question: 'What is Stellar?', answer: 'A decentralized network.', source: 'Stellar', url: 'https://stellar.org/learn' }])
+    })
+  })
+
   describe('isValidHttpUrl', () => {
     it('returns true for valid http and https URLs', () => {
       expect(isValidHttpUrl('https://stellar.org')).toBe(true)

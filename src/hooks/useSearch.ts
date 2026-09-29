@@ -48,6 +48,13 @@ export interface SearchResult {
   publishedAt?: string
 }
 
+export interface PeopleAlsoAskResult {
+  question: string
+  answer: string
+  source: string
+  url: string
+}
+
 // x402 flow steps, per the official x402 quickstart:
 //   1 Request   2 402 Received   3 Sign Auth   4 Retry   5 Facilitate   6 Result
 export type PaymentStep = 1 | 2 | 3 | 4 | 5 | 6
@@ -62,6 +69,7 @@ export interface SearchSession {
   error?: string
   durationMs?: number
   suggestions: string[]
+  peopleAlsoAsk?: PeopleAlsoAskResult[]
 }
 
 interface ActivePayment {
@@ -76,7 +84,7 @@ export function useSearch(
   walletNetwork?: string,
 ) {
   const [session, setSession] = useState<SearchSession>({
-    query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
+    query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [], peopleAlsoAsk: [],
   })
   const activePaymentRef = useRef<ActivePayment | null>(null)
   const previousNetworkRef = useRef(walletNetwork)
@@ -118,7 +126,7 @@ export function useSearch(
       }
     }
 
-    setSession({ query, results: [], txHash: null, paidAmount: null, status: 'searching', step: 1, suggestions: [] })
+    setSession({ query, results: [], txHash: null, paidAmount: null, status: 'searching', step: 1, suggestions: [], peopleAlsoAsk: [] })
 
     const t0     = Date.now()
     const params = new URLSearchParams({ q: query, count: String(count), suggestions: '1' })
@@ -197,7 +205,7 @@ export function useSearch(
         const data = await firstRes.json()
         return setSession({
           query, results: data.results ?? [], txHash: null,
-          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [],
+          paidAmount: null, status: 'complete', step: 6, durationMs: Date.now() - t0, suggestions: data.suggestions ?? [], peopleAlsoAsk: data.peopleAlsoAsk ?? [],
         })
       }
 
@@ -251,6 +259,7 @@ export function useSearch(
         step:        6,
         durationMs:  Date.now() - t0,
         suggestions: data.suggestions ?? [],
+        peopleAlsoAsk: data.peopleAlsoAsk ?? [],
       })
 
       if (data.txHash) {
@@ -304,7 +313,7 @@ export function useSearch(
   }, [walletAddress, walletNetwork])
 
   const reset = useCallback(() => {
-    setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [] })
+    setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [], peopleAlsoAsk: [] })
   }, [])
 
   return { session, search, reset, cancelActivePayment }

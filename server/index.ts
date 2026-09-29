@@ -58,6 +58,7 @@ import {
   normalizeQueryMetadata,
   normalizeAnswerBox,
   normalizeKnowledgeGraph,
+  normalizePeopleAlsoAsk,
 } from '../src/lib/serperNormalizer.js'
 import type {
   SearchResponse,
@@ -625,6 +626,7 @@ app.get('/search', async (req: Request, res: Response) => {
     const queryMeta = normalizeQueryMetadata(data, cleanQ)
     const answerBox = normalizeAnswerBox(data)
     const knowledgeGraph = normalizeKnowledgeGraph(data)
+    const peopleAlsoAsk = normalizePeopleAlsoAsk(data)
 
     // The real tx hash comes from the X-PAYMENT-RESPONSE header set by the facilitator
     txHash = (req.headers['x-payment-response'] as string) || null
@@ -679,6 +681,7 @@ app.get('/search', async (req: Request, res: Response) => {
       count: results.length,
       answerBox,
       knowledgeGraph,
+      peopleAlsoAsk,
       network: NETWORK,
       paidAmount: AMOUNT_USDC,
       currency: 'USDC',
