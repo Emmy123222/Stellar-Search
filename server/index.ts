@@ -1527,6 +1527,9 @@ app.get('/metrics', (_req: Request, res: Response) => {
 // `Accept: text/event-stream`; otherwise returns the full completion as JSON
 // (back-compat fallback for callers that don't support SSE).
 app.post('/ai/chat', async (req: Request, res: Response) => {
+  if (req.method === 'POST' && req.headers['content-type'] && !req.headers['content-type'].includes('application/json')) {
+    return res.status(415).json({ error: 'Unsupported Media Type: application/json required' })
+  }
   if (!groq) {
     return res.status(503).json({ error: 'AI assistant is not configured.' })
   }
