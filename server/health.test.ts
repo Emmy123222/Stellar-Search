@@ -101,6 +101,15 @@ describe('POST /ai/chat validation', () => {
     const res = await request(app).post('/ai/chat').send({ messages: [] }).set('Content-Type', 'application/json')
     expect(res.status).toBe(400)
   })
+
+  it('returns 413 before handling a JSON body larger than 64 KiB', async () => {
+    const res = await request(app)
+      .post('/ai/chat')
+      .send({ messages: [{ role: 'user', content: 'x'.repeat(70_000) }] })
+      .set('Content-Type', 'application/json')
+
+    expect(res.status).toBe(413)
+  })
 })
 
 describe('GET /search validation (x402 middleware bypassed via mock)', () => {
