@@ -2,7 +2,7 @@ import winston from 'winston';
 import crypto from 'crypto';
 import { redact } from '../src/lib/redactor.js';
 
-export function privacySafeQuery(value: unknown): undefined {
+export function privacySafeQuery(_value: unknown): undefined {
   // Query text is intentionally never logged; use request IDs for correlation.
   return undefined
 }

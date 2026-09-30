@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
 
 // Mock MCP SDK before importing server
 const mockSetRequestHandler = vi.fn()
@@ -51,26 +51,9 @@ process.env.SEARCH_API_URL = 'http://localhost:3001'
 process.env.MCP_ENABLE_RECEIPTS = '1'
 
 import { HORIZON_URL, USDC_ISSUER, STELLAR_NETWORK, AMOUNT_USDC } from '../src/lib/constants'
-import {
-  SERVERLESS_STATS_UNAVAILABLE_REASON,
-  declareStatsSupported,
-  declareStatsUnsupported,
-} from '../src/lib/serverHealth'
-
-const abortError = () => Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })
-
-// Capture handler references at module load — mock call history is cleared per
-// test, but registrations only happen once (ESM module cache).
-let mcpMod: any
-let callToolHandler: Function | undefined
-let mcpCancelHandler: Function | undefined
 
 beforeAll(async () => {
-  mcpMod = await import('./index.js')
-  const call = mockSetRequestHandler.mock.calls.find((c: any) => c[0] === CallToolRequestSchemaMock)
-  callToolHandler = call?.[1]
-  const cancel = mockSetNotificationHandler.mock.calls.find((c: any) => c[0] === CancelledNotificationSchemaMock)
-  mcpCancelHandler = cancel?.[1]
+  await import('./index.js')
 })
 
 /**

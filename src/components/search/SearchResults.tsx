@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles, Search } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles } from 'lucide-react'
 import type { SearchResult } from '../../hooks/useSearch'
+import { useDirection } from '../../lib/rtl'
 
 interface Props {
   results: SearchResult[]
@@ -16,6 +17,7 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
 )
 
 export function SearchResults({ results, query, isLoading }: Props) {
+  const { isRtl }                           = useDirection()
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
@@ -166,7 +168,7 @@ export function SearchResults({ results, query, isLoading }: Props) {
               <Sparkles className="w-3 h-3 text-neon-cyan" />
               <span className="font-display text-xs text-neon-cyan tracking-wider">AI SUMMARY · GROQ</span>
               {summarizing && (
-                <span className="flex items-center gap-1 ml-auto">
+                <span className="flex items-center gap-1 ms-auto">
                   {[0, 1, 2].map(j => (
                     <motion.div
                       key={j}
@@ -260,7 +262,11 @@ export function SearchResults({ results, query, isLoading }: Props) {
               animate={{ width: `${r.relevanceScore * 100}%` }}
               transition={{ delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
               className="h-full rounded-full"
-              style={{ background: 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))' }}
+              style={{
+                background: isRtl
+                  ? 'linear-gradient(270deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))'
+                  : 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))',
+              }}
             />
           </div>
         </motion.a>

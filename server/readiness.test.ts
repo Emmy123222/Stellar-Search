@@ -42,6 +42,7 @@ describe('readiness — cached low-cost checks with strict timeouts', () => {
     }) as any
 
     const first = await getReadiness()
+    expect(first.status).toBeDefined()
     expect(callCount).toBeGreaterThan(0)
     const second = await getReadiness()
     expect(second.cached).toBe(true)

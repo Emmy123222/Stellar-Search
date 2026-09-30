@@ -24,7 +24,7 @@ export default defineConfig({
       'src/pages/DocsPage.test.tsx',
       'src/pages/SearchPage.test.tsx'
     ],
-    include: ['src/**/*.{test,spec}.{ts,tsx}', 'server/**/*.test.{ts,tsx}', 'mcp-server/**/*.test.{ts,tsx}', 'api/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'server/**/*.test.{ts,tsx}', 'mcp-server/**/*.test.{ts,tsx}', 'api/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}', 'packages/**/*.{test,spec}.{ts,tsx}'],
     setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',

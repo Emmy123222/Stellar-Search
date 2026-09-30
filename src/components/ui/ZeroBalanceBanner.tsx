@@ -42,7 +42,7 @@ export function ZeroBalanceBanner({ connected, publicKey, usdcBalance }: Props) 
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
-          className="relative flex items-start gap-3 p-4 pr-10 rounded-xl border border-neon-amber/25 bg-neon-amber/5"
+          className="relative flex items-start gap-3 p-4 pe-10 rounded-xl border border-neon-amber/25 bg-neon-amber/5"
           style={{ boxShadow: '0 0 20px rgba(255,193,7,0.06)' }}
           role="status"
         >
@@ -74,7 +74,7 @@ export function ZeroBalanceBanner({ connected, publicKey, usdcBalance }: Props) 
           <button
             onClick={onDismiss}
             aria-label="Dismiss zero-balance notice"
-            className="absolute top-3 right-3 p-1 rounded text-white/30 hover:text-white/70 transition-colors"
+            className="absolute top-3 end-3 rtl:right-auto rtl:left-3 p-1 rounded text-white/30 hover:text-white/70 transition-colors"
           >
             <X className="w-3.5 h-3.5" />
           </button>

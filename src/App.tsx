@@ -5,10 +5,12 @@ import { GroqAssistant }                       from './components/ai'
 import { SearchPage, DocsPage, DashboardPage } from './pages'
 import { useFreighterWallet, useSearch }       from './hooks'
 import { Toaster }                             from 'sonner'
+import { useDirection }                         from './lib/rtl'
 
 type Page = 'search' | 'docs' | 'dashboard'
 
 export default function App() {
+  const { isRtl } = useDirection()
   const [page, setPage] = useState<Page>('search')
   const scrollPositions = useRef<Record<Page, number>>({ search: 0, docs: 0, dashboard: 0 })
   const previousPage = useRef<Page>(page)
@@ -112,7 +114,7 @@ export default function App() {
       {/* Floating Groq AI assistant */}
       <GroqAssistant lastSearch={lastSearch} />
 
-      <Toaster position="bottom-right" theme="dark" duration={4000} richColors />
+      <Toaster position={isRtl ? 'bottom-left' : 'bottom-right'} dir={isRtl ? 'rtl' : 'ltr'} theme="dark" duration={4000} richColors />
     </div>
   )
 }

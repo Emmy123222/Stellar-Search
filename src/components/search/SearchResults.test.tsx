@@ -174,6 +174,7 @@ describe('SearchResults — summary state reset (issue #95)', () => {
     )
 
     // Should not render any result cards
+    expect(container.firstChild).toBeNull()
     expect(screen.queryByText('SUMMARIZE')).toBeNull()
   })
 })

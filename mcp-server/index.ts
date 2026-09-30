@@ -43,17 +43,7 @@ import {
   AI_INSTRUCTION_MAX_LENGTH,
   AI_COMBINED_MAX_LENGTH,
 } from '../src/lib/constants'
-import { formatReceipt } from './receipt'
-import type {
-  SearchResponse,
-  ImageSearchResponse,
-  NewsSearchResponse,
-  ApiErrorResponse,
-  SearchResult,
-  ImageResult,
-  NewsResult,
-} from '../src/types/index.js'
-import { formatConfigurationError, readMcpConfig } from '../src/lib/config'
+import type { ApiErrorResponse } from '../src/types/index.js'
 import { resolveStat, statsUnavailableReason } from '../src/lib/serverHealth'
 
 dotenv.config();
@@ -264,7 +254,7 @@ const pendingRequests = new Map<string | number, AbortController>();
 // Surfaces the auditable credit (see server/index.ts → issueCreditForFailure)
 // issued when a paid search fails after settlement, so agents can see their
 // recovery record instead of just a bare error string.
-function formatFailureMessage(e: ApiErrorResponse, status: number): string {
+export function formatFailureMessage(e: ApiErrorResponse, status: number): string {
   const base = e.error || `HTTP ${status}`
   if (!e.credit) return base
   return `${base} — credit issued: ${e.credit.creditId} (expires ${e.credit.expiresAt}, redeem via POST /credits/${e.credit.creditId}/redeem)`
@@ -722,7 +712,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         )
         .join("\n\n");
 
-      const timingsStr = data.timings ? ` (server: validation ${data.timings.validationMs ?? '?'}ms, serper ${data.timings.serperMs ?? '?'}ms)` : ''
       return {
         structuredContent: { query: data.executedQuery || query, results: data.results, count: data.count, payment: { amount: data.paidAmount, currency: data.currency, network: data.network }, latencyMs: data.latencyMs, txHash: data.txHash ?? null },
         content: [

@@ -88,6 +88,40 @@ npm run search:cli -- "Stellar x402" --mode search --count 5 --timeout 30000 --f
 
 The CLI supports `discovery`, `quote`, and `search` modes, emits machine-readable JSON when `--json` is used, and can write a receipt file with `--receipt path/to/file.json`. For paid actions, prefer secure environment variables or a protected prompt for signing material; never pass private keys on the command line or print them in logs.
 
+### 7. TypeScript Client SDK (`@stellar-search/client`)
+
+External autonomous agents, backend services, and web applications can use the official typed TypeScript SDK located in [`packages/typescript-client`](packages/typescript-client):
+
+```typescript
+import { StellarSearchClient, createServerSigner } from '@stellar-search/client'
+
+const client = new StellarSearchClient({
+  baseUrl: process.env.SEARCH_API_URL || 'http://localhost:3001',
+  signer: createServerSigner({
+    getSecretKey: async () => process.env.STELLAR_PRIVATE_KEY!,
+  }),
+  network: 'stellar:testnet',
+})
+
+// Paid web search with automatic 402 challenge negotiation & payment retry
+const response = await client.search('Stellar smart contracts', { count: 5 })
+console.log(response.results)
+
+// Verify settlement receipt on-chain via Horizon
+if (response.txHash) {
+  const verification = await client.verifyReceipt({
+    txHash: response.txHash,
+    query: response.query,
+    amount: response.paidAmount,
+    network: response.network,
+    timestamp: new Date().toISOString(),
+  })
+  console.log(`Receipt verified: ${verification.status}`) // 'confirmed'
+}
+```
+
+See [`packages/typescript-client/README.md`](packages/typescript-client/README.md) for browser signer (Freighter), server signer (Keypair/secrets), and complete API docs.
+
 ---
 
 ## Environment Variables
@@ -643,6 +677,12 @@ stellar-search/
 │   ├── pages/                        # SearchPage, DocsPage, DashboardPage
 │   └── i18n/                         # i18next setup + locales/en/*.json (#345)
 │
+├── packages/                         # Monorepo client packages
+│   └── typescript-client/            # Typed TypeScript client SDK (@stellar-search/client)
+│       ├── src/                      # Client, signers (browser & server), x402, verification
+│       ├── examples/                 # Browser signer (Freighter) and Server signer (Agent)
+│       └── tests/                    # Automated SDK test suite
+│
 ├── server/                           # EXPRESS runtime (the only one serving /images, /news)
 │   ├── index.ts                      # App + x402 middleware, paid-route param validation,
 │   │                                 # /search /images /news /search/batch /jobs /health /ai/chat
@@ -822,7 +862,22 @@ Both runtimes enforce identical x402 payment semantics (`AMOUNT_STROOPS = "10000
 
 ---
 
-### 6. Reproducible Verification Commands
+### 6. Response Compression & Content Negotiation (Issue #330)
+
+Search snippets, rich structured payloads, and non-streaming Groq AI completions negotiate high-performance HTTP compression across runtimes without breaking streaming, 204/304 semantics, or x402 payment integrity:
+
+| Rule / Feature               | Express (`server/index.ts` via `compressionMiddleware`)                                                                       | Vercel Serverless (`api/` via `applyServerlessHeaders` + `vercel.json`)                                                 |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Negotiated Algorithms**    | Prioritizes Brotli (`br`) > Gzip (`gzip`) > Deflate (`deflate`) via parsed `Accept-Encoding` quality weights (`q-values`).    | Edge CDN Brotli/Gzip negotiation + programmatic `attachServerlessCompression`.                                        |
+| **Threshold Gate**           | Payloads `< 1024 bytes` remain uncompressed to avoid compression overhead. Configurable via `COMPRESSION_THRESHOLD_BYTES`.     | Default 1024 bytes. Smaller responses pass through uncompressed.                                                       |
+| **Vary Header**              | Always appends `Vary: Accept-Encoding` on compressible resources to ensure downstream proxies and caches separate encodings. | Enforced in `vercel.json` under `/api/(.*)` headers and in `applyServerlessHeaders`.                                  |
+| **Streaming / SSE Bypass**   | `text/event-stream` (AI chat SSE) and `application/x-ndjson` (batch JSONL) bypass buffering and compression completely.     | `text/event-stream` flushes directly without compression or buffering (`X-Accel-Buffering: no`).                      |
+| **No-Transform Bypass**      | `Cache-Control: no-transform` or `x-no-compression: 1` immediately disables compression.                                     | Respected in both serverless headers and route handlers.                                                              |
+| **x402 & Status Invariants** | `204 No Content` and `304 Not Modified` omit body and `Content-Encoding`. `PAYMENT-REQUIRED` and `X-Payment-Response` intact. | `204`/`304` remain bodyless; x402 challenge (`402`) and settlement (`200`) response headers strictly preserved.         |
+
+---
+
+### 7. Reproducible Verification Commands
 
 Use these exact commands to verify behavior across runtimes:
 
@@ -1381,6 +1436,22 @@ The `supply-chain` CI job generates a **CycloneDX SBOM** from the committed lock
 - Exceptions are **time-boxed**: each `[[IgnoredVulns]]` entry sets an `ignoreUntil` deadline and a `reason`, so an accepted risk re-flags CI for triage when it lapses.
 
 > See `CONTRIBUTING.md` → **Supply-Chain Security** for the full policy and how to add an exception.
+
+---
+
+## Right-to-Left (RTL) & Internationalization (#346)
+
+StellarSearch supports full bidirectional layouts (LTR and RTL) with a dedicated RTL test locale (**Arabic, `ar`**) without breaking x402 payment authorization, wallet interactions, or result flows:
+
+- **Logical CSS Properties**: Directional spacing and positioning use CSS logical properties (`margin-inline-start`, `pe-10`, `text-end`, `sm:end-0`, `inset-x-0`) rather than physical left/right rules.
+- **Direction-Aware Icons**: Directional flow indicators (e.g. progression arrows `→`, suggestion arrows, `Send` icon, `Disconnect` icon) use `.rtl-flip` (`transform: scaleX(-1)` under `[dir="rtl"]`) to point naturally in the reading direction.
+- **Interactive RTL Switcher**: The navigation bar includes a one-click locale toggle (`EN` ↔ `العربية (RTL)`) that sets `document.documentElement.dir` (`'rtl'` / `'ltr'`) and `document.documentElement.lang` in real time.
+- **Wallet & Payment Flows**:
+  - `WalletPanel`: Fixed/dropdown panel anchors to `sm:end-0` (`sm:inset-inline-end: 0`) and aligns transaction balances with `text-end`.
+  - `PaymentFlowVisualizer`: x402 step progression line spans `inset-x-5` with direction-aware progression glyphs.
+  - `GroqAssistant`: Floating trigger button and chat drawer anchor cleanly to `end-6` (`bottom-left` in RTL, `bottom-right` in LTR).
+  - `DashboardPage` & Recharts: Transaction audit logs align numbers via `text-end`, and the `BarChart` dynamically configures `YAxis orientation={isRtl ? 'right' : 'left'}`.
+- **Namespaced Translations**: Complete Arabic locale chunks in `src/i18n/locales/ar/` (`common.json`, `wallet.json`, `search.json`, `onboarding.json`, `errors.json`, `docs.json`) loaded on demand with instant fallback.
 
 ---
 

@@ -1,5 +1,6 @@
+import type { SearchResult } from '../hooks/useSearch'
 export type { WalletState, StellarTransaction } from '../hooks/useFreighterWallet'
-export type { SearchResult, SearchSession, SearchReceipt } from '../hooks/useSearch'
+export type { SearchSession, SearchResult } from '../hooks/useSearch'
 
 // ─── Answer Box ────────────────────────────────────────────────────────────
 /** Direct factual answer to a query (e.g., "what is X") */
@@ -131,6 +132,8 @@ export type ErrorResponse = ApiErrorResponse
 // ─── Credit Receipt ───────────────────────────────────────────────────────
 export interface CreditReceipt {
   id: string
+  creditId?: string
+  receiptId?: string
   amount: string
   reason: string
 }
@@ -142,6 +145,39 @@ export interface SearchReceipt {
   amount: string
   timestamp: string
   network: string
+  asset?: string
+  destination?: string
+}
+
+// ─── Receipt Verification Types ───────────────────────────────────────────
+export type ReceiptVerificationStatus = 'confirmed' | 'mismatched' | 'unverified'
+
+export interface ReceiptVerificationDetail {
+  status: ReceiptVerificationStatus
+  ledgerSequence?: number
+  verifiedAt?: string
+  network?: string
+  txHash?: string
+  asset?: string
+  amount?: string
+  destination?: string
+  mismatches?: string[]
+  error?: string
+}
+
+// ─── Additional UI & Sitelink Types ───────────────────────────────────────
+export interface Sitelink {
+  title: string
+  link: string
+}
+
+export interface SavedResearchItem {
+  id: string
+  query: string
+  timestamp: string
+  results: SearchResult[]
+  tags?: string[]
+  notes?: string
 }
 
 // ─── API Stats ─────────────────────────────────────────────────────────────

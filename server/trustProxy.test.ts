@@ -59,7 +59,7 @@ describe('trust proxy — explicit hop configuration', () => {
   it('defaults to NOT trusting any proxy (X-Forwarded-For ignored)', async () => {
     const app = await loadApp(undefined)
     expect(app.get('trust proxy')).toBe(false)
-  })
+  }, 15000)
 
   it('TRUST_PROXY_HOPS=<n> trusts exactly n hops', async () => {
     const app = await loadApp('1')

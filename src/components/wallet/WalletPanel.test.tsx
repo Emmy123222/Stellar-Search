@@ -35,8 +35,6 @@ const baseWallet: WalletState = {
   error: null,
 }
 
-const baseHistory = [{ id: '1', hash: 'a'.repeat(64), type: 'payment', amount: '0.0010', asset: 'USDC', from: 'GAAA', to: 'GBBB', timestamp: new Date(Date.now() - 60000).toISOString() }]
-
 describe('WalletPanel — independent resource states', () => {
   it('shows connection error from wallet.error', () => {
     const wallet = { ...baseWallet, error: 'Freighter not found' }

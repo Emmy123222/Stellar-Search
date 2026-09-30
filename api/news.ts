@@ -6,6 +6,7 @@ import {
   AMOUNT_USDC
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
+import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -13,6 +14,7 @@ const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainne
 const SERPER_API_KEY    = process.env.SERPER_API_KEY!
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  applyServerlessHeaders(res, req)
 
   // ─── CORS ─────────────────────────────────────────────────────────────────
   res.setHeader('Access-Control-Allow-Origin', '*')

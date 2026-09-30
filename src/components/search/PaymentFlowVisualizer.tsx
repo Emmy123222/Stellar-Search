@@ -54,7 +54,7 @@ export function PaymentFlowVisualizer({ session }: Props) {
 
       {/* Step indicators */}
       <div className="relative">
-        <div className="absolute top-5 left-5 right-5 h-px bg-white/8 z-0" />
+        <div className="absolute top-5 inset-x-5 h-px bg-white/8 z-0" />
         <div className="relative z-10 flex justify-between">
           {STEPS.map((step, i) => {
             const stepDone   = doneCount > i
@@ -87,7 +87,7 @@ export function PaymentFlowVisualizer({ session }: Props) {
                     <span style={{ color: '#ef4444' }} className="text-xs font-bold">✗</span>
                   ) : (
                     <span style={{ color: stepActive ? step.color : 'rgba(255,255,255,0.25)' }} className="text-xs">
-                      {step.icon}
+                      <span className="inline-block rtl-flip">{step.icon}</span>
                     </span>
                   )}
                   {stepActive && (
@@ -133,7 +133,12 @@ export function PaymentFlowVisualizer({ session }: Props) {
             />
           )}
           <p className="font-display text-xs text-white/50">
-            {isSearching && `→ Step ${session.step ?? 1}/${TOTAL_STEPS}: ${STEPS[activeIdx]?.label} — ${STEPS[activeIdx]?.sub}...`}
+            {isSearching && (
+              <>
+                <span className="inline-block rtl-flip me-1">→</span>
+                {`Step ${session.step ?? 1}/${TOTAL_STEPS}: ${STEPS[activeIdx]?.label} — ${STEPS[activeIdx]?.sub}...`}
+              </>
+            )}
             {isComplete  && `✓ Payment settled — ${session.results.length} results in ${session.durationMs}ms`}
             {isError     && `✗ ${session.error}`}
           </p>

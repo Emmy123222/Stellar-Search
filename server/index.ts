@@ -36,7 +36,7 @@ function privacySafeIp(value: unknown): string {
 function privacySafeQuery(_value: unknown): undefined {
   return undefined
 }
-import { STELLAR_NETWORK, AMOUNT_USDC, AMOUNT_STROOPS, USDC_CONTRACT } from '../src/lib/constants'
+import { USDC_CONTRACT } from '../src/lib/constants'
 import {
   type CountBounds,
   type Freshness,
@@ -48,7 +48,7 @@ import {
   validateFreshness,
 } from '../src/lib/paramValidation.js'
 import { sanitizeOperatorText } from '../src/lib/logSanitize.js'
-import { consumePaymentPayload, extractPaymentIdentifier } from '../src/lib/paymentIntegrity'
+import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { fetchSerper, CircuitOpenError, getSerperBreakerState } from '../src/lib/serperClient.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import {
@@ -65,7 +65,6 @@ import type {
   NewsSearchResponse,
   ApiErrorResponse,
   BatchJsonlEvent,
-  BatchJsonlQuoteEvent,
   BatchJsonlSettlementEvent,
   BatchJsonlResultEvent,
   BatchJsonlErrorEvent,
@@ -79,6 +78,7 @@ import { ConcurrencyGate } from './concurrency.js'
 import { getReadiness } from './readiness.js'
 import { getX402DiscoveryMetadata, requestOrigin } from '../src/lib/x402Discovery.js'
 import { validateQuery, MAX_QUERY_LENGTH } from '../src/lib/queryValidation.js'
+import { compressionMiddleware } from '../src/lib/compression.js'
 
 dotenv.config()
 
@@ -176,6 +176,7 @@ app.use(
   })
 )
 app.use(cors(buildCorsOptions()))
+app.use(compressionMiddleware())
 app.use(express.json())
 app.use(limiter)
 
@@ -948,7 +949,7 @@ app.post('/search/batch', async (req: Request, res: Response) => {
   }
 
   const { queries } = (req.body || {}) as { queries?: unknown }
-  const { count: parsedCount, freshness, tbs } = paidParams(req, SEARCH_COUNT)
+  const { count: parsedCount, freshness } = paidParams(req, SEARCH_COUNT)
 
   if (!Array.isArray(queries) || queries.length === 0) {
     return res.status(400).json({ error: 'queries array required (1..10)' })
@@ -1281,7 +1282,7 @@ app.post('/jobs', async (req: Request, res: Response) => {
   const v = validateQuery(query)
   if (!v.ok) return res.status(400).json({ error: v.error })
   const cleanQ = v.cleanQ
-  const { count: safeCount, freshness, tbs } = paidParams(req, SEARCH_COUNT)
+  const { count: safeCount, freshness } = paidParams(req, SEARCH_COUNT)
 
   // Webhook validation (SSRF + https)
   if (webhookUrl) {

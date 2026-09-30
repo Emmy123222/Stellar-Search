@@ -52,7 +52,7 @@ export function SearchBar({
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="absolute -top-12 left-0 right-0 py-2 px-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center gap-3 text-red-400"
+          className="absolute -top-12 inset-x-0 py-2 px-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center gap-3 text-red-400"
         >
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           <p className="text-xs font-display tracking-wide">

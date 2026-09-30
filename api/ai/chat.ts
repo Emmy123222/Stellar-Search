@@ -14,7 +14,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || 'dummy_key' })
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (typeof (res as any).setHeader === 'function') {
-    applyServerlessHeaders(res)
+    applyServerlessHeaders(res, req)
   }
 
   if (req.method !== 'POST') {

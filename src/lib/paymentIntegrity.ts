@@ -267,7 +267,7 @@ export function resolveIdempotentRequest<T>(
   record.resolve?.(value)
 }
 
-export function rejectIdempotentRequest<T>(key: string, error: unknown): void {
+export function rejectIdempotentRequest(key: string, error: unknown): void {
   const record = idempotentRequests.get(key)
   if (!record) return
   record.reject?.(error)
@@ -321,7 +321,7 @@ export function extractPaymentIdentifier(header: unknown): string | null {
   if (!rawString) return null
 
   // 1. Try parsing JSON (or base64-decoded JSON)
-  let obj: any = null
+  let obj: any
   if (typeof header === 'object') {
     obj = header
   } else {
@@ -507,16 +507,4 @@ function tryDecodeBase64Json(raw: string): any {
   }
 }
 
-/**
- * Computes a stable, non-cryptographic hash of a string.
- * Used as a fallback when no explicit Payment ID is available.
- * This is browser-safe and does not rely on Node-specific apis.
- */
-function stableHash(input: string): string {
-  let hash = 5381
-  for (let i = 0; i < input.length; i++) {
-    hash = (hash << 5) + hash + input.charCodeAt(i)
-    hash |= 0 // Convert to 32bit integer
-  }
-  return hash.toString(36)
-}
+
