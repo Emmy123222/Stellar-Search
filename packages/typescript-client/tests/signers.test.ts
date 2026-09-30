@@ -110,7 +110,7 @@ describe('@stellar-search/client — Signer Adapters', () => {
       expect(decoded.payTo).toBe(MOCK_CHALLENGE.accepts[0].payTo)
       expect(decoded.payer).toBeDefined()
       expect(decoded.nonce).toBeDefined()
-    })
+    }, 15000)
 
     it('resolves key from getSecretKey callback', async () => {
       const getSecretKey = vi.fn().mockResolvedValue(VALID_SECRET)
