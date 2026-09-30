@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import Groq from 'groq-sdk'
 import { applyServerlessHeaders } from '../../src/lib/serverlessHeaders'
+import { AI_CHAT_LIMITS, validateChatMessages } from '../../src/lib/aiChatService'
 
 export const AVAILABLE_MODELS = [
   'llama-3.3-70b-versatile',
@@ -24,14 +25,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  const bodyBytes = Buffer.byteLength(JSON.stringify(req.body ?? {}), 'utf8')
+  if (bodyBytes > AI_CHAT_LIMITS.bodyBytes) {
+    return res.status(413).json({ error: `Request body exceeds ${AI_CHAT_LIMITS.bodyBytes} bytes` })
+  }
+
   const { messages, model: requestedModel } = (req.body || {}) as {
     messages?: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string
     stream?: boolean
   }
 
-  if (!messages?.length) {
-    return res.status(400).json({ error: 'messages array required' })
+  const validationError = validateChatMessages(messages)
+  if (validationError) {
+    return res.status(400).json({ error: validationError })
   }
 
   const model: AvailableModel =

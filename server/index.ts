@@ -25,6 +25,7 @@ import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
 import logger from './logger'
 import crypto, { randomUUID } from 'crypto'
+import { validateChatMessages } from '../src/lib/aiChatService'
 
 function privacySafeIp(value: unknown): string {
   const raw = typeof value === 'string' ? value : ''
@@ -176,7 +177,8 @@ app.use(
   })
 )
 app.use(cors(buildCorsOptions()))
-app.use(express.json())
+// Reject oversized payloads before parsing or invoking any paid upstream API.
+app.use(express.json({ limit: '64kb' }))
 app.use(limiter)
 
 // Machine-readable x402 service discovery. Keep this before payment middleware:
@@ -1553,8 +1555,9 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
     model?: string
   }
 
-  if (!messages?.length) {
-    return res.status(400).json({ error: 'messages array required' })
+  const validationError = validateChatMessages(messages)
+  if (validationError) {
+    return res.status(400).json({ error: validationError })
   }
 
   // Available models whitelist
