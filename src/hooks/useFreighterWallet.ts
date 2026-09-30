@@ -129,7 +129,7 @@ export function useFreighterWallet() {
   }, [])
 
   // Connect Freighter wallet
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (): Promise<boolean> => {
     setWallet(prev => ({ ...prev, loading: true, error: null }))
 
     try {
@@ -144,7 +144,7 @@ export function useFreighterWallet() {
           loading: false,
           error: null,
         }))
-        return
+        return true
       }
 
       const connected = await isConnected()
@@ -179,6 +179,7 @@ export function useFreighterWallet() {
       // Fetch live data after connect
       await fetchBalances(addressResult.address)
       await fetchTransactions(addressResult.address)
+      return true
     } catch (err: any) {
       setWallet(prev => ({
         ...prev,
@@ -186,6 +187,7 @@ export function useFreighterWallet() {
         connected: false,
         error: err.message || 'Connection failed',
       }))
+      return false
     }
   }, [fetchBalances, fetchTransactions])
 

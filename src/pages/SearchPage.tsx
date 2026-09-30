@@ -1,6 +1,8 @@
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { Search, Zap, AlertCircle } from 'lucide-react'
+import { toast } from 'sonner'
 import {
   SearchBar,
   SearchResults,
@@ -13,26 +15,110 @@ import type { SearchSession } from '../hooks/useSearch'
 import type { WalletState } from '../hooks/useFreighterWallet'
 import { AMOUNT_USDC } from '../lib/stellar'
 
+export interface PendingSearch {
+  query: string
+  freshness?: string
+}
+
 interface Props {
   wallet: WalletState
-  onConnectWallet: () => void
+  onConnectWallet: () => void | Promise<void> | Promise<boolean>
   session: SearchSession
-  search: (query: string, count?: number, includeDomains?: string[], excludeDomains?: string[]) => Promise<void>
+  search: (query: string, countOrFreshness?: number | string, includeDomains?: string[], excludeDomains?: string[]) => Promise<void> | void
   reset: () => void
 }
 
 export function SearchPage({ wallet, onConnectWallet, session, search, reset }: Props) {
   const { t } = useTranslation('search')
-  const handleSearch = (query: string, includeDomains?: string[], excludeDomains?: string[]) => {
-    if (!wallet.connected) { onConnectWallet(); return }
-    search(query, 5, includeDomains, excludeDomains)
+  const [pendingSearch, setPendingSearch] = useState<PendingSearch | null>(null)
+  const pendingSearchRef = useRef<PendingSearch | null>(null)
+
+  // Auto-resume search when wallet connects successfully
+  useEffect(() => {
+    if (wallet.connected && wallet.publicKey && pendingSearchRef.current) {
+      const { query, freshness } = pendingSearchRef.current
+      pendingSearchRef.current = null
+      setPendingSearch(null)
+      if (freshness !== undefined) {
+        search(query, freshness)
+      } else {
+        search(query)
+      }
+    }
+  }, [wallet.connected, wallet.publicKey, search])
+
+  // Handle wallet error / cancellation while a search was pending
+  useEffect(() => {
+    if (wallet.error && pendingSearchRef.current) {
+      const errorMsg = wallet.error
+      pendingSearchRef.current = null
+      setPendingSearch(null)
+      toast.error('Wallet connection failed', {
+        description: errorMsg,
+      })
+    }
+  }, [wallet.error])
+
+  const handleSearch = async (
+    query: string,
+    freshnessOrInclude?: string | string[],
+    excludeDomains?: string[]
+  ) => {
+    const freshness = typeof freshnessOrInclude === 'string' ? freshnessOrInclude : undefined
+    const includeDomains = Array.isArray(freshnessOrInclude) ? freshnessOrInclude : undefined
+
+    if (!wallet.connected) {
+      const pending: PendingSearch = { query: query.trim(), freshness }
+      pendingSearchRef.current = pending
+      setPendingSearch(pending)
+      toast.info('Connect Freighter', {
+        description: 'Connect your wallet to resume your search automatically.',
+      })
+      try {
+        const connected = await onConnectWallet()
+        if (connected === false && pendingSearchRef.current) {
+          pendingSearchRef.current = null
+          setPendingSearch(null)
+          toast.error('Wallet connection cancelled', {
+            description: wallet.error || 'Connection request was cancelled. Your query was retained.',
+          })
+        }
+      } catch (err: any) {
+        if (pendingSearchRef.current) {
+          pendingSearchRef.current = null
+          setPendingSearch(null)
+          toast.error('Wallet connection failed', {
+            description: err?.message || 'Connection request failed. Your query was retained.',
+          })
+        }
+      }
+      return
+    }
+
+    pendingSearchRef.current = null
+    setPendingSearch(null)
+    if (freshness !== undefined) {
+      search(query, freshness)
+    } else {
+      search(query, 5, includeDomains, excludeDomains)
+    }
   }
 
-  const isSearching = session.status === 'searching'
+  const handleCancelPending = () => {
+    pendingSearchRef.current = null
+    setPendingSearch(null)
+  }
+
+  const handleReset = () => {
+    pendingSearchRef.current = null
+    setPendingSearch(null)
+    reset()
+  }
+
+  const isSearching = session.status === 'searching' || (!!pendingSearch && wallet.loading)
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-8">
-
       <StatsGrid />
 
       <AnimatePresence>
@@ -97,13 +183,58 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
         usdcBalance={wallet.usdcBalance}
       />
 
+      {pendingSearch && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center justify-between p-4 rounded-xl border border-neon-cyan/30 bg-neon-cyan/5 text-neon-cyan"
+        >
+          <div className="flex items-center gap-3">
+            <Zap className="w-4 h-4 animate-pulse text-neon-cyan" />
+            <p className="text-sm font-display tracking-wide">
+              Connecting wallet to resume search for{' '}
+              <span className="text-white font-semibold">"{pendingSearch.query}"</span>
+              {pendingSearch.freshness && (
+                <span className="text-white/60 text-xs ml-1">
+                  ({pendingSearch.freshness})
+                </span>
+              )}
+              ...
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelPending}
+            className="text-xs text-white/50 hover:text-white underline cursor-pointer ml-3 font-display tracking-wider"
+          >
+            CANCEL
+          </button>
+        </div>
+      )}
+
+      {wallet.error && !pendingSearch && (
+        <div
+          role="alert"
+          className="flex items-center gap-3 p-4 rounded-xl border border-red-500/25 bg-red-500/5 text-red-300"
+        >
+          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium">{wallet.error}</p>
+            <p className="text-xs text-red-400/70 mt-0.5">
+              Your query and filters have been preserved in the search bar.
+            </p>
+          </div>
+        </div>
+      )}
+
       <SearchBar
         onSearch={handleSearch}
         isSearching={isSearching}
         walletConnected={wallet.connected}
         usdcBalance={wallet.usdcBalance}
         walletNetwork={wallet.network}
-        defaultQuery={session.query}
+        defaultQuery={session.query || pendingSearch?.query || ''}
+        defaultFreshness={pendingSearch?.freshness || ''}
       />
 
       <AnimatePresence>
@@ -153,7 +284,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
             {(session.status === 'complete' || session.status === 'error') && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center pt-2">
-                <button onClick={reset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
+                <button onClick={handleReset} className="font-display text-xs text-white/25 hover:text-neon-cyan transition-colors tracking-widest">
                   {t('newSearch', '← NEW SEARCH')}
                 </button>
               </motion.div>

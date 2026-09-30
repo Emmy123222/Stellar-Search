@@ -1,6 +1,6 @@
 import type { SearchResult } from '../hooks/useSearch'
 export type { WalletState, StellarTransaction } from '../hooks/useFreighterWallet'
-export type { SearchSession, SearchResult } from '../hooks/useSearch'
+export type { SearchSession, SearchResult, PaymentStep } from '../hooks/useSearch'
 
 // ─── Answer Box ────────────────────────────────────────────────────────────
 /** Direct factual answer to a query (e.g., "what is X") */
@@ -176,6 +176,30 @@ export interface SavedResearchItem {
   query: string
   timestamp: string
   results: SearchResult[]
+  tags?: string[]
+  notes?: string
+}
+
+// ─── Collections Types ───────────────────────────────────────────────────
+export interface Collection {
+  id: string
+  name: string
+  description?: string
+  color?: string
+  icon?: string
+  createdAt: string
+  updatedAt: string
+  itemCount: number
+}
+
+export interface SavedResult {
+  id: string
+  collectionId: string
+  title: string
+  url: string
+  description: string
+  source: string
+  savedAt: string
   tags?: string[]
   notes?: string
 }
