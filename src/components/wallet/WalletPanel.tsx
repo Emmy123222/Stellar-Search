@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Wallet, ChevronDown, ExternalLink,
@@ -26,8 +26,55 @@ export function WalletPanel({
 }: Props) {
   const [open, setOpen]     = useState(false)
   const [copied, setCopied] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   const isWrongNetwork = wallet.connected && wallet.network !== EXPECTED_WALLET_NETWORK
+
+  const close = () => {
+    setOpen(false)
+    requestAnimationFrame(() => triggerRef.current?.focus())
+  }
+
+  useEffect(() => {
+    if (!open) return
+
+    const dialog = dialogRef.current
+    const focusable = dialog?.querySelector<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )
+    focusable?.focus()
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (!dialogRef.current?.contains(target) && !triggerRef.current?.contains(target)) close()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [open])
+
+  const trapFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      close()
+      return
+    }
+    if (event.key !== 'Tab') return
+
+    const elements = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    ) ?? [])
+    if (elements.length === 0) return
+    const first = elements[0]
+    const last = elements[elements.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
 
   const copy = () => {
     if (!wallet.publicKey) return
@@ -64,7 +111,8 @@ export function WalletPanel({
   return (
     <div className="relative">
       <motion.button
-        onClick={() => setOpen(o => !o)}
+        ref={triggerRef}
+        onClick={() => open ? close() : setOpen(true)}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label="Wallet menu"
@@ -93,9 +141,14 @@ export function WalletPanel({
               animate={{ opacity: 1 }} 
               exit={{ opacity: 0 }} 
               className="fixed inset-0 z-40 bg-black/60 sm:hidden" 
-              onClick={() => setOpen(false)} 
+              onClick={close}
             />
             <motion.div
+              ref={dialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Wallet details"
+              onKeyDown={trapFocus}
               initial={{ opacity: 0, y: 8, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.95 }}
@@ -242,7 +295,7 @@ export function WalletPanel({
                 </a>
               )}
               <button
-                onClick={() => { onDisconnect(); setOpen(false) }}
+                onClick={() => { onDisconnect(); close() }}
                 className="flex items-center gap-1.5 py-2 px-3 rounded-lg border border-white/10 font-display text-xs text-white/30 hover:text-red-400 hover:border-red-500/30 transition-all"
               >
                 <LogOut className="w-3 h-3" /> Disconnect
