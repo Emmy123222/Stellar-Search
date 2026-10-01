@@ -353,7 +353,7 @@ async function deliverWebhookWithRetry(
         return
       }
     } catch (err: any) {
-      console.warn(`[webhook] attempt ${attempt} failed for job ${job.id}: ${err.message}`)
+      console.warn(`[webhook] attempt ${attempt} failed for job ${job.id}: ${err?.message || String(err)}`)
     }
     if (attempt < maxAttempts) {
       const backoff =
@@ -749,6 +749,14 @@ app.get('/search', async (req: Request, res: Response) => {
       }
       return res.status(503).json(errorBody)
     }
+    if (err?.name === 'TimeoutError' || err?.status === 504) {
+      console.error('[search timeout]', err.message)
+      res.setHeader('Retry-After', '5')
+      const errorBody: ApiErrorResponse = {
+        error: 'Search provider request timed out. Please retry shortly.',
+      }
+      return res.status(504).json(errorBody)
+    }
     console.error('[search error]', sanitizeOperatorText(err.message))
     const errorBody: ApiErrorResponse = { error: 'Search failed. Check server logs.' }
     return res.status(500).json(errorBody)
@@ -837,6 +845,14 @@ app.get('/images', async (req: Request, res: Response) => {
         error: 'Search provider temporarily unavailable. Please retry shortly.',
       }
       return res.status(503).json(errorBody)
+    }
+    if (err?.name === 'TimeoutError' || err?.status === 504) {
+      console.error('[images timeout]', err.message)
+      res.setHeader('Retry-After', '5')
+      const errorBody: ApiErrorResponse = {
+        error: 'Image search request timed out. Please retry shortly.',
+      }
+      return res.status(504).json(errorBody)
     }
     console.error('[images error]', sanitizeOperatorText(err.message))
     const errorBody: ApiErrorResponse = { error: 'Image search failed. Check server logs.' }
@@ -929,6 +945,14 @@ app.get('/news', async (req: Request, res: Response) => {
         error: 'Search provider temporarily unavailable. Please retry shortly.',
       }
       return res.status(503).json(errorBody)
+    }
+    if (err?.name === 'TimeoutError' || err?.status === 504) {
+      console.error('[news timeout]', err.message)
+      res.setHeader('Retry-After', '5')
+      const errorBody: ApiErrorResponse = {
+        error: 'News search request timed out. Please retry shortly.',
+      }
+      return res.status(504).json(errorBody)
     }
     console.error('[news error]', sanitizeOperatorText(err.message))
     const errorBody: ApiErrorResponse = { error: 'News search failed. Check server logs.' }

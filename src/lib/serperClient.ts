@@ -47,6 +47,37 @@ function isUpstreamFailure(res: Response): boolean {
  * returned normally (callers keep their existing status-code handling) —
  * only the breaker's internal accounting is affected.
  */
-export async function fetchSerper(path: string, init: RequestInit): Promise<Response> {
-  return serperBreaker.execute(() => fetch(`${SERPER_BASE_URL}${path}`, init), isUpstreamFailure)
+export async function fetchSerper(path: string, init: RequestInit, timeoutMs = 15_000): Promise<Response> {
+  return serperBreaker.execute(async () => {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    
+    // Merge callers' signal if present
+    const callerSignal = init.signal
+    if (callerSignal) {
+      if (callerSignal.aborted) {
+        controller.abort()
+      } else {
+        callerSignal.addEventListener('abort', () => controller.abort(), { once: true })
+      }
+    }
+
+    try {
+      const res = await fetch(`${SERPER_BASE_URL}${path}`, {
+        ...init,
+        signal: controller.signal,
+      })
+      return res
+    } catch (err: any) {
+      if (controller.signal.aborted && (!callerSignal || callerSignal.aborted)) {
+        const timeoutErr = new Error(`Serper request timed out after ${timeoutMs}ms`) as any
+        timeoutErr.name = 'TimeoutError'
+        timeoutErr.status = 504
+        throw timeoutErr
+      }
+      throw err
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }, isUpstreamFailure)
 }

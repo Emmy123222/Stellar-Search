@@ -7,6 +7,7 @@ import {
 } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
+import { fetchSerper } from '../src/lib/serperClient'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -14,6 +15,7 @@ const NETWORK           = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainne
 const SERPER_API_KEY    = process.env.SERPER_API_KEY!
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  applyServerlessHeaders(res, req)
   applyServerlessHeaders(res, req)
 
   // ─── CORS ─────────────────────────────────────────────────────────────────
@@ -110,7 +112,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
     }
 
-    const serperRes = await fetch('https://google.serper.dev/news', {
+    const serperRes = await fetchSerper('/news', {
       method:  'POST',
       headers: {
         'X-API-KEY':    SERPER_API_KEY,
