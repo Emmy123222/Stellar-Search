@@ -41,6 +41,8 @@ export interface StellarTransaction {
   to: string
   timestamp: string
   memo?: string
+  direction?: 'inbound' | 'outbound'
+  counterparty?: string
 }
 
 const horizon = new Horizon.Server(HORIZON_URL)
@@ -104,8 +106,24 @@ export function useFreighterWallet() {
         .call()
 
       const txs: StellarTransaction[] = ops.records
-        .filter((op: any) => op.type === 'payment' || op.type === 'create_account')
-        .map((op: any) => ({
+        .filter((op: any) => {
+          if (op.type !== 'payment' && op.type !== 'create_account') return false
+          if (op.type === 'payment') {
+            const isNative = op.asset_type === 'native'
+            const matchesCode = op.asset_code === 'USDC'
+            const matchesIssuer = op.asset_issuer === USDC_ISSUER
+            return isNative || (matchesCode && matchesIssuer)
+          }
+          return true
+        })
+        .map((op: any) => {
+          const fromAddr = op.from || op.funder || ''
+          const toAddr = op.to || op.account || ''
+          const isOutbound = fromAddr === publicKey
+          const direction = isOutbound ? 'outbound' : 'inbound'
+          const counterparty = isOutbound ? toAddr : fromAddr
+
+          return {
           id: op.id,
           hash: op.transaction_hash,
           type: op.type,
@@ -114,11 +132,14 @@ export function useFreighterWallet() {
             op.asset_type === 'native'
               ? 'XLM'
               : op.asset_code || 'Unknown',
-          from: op.from || op.funder || '',
-          to: op.to || op.account || '',
+            from: fromAddr,
+            to: toAddr,
           timestamp: op.created_at,
           memo: op.transaction?.memo,
-        }))
+            direction,
+            counterparty,
+          }
+        })
 
       setTransactions(txs)
     } catch (_) {

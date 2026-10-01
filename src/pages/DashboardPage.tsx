@@ -236,9 +236,19 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
                 transition={{ delay: i * 0.04 }}
                 className="flex items-center gap-4 px-5 py-3.5 hover:bg-white/2 transition-colors"
               >
-                <div className="w-1.5 h-1.5 rounded-full bg-neon-green flex-shrink-0" />
+                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${tx.direction === 'inbound' ? 'bg-neon-green' : 'bg-neon-cyan'}`} />
                 <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-display text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider ${tx.direction === 'inbound' ? 'bg-neon-green/10 text-neon-green border border-neon-green/30' : 'bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30'}`}>
+                      {tx.direction || 'transfer'}
+                    </span>
                   <p className="text-sm text-white/60 capitalize truncate">{tx.type.replace('_', ' ')}</p>
+                  </div>
+                  {tx.counterparty && (
+                    <p className="font-mono text-white/30 truncate mt-0.5" style={{ fontSize: '10px' }}>
+                      Counterparty: {tx.counterparty}
+                    </p>
+                  )}
                   <div className="flex items-center gap-3 mt-0.5">
                     <a
                       href={explorerTxUrl(tx.hash)}

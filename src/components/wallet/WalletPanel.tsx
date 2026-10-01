@@ -198,9 +198,19 @@ export function WalletPanel({
                       className="flex items-center justify-between py-1.5 px-2 rounded bg-white/3 hover:bg-white/5 transition-colors"
                     >
                       <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-display text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider ${tx.direction === 'inbound' ? 'bg-neon-green/10 text-neon-green border border-neon-green/30' : 'bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30'}`}>
+                            {tx.direction || 'transfer'}
+                          </span>
                         <p className="font-display text-xs text-white/50 capitalize">
                           {tx.type.replace('_', ' ')}
                         </p>
+                        </div>
+                        {tx.counterparty && (
+                          <p className="font-mono text-white/30 truncate mt-0.5" style={{ fontSize: '9px' }}>
+                            Counterparty: {truncateAddress(tx.counterparty, 4, 4)}
+                          </p>
+                        )}
                         <div className="flex items-center gap-2 mt-0.5">
                           <a
                             href={explorerTxUrl(tx.hash)}
