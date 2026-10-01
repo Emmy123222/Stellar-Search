@@ -48,7 +48,7 @@ export function PaymentFlowVisualizer({ session }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <span className="font-display text-xs text-white/30 tracking-widest">x402 PAYMENT FLOW</span>
-        {session.status === 'complete' && <span className="font-display text-xs text-neon-green">✓ SETTLED</span>}
+        {session.status === 'complete' && <span className="font-display text-xs text-neon-green" title="Already settled payments on Stellar cannot be reversed. Once an x402 payment settles on-chain, it is final and non-reversible.">✓ SETTLED (FINAL)</span>}
         {session.status === 'error'    && <span className="font-display text-xs text-red-400">✗ FAILED</span>}
       </div>
 
