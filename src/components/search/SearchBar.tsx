@@ -2,7 +2,8 @@ import { useRef, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Search, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
-import { IS_MAINNET, EXPECTED_WALLET_NETWORK, AMOUNT_USDC } from '../../lib/stellar'
+import { IS_MAINNET, EXPECTED_WALLET_NETWORK } from '../../lib/stellar'
+import { calculateSearchPrice, type SearchMode } from '../../lib/constants'
 
 interface Props {
   onSearch: (query: string, includeDomains?: string[], excludeDomains?: string[]) => void
@@ -11,14 +12,25 @@ interface Props {
   usdcBalance: string
   walletNetwork: string
   defaultQuery?: string
+  searchMode?: SearchMode
+  resultCount?: number
 }
 
 export function SearchBar({
-  onSearch, isSearching, walletConnected, usdcBalance, walletNetwork, defaultQuery = '',
+  onSearch,
+  isSearching,
+  walletConnected,
+  usdcBalance,
+  walletNetwork,
+  defaultQuery = '',
+  searchMode = 'search',
+  resultCount = 5,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [includeStr, setIncludeStr] = useState('')
   const [excludeStr, setExcludeStr] = useState('')
+
+  const currentPricing = calculateSearchPrice(searchMode, resultCount)
 
   const isWrongNetwork = walletConnected && walletNetwork !== EXPECTED_WALLET_NETWORK
 
@@ -32,14 +44,13 @@ export function SearchBar({
 
     const parsedUsdc = parseFloat(usdcBalance);
     const safeUsdc = isNaN(parsedUsdc) ? 0 : Math.max(0, parsedUsdc);
-    
-    if (walletConnected && safeUsdc < parseFloat(AMOUNT_USDC)) {
-      toast.info('Low Balance', { description: `You need at least ${AMOUNT_USDC} USDC to search.` })
+
+    if (walletConnected && safeUsdc < parseFloat(currentPricing.amountUsdc)) {
+      toast.info('Low Balance', { description: `You need at least ${currentPricing.amountUsdc} USDC to search.` })
       return
     }
 
     const q = (e.currentTarget.elements.namedItem('q') as HTMLInputElement).value.trim()
-    
     const includeDomains = includeStr.split(',').map(d => d.trim()).filter(Boolean)
     const excludeDomains = excludeStr.split(',').map(d => d.trim()).filter(Boolean)
 
@@ -110,7 +121,7 @@ export function SearchBar({
                 transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
               />
             ) : (
-              <><Zap className="w-3.5 h-3.5" /> {AMOUNT_USDC} USDC</>
+              <><Zap className="w-3.5 h-3.5" /> {currentPricing.amountUsdc} USDC</>
             )}
           </motion.button>
         </div>
@@ -139,7 +150,7 @@ export function SearchBar({
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mt-2 px-1">
         <p className="font-display text-xs text-white/20">
           {walletConnected
-            ? `Balance: ${usdcBalance} USDC · ~${Math.floor((isNaN(parseFloat(usdcBalance)) ? 0 : Math.max(0, parseFloat(usdcBalance))) / parseFloat(AMOUNT_USDC)).toLocaleString()} queries left`
+            ? `Balance: ${usdcBalance} USDC · ~${Math.floor((isNaN(parseFloat(usdcBalance)) ? 0 : Math.max(0, parseFloat(usdcBalance))) / parseFloat(currentPricing.amountUsdc)).toLocaleString()} queries left (${searchMode}, count ${resultCount}, tier ${currentPricing.amountUsdc} USDC)`
             : 'Connect Freighter wallet to search'}
         </p>
         <p className="font-display text-xs text-white/20 uppercase tracking-widest">
