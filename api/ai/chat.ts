@@ -24,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const contentType = req.headers['content-type'] || req.headers['Content-Type'] || ''
+  const contentType = req.headers?.['content-type'] || req.headers?.['Content-Type'] || ''
   if (typeof contentType === 'string' && contentType.trim() !== '' && !contentType.toLowerCase().includes('application/json')) {
     return res.status(415).json({ error: 'Unsupported Media Type: application/json required' })
   }

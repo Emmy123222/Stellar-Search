@@ -335,7 +335,7 @@ describe('SearchPage — Issue #137: Auto-resume pending search after wallet con
     fireEvent.submit(screen.getByRole('search'))
 
     expect(onConnectWallet).not.toHaveBeenCalled()
-    expect(search).toHaveBeenCalledWith('immediate search', '')
+    expect(search).toHaveBeenCalledWith('immediate search', 5, [], [])
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })

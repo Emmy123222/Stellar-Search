@@ -39,10 +39,10 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
       const { query, freshness } = pendingSearchRef.current
       pendingSearchRef.current = null
       setPendingSearch(null)
-      if (freshness !== undefined) {
+      if (freshness) {
         search(query, freshness)
       } else {
-        search(query)
+        search(query, 5, [], [])
       }
     }
   }, [wallet.connected, wallet.publicKey, search])
@@ -62,13 +62,24 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
   const handleSearch = async (
     query: string,
     freshnessOrInclude?: string | string[],
-    excludeDomains?: string[]
+    excludeDomains?: string[],
+    freshnessParam?: string
   ) => {
-    const freshness = typeof freshnessOrInclude === 'string' ? freshnessOrInclude : undefined
-    const includeDomains = Array.isArray(freshnessOrInclude) ? freshnessOrInclude : undefined
+    let freshness: string | undefined
+    let incDomains: string[] = []
+    let excDomains: string[] = []
+
+    if (typeof freshnessOrInclude === 'string') {
+      freshness = freshnessOrInclude
+      if (Array.isArray(excludeDomains)) incDomains = excludeDomains
+    } else if (Array.isArray(freshnessOrInclude)) {
+      incDomains = freshnessOrInclude
+      if (Array.isArray(excludeDomains)) excDomains = excludeDomains
+      if (typeof freshnessParam === 'string' && freshnessParam) freshness = freshnessParam
+    }
 
     if (!wallet.connected) {
-      const pending: PendingSearch = { query: query.trim(), freshness }
+      const pending: PendingSearch = { query: query.trim(), freshness: freshness || undefined }
       pendingSearchRef.current = pending
       setPendingSearch(pending)
       toast.info('Connect Freighter', {
@@ -97,10 +108,10 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
 
     pendingSearchRef.current = null
     setPendingSearch(null)
-    if (freshness !== undefined) {
+    if (freshness) {
       search(query, freshness)
     } else {
-      search(query, 5, includeDomains, excludeDomains)
+      search(query, 5, incDomains, excDomains)
     }
   }
 

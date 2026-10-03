@@ -17,7 +17,7 @@ export const FRESHNESS_OPTIONS: FreshnessOption[] = [
 ]
 
 interface Props {
-  onSearch: (query: string, freshness?: string, includeDomains?: string[], excludeDomains?: string[]) => void
+  onSearch: (query: string, includeDomains?: string[], excludeDomains?: string[], freshness?: string) => void
   isSearching: boolean
   walletConnected: boolean
   usdcBalance: string
@@ -63,7 +63,11 @@ export function SearchBar({
     const excludeDomains = excludeStr.split(',').map(d => d.trim()).filter(Boolean)
 
     if (q) {
-      onSearch(q, freshness, includeDomains.length > 0 ? includeDomains : undefined, excludeDomains.length > 0 ? excludeDomains : undefined)
+      if (freshness) {
+        onSearch(q, includeDomains, excludeDomains, freshness)
+      } else {
+        onSearch(q, includeDomains, excludeDomains)
+      }
     }
   }
 

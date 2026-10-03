@@ -1,6 +1,19 @@
-import type { SearchResult } from '../hooks/useSearch'
 export type { WalletState, StellarTransaction } from '../hooks/useFreighterWallet'
-export type { SearchSession, SearchResult, PaymentStep } from '../hooks/useSearch'
+export type { SearchSession, SearchResult } from '../hooks/useSearch'
+import type { SearchResult } from '../hooks/useSearch'
+
+/**
+ * Common metadata included in search responses across endpoints.
+ */
+export interface BaseSearchResponse {
+  query: string
+  count: number
+  network: string
+  paidAmount: string
+  currency: string
+  txHash?: string | null
+  latencyMs: number
+}
 
 // ─── Answer Box ────────────────────────────────────────────────────────────
 /** Direct factual answer to a query (e.g., "what is X") */
@@ -131,11 +144,18 @@ export type ErrorResponse = ApiErrorResponse
 
 // ─── Credit Receipt ───────────────────────────────────────────────────────
 export interface CreditReceipt {
-  id: string
-  creditId?: string
-  receiptId?: string
+  id?: string
+  creditId: string
+  receiptId: string
+  route: string
+  query: string
   amount: string
+  currency: string
   reason: string
+  issuedAt: string
+  expiresAt: string
+  redeemed: boolean
+  redeemedAt: string | null
 }
 
 // ─── Search Receipt ───────────────────────────────────────────────────────
@@ -168,41 +188,26 @@ export interface ReceiptVerificationDetail {
 // ─── Additional UI & Sitelink Types ───────────────────────────────────────
 export interface Sitelink {
   title: string
-  link: string
+  link?: string
+  url?: string
 }
 
 export interface SavedResearchItem {
   id: string
   query: string
-  timestamp: string
-  results: SearchResult[]
-  tags?: string[]
-  notes?: string
-}
-
-// ─── Collections Types ───────────────────────────────────────────────────
-export interface Collection {
-  id: string
-  name: string
-  description?: string
-  color?: string
-  icon?: string
-  createdAt: string
-  updatedAt: string
-  itemCount: number
-}
-
-export interface SavedResult {
-  id: string
-  collectionId: string
   title: string
   url: string
   description: string
   source: string
   savedAt: string
-  tags?: string[]
-  notes?: string
+  notes: string
+  tags: string[]
 }
+
+export type SearchMode = 'web' | 'images' | 'news'
+
+// x402 payment flow step numbers (1: Request -> 6: Result)
+export type PaymentStep = 1 | 2 | 3 | 4 | 5 | 6
 
 // ─── API Stats ─────────────────────────────────────────────────────────────
 export interface ApiStat {
@@ -287,3 +292,66 @@ export interface SearchJob {
 }
 
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed'
+
+// ─── Collections ────────────────────────────────────────────────────────────
+
+/** Current schema version. Bump when the shape of CollectionsStore changes. */
+export const COLLECTIONS_SCHEMA_VERSION = 1 as const
+
+/** Maximum total saved results across all collections per device. */
+export const COLLECTIONS_QUOTA_MAX = 500 as const
+
+/** Maximum number of named collections per device. */
+export const COLLECTIONS_MAX_COUNT = 50 as const
+
+/** localStorage key used by useCollections. */
+export const COLLECTIONS_STORAGE_KEY = 'stellarsearch_collections' as const
+
+/**
+ * A single paid search result saved into a collection.
+ * Extends SearchResult with the originating query and payment metadata
+ * so provenance is always available offline.
+ */
+export interface SavedResult {
+  /** Stable unique id (copied from SearchResult.id). */
+  id: string
+  /** Collection this result belongs to. */
+  collectionId: string
+  /** ISO-8601 timestamp of when the result was saved. */
+  savedAt: string
+  /** The search query that produced this result. */
+  query: string
+  /** x402 transaction hash of the paid search that produced this result. */
+  txHash: string | null
+  /** Stellar network the payment was settled on. */
+  network: string
+  /** Snapshot of the result at save time. */
+  result: SearchResult
+}
+
+/** A named, ordered collection of saved results. */
+export interface Collection {
+  /** UUID v4. */
+  id: string
+  /** User-chosen display name (1-100 chars). */
+  name: string
+  /** ISO-8601 creation timestamp. */
+  createdAt: string
+  /** ISO-8601 last-modified timestamp. */
+  updatedAt: string
+  /** Ordered list of saved result ids belonging to this collection. */
+  resultIds: string[]
+}
+
+/**
+ * Root object stored under COLLECTIONS_STORAGE_KEY.
+ * Version-tagged so future schema changes can migrate forward.
+ */
+export interface CollectionsStore {
+  /** Schema version — must equal COLLECTIONS_SCHEMA_VERSION to be trusted as-is. */
+  version: typeof COLLECTIONS_SCHEMA_VERSION
+  /** Map from collection id to Collection metadata. */
+  collections: Record<string, Collection>
+  /** Map from saved-result id to SavedResult. */
+  results: Record<string, SavedResult>
+}

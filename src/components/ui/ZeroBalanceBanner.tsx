@@ -7,6 +7,9 @@ interface Props {
   connected: boolean
   publicKey: string | null
   usdcBalance: string
+  accountExists?: boolean
+  hasUsdcTrustline?: boolean
+  accountStatus?: 'unfunded' | 'no_trustline' | 'unfunded_trustline' | 'funded' | string
 }
 
 const FAUCET_URL = 'https://laboratory.stellar.org/#account-creator?network=test'
@@ -15,7 +18,14 @@ const TRUSTLINE_GUIDE_URL =
 
 const dismissKey = (publicKey: string) => `zero-balance-banner-dismissed:${publicKey}`
 
-export function ZeroBalanceBanner({ connected, publicKey, usdcBalance }: Props) {
+export function ZeroBalanceBanner({
+  connected,
+  publicKey,
+  usdcBalance,
+  accountExists: _accountExists,
+  hasUsdcTrustline: _hasUsdcTrustline,
+  accountStatus,
+}: Props) {
   const [dismissed, setDismissed] = useState(false)
 
   // Reset / restore dismissal state when the connected account changes.
@@ -45,6 +55,7 @@ export function ZeroBalanceBanner({ connected, publicKey, usdcBalance }: Props) 
           className="relative flex items-start gap-3 p-4 pe-10 rounded-xl border border-neon-amber/25 bg-neon-amber/5"
           style={{ boxShadow: '0 0 20px rgba(255,193,7,0.06)' }}
           role="status"
+          data-account-status={accountStatus}
         >
           <Coins className="w-4 h-4 mt-0.5 text-neon-amber flex-shrink-0" />
           <div className="flex-1 min-w-0 space-y-2">
