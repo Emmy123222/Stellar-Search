@@ -8,6 +8,7 @@ interface Props {
   results: SearchResult[]
   query: string
   isLoading?: boolean
+  txHash?: string | null
 }
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (

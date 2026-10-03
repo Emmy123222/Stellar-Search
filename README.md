@@ -965,7 +965,17 @@ English is the complete, always-available fallback locale, via [i18next](https:/
 }
 ```
 
-Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.### MCP progress notifications (#327)
+Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.
+
+### Dual Output: Markdown Text + `structuredContent` (#171)
+
+All search, balance, and stats tools expose documented `outputSchema` and return **dual outputs**:
+- `content: [{ type: "text", text: ... }]`: Formatted Markdown for direct LLM and human reading.
+- `structuredContent: { ... }`: Strictly typed JSON payload containing parsed URLs, titles, payment fields (`paidAmount`, `currency`, `network`, `txHash`), latencies, balances, and operational metrics.
+
+For complete tool schemas, field definitions, and JSON payloads, see [mcp-server/README.md](./mcp-server/README.md).
+
+### MCP progress notifications (#327)
 
 Paid MCP tools (`web_search`, `image_search`, `news_search`) emit **bounded** `notifications/progress` events for actual payment/search phases **only when the client sends `_meta.progressToken`**:
 
