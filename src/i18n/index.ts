@@ -1,20 +1,18 @@
 /**
- * i18n/index.ts — internationalization framework (#345)
+ * i18n/index.ts — internationalization framework (#345, #346)
  *
- * i18next + react-i18next, with English as the complete, always-available
- * fallback. Namespaces split by feature area (common, wallet, search,
- * onboarding, errors, docs) rather than one giant translation file, so
- * unrelated copy can be reviewed/translated independently.
+ * i18next + react-i18next, with English as the fallback and Arabic ('ar')
+ * as the RTL test locale. Namespaces split by feature area (common, wallet,
+ * search, onboarding, errors, docs).
  *
- * `common` (nav/footer — needed at first paint) loads eagerly. Every other
- * namespace is a separate JSON module loaded on demand via
- * loadNamespace() — Vite's import.meta.glob() with the default (lazy)
- * import form code-splits each into its own chunk, so e.g. `docs` never
- * ships to a user who never opens the docs page.
+ * `common` loads eagerly for both 'en' and 'ar'. Other namespaces are loaded
+ * on demand via loadNamespace().
  */
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import enCommon from './locales/en/common.json'
+import arCommon from './locales/ar/common.json'
+import { setDocumentDirection } from '../lib/rtl'
 
 export const SUPPORTED_NAMESPACES = [
   'common',
@@ -27,54 +25,72 @@ export const SUPPORTED_NAMESPACES = [
 
 export type Namespace = (typeof SUPPORTED_NAMESPACES)[number]
 
+export const SUPPORTED_LOCALES = ['en', 'ar'] as const
+export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number]
+
 // One lazy import per (locale, namespace) pair. Vite statically analyzes
-// this glob at build time and emits a separate chunk per matched file —
-// nothing here is bundled into the main chunk unless awaited.
-// @ts-ignore — this project's tsconfig doesn't include vite/client, so
-// import.meta.glob isn't in the ambient ImportMeta type (same reason
-// lib/constants.ts's import.meta.env access is @ts-ignore'd).
+// this glob at build time and emits a separate chunk per matched file.
+// @ts-ignore — import.meta.glob is available in Vite
 const localeModules = import.meta.glob(
   './locales/*/*.json',
 ) as Record<string, () => Promise<{ default: Record<string, unknown> }>>
 
 let initPromise: Promise<typeof i18n> | null = null
 
-export function initI18n() {
+export function initI18n(initialLng = 'en') {
   if (initPromise) return initPromise
 
   initPromise = i18n
     .use(initReactI18next)
     .init({
-      lng: 'en',
+      lng: initialLng,
       fallbackLng: 'en',
+      supportedLngs: ['en', 'ar'],
       ns: ['common'],
       defaultNS: 'common',
-      resources: { en: { common: enCommon } },
+      resources: {
+        en: { common: enCommon },
+        ar: { common: arCommon },
+      },
       interpolation: { escapeValue: false }, // React already escapes
       returnEmptyString: false,
     })
-    .then(() => i18n)
+    .then(() => {
+      setDocumentDirection(i18n.language || initialLng)
+      i18n.on('languageChanged', (lng: string) => {
+        setDocumentDirection(lng)
+      })
+      return i18n
+    })
 
   return initPromise
 }
 
 /**
- * Loads one namespace's English resources on demand and registers them
- * with the running i18next instance. Idempotent — a namespace already
- * loaded (or already bundled, like `common`) is a no-op. Call this before
- * rendering a component that calls useTranslation(ns) for anything beyond
- * `common`.
+ * Loads a namespace's resources on demand. If a specific locale is given,
+ * loads for that locale; otherwise loads for all supported locales so
+ * switching to/from RTL is instant and seamless.
  */
-export async function loadNamespace(ns: Namespace): Promise<void> {
-  if (i18n.hasResourceBundle('en', ns)) return
+export async function loadNamespace(ns: Namespace, lng?: string): Promise<void> {
+  const locales = lng ? [lng] : SUPPORTED_LOCALES
 
-  const loader = localeModules[`./locales/en/${ns}.json`]
-  if (!loader) {
-    throw new Error(`i18n: no locale file for namespace "${ns}"`)
+  for (const l of locales) {
+    if (!i18n.hasResourceBundle(l, ns)) {
+      const loader = localeModules[`./locales/${l}/${ns}.json`]
+      if (loader) {
+        const mod = await loader()
+        i18n.addResourceBundle(l, ns, mod.default, true, true)
+      }
+    }
   }
+}
 
-  const mod = await loader()
-  i18n.addResourceBundle('en', ns, mod.default, true, true)
+/**
+ * Changes language and synchronizes HTML dir and lang attributes.
+ */
+export async function changeLanguage(lng: string): Promise<void> {
+  await i18n.changeLanguage(lng)
+  setDocumentDirection(lng)
 }
 
 export default i18n

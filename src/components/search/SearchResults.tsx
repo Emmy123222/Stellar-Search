@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink, Star, Clock, Sparkles, Search } from 'lucide-react'
-import type { SearchResult } from '../../hooks/useSearch'
+import type { PeopleAlsoAskResult, SearchResult } from '../../hooks/useSearch'
 
 interface Props {
   results: SearchResult[]
   query: string
   isLoading?: boolean
+  peopleAlsoAsk?: PeopleAlsoAskResult[]
 }
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
@@ -15,10 +16,16 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
     : 'http://localhost:3001'
 )
 
-export function SearchResults({ results, query, isLoading }: Props) {
+export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }: Props) {
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
+
+  useEffect(() => {
+    setSummary('')
+    setSummaryError(null)
+    setSummarizing(false)
+  }, [query, results])
 
   if (isLoading) {
     return (
@@ -42,7 +49,7 @@ export function SearchResults({ results, query, isLoading }: Props) {
     )
   }
 
-  if (!results.length) return null
+  if (!results.length && !peopleAlsoAsk.length) return null
 
   const summarize = async () => {
     if (summarizing) return
@@ -160,7 +167,7 @@ export function SearchResults({ results, query, isLoading }: Props) {
               <Sparkles className="w-3 h-3 text-neon-cyan" />
               <span className="font-display text-xs text-neon-cyan tracking-wider">AI SUMMARY · GROQ</span>
               {summarizing && (
-                <span className="flex items-center gap-1 ml-auto">
+                <span className="flex items-center gap-1 ms-auto">
                   {[0, 1, 2].map(j => (
                     <motion.div
                       key={j}
@@ -183,6 +190,27 @@ export function SearchResults({ results, query, isLoading }: Props) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {peopleAlsoAsk.length > 0 && (
+        <section aria-labelledby="people-also-ask-heading" className="rounded-xl p-4 space-y-2 border border-white/10 bg-white/[0.03]">
+          <h2 id="people-also-ask-heading" className="font-display text-sm text-white/70 tracking-wider">
+            PEOPLE ALSO ASK
+          </h2>
+          {peopleAlsoAsk.map((item) => (
+            <details key={`${item.question}-${item.url}`} className="group border-t border-white/10 pt-2">
+              <summary className="cursor-pointer text-sm text-white/70 hover:text-neon-cyan focus-visible:outline focus-visible:outline-2 focus-visible:outline-neon-cyan rounded">
+                {item.question}
+              </summary>
+              <div className="pt-2 pl-3 text-xs text-white/50 leading-relaxed">
+                <p>{item.answer}</p>
+                <a href={item.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 text-neon-cyan/70 hover:text-neon-cyan">
+                  {item.source} <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                </a>
+              </div>
+            </details>
+          ))}
+        </section>
+      )}
 
       {results.map((r, i) => (
         <motion.a
@@ -254,7 +282,11 @@ export function SearchResults({ results, query, isLoading }: Props) {
               animate={{ width: `${r.relevanceScore * 100}%` }}
               transition={{ delay: i * 0.06 + 0.3, duration: 0.5, ease: 'easeOut' }}
               className="h-full rounded-full"
-              style={{ background: 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))' }}
+              style={{
+                background: isRtl
+                  ? 'linear-gradient(270deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))'
+                  : 'linear-gradient(90deg, rgba(0,245,255,0.6), rgba(0,245,255,0.15))',
+              }}
             />
           </div>
         </motion.a>

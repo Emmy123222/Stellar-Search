@@ -14,7 +14,7 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || 'dummy_key' })
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (typeof (res as any).setHeader === 'function') {
-    applyServerlessHeaders(res)
+    applyServerlessHeaders(res, req)
   }
 
   if (req.method !== 'POST') {
@@ -24,7 +24,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { messages, model: requestedModel } = (req.body || {}) as {
+  const contentType = req.headers?.['content-type'] || req.headers?.['Content-Type'] || ''
+  if (typeof contentType === 'string' && contentType.trim() !== '' && !contentType.toLowerCase().includes('application/json')) {
+    return res.status(415).json({ error: 'Unsupported Media Type: application/json required' })
+  }
+
+  let body: any = req.body
+  if (typeof body === 'string') {
+    try {
+      body = body.trim() === '' ? {} : JSON.parse(body)
+    } catch (_err) {
+      return res.status(400).json({ error: 'Invalid JSON request body' })
+    }
+  } else if (!body || typeof body !== 'object') {
+    body = {}
+  }
+
+  const { messages, model: requestedModel } = body as {
     messages?: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string
     stream?: boolean

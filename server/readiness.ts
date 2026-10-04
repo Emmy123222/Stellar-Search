@@ -29,18 +29,6 @@ const TIMEOUT_MS = 2000
 
 let cache: { result: ReadinessResult; expiresAt: number; cachedAt: number } | null = null
 
-function withTimeout<T>(promise: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
-  let timer: NodeJS.Timeout
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms)
-    signal?.addEventListener('abort', () => {
-      clearTimeout(timer)
-      reject(new Error('aborted'))
-    })
-  })
-  return Promise.race([promise.finally(() => clearTimeout(timer)), timeout]) as Promise<T>
-}
-
 async function timedFetch(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<{ ok: boolean; status: number; latencyMs: number }> {
   const timeoutMs = init.timeoutMs ?? TIMEOUT_MS
   const controller = new AbortController()

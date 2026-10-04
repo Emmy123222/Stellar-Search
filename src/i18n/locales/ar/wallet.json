@@ -1,0 +1,22 @@
+{
+  "connect": "ربط FREIGHTER",
+  "connecting": "جارٍ الربط…",
+  "disconnect": "قطع الاتصال",
+  "menuLabel": "قائمة المحفظة",
+  "panelLabel": "محفظة FREIGHTER",
+  "wrongNetwork": "شبكة خاطئة",
+  "expectedNetwork": "(المتوقع {{network}})",
+  "usdcBalanceLabel": "رصيد USDC",
+  "xlmBalanceLabel": "رصيد XLM",
+  "gasFeesNote": "لرسوم الشبكة",
+  "queriesRemaining_zero": "~{{count}} استعلام",
+  "queriesRemaining_one": "~{{count}} استعلام",
+  "queriesRemaining_two": "~{{count}} استعلامان",
+  "queriesRemaining_few": "~{{count}} استعلامات",
+  "queriesRemaining_many": "~{{count}} استعلام",
+  "queriesRemaining_other": "~{{count}} استعلام",
+  "recentTransactions": "المعاملات الأخيرة",
+  "noTransactions": "لا توجد معاملات بعد",
+  "buyUsdc": "شراء USDC ↗",
+  "fundTestnet": "تمويل شبكة الاختبار ↗"
+}

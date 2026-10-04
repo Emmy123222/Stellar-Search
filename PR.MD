@@ -1,6 +1,6 @@
 # PR — Enforce Meaningful Vitest Coverage Thresholds
 
-> **CI, developer experience & releases** · *Repo Avatar: Emmy123222/Stellar-Search*
+> **CI, developer experience & releases** · _Repo Avatar: Emmy123222/Stellar-Search_
 
 ## Summary
 
@@ -16,7 +16,7 @@ Enforces **Vitest coverage thresholds for all four metrics — statements, branc
 
 From the task:
 
-> *Five utility tests can pass while payment, wallet, API, MCP, and UI behavior remains untested.*
+> _Five utility tests can pass while payment, wallet, API, MCP, and UI behavior remains untested._
 
 Relevant files flagged by the issue:
 
@@ -28,7 +28,7 @@ Without thresholds, a PR can add a trivial util and appear “green” while bre
 
 Delivery notes required:
 
-> *Keep Express, Vercel, browser, and MCP behavior aligned where this concern crosses runtime boundaries. Preserve verified x402 settlement semantics for paid routes.*
+> _Keep Express, Vercel, browser, and MCP behavior aligned where this concern crosses runtime boundaries. Preserve verified x402 settlement semantics for paid routes._
 
 ---
 
@@ -45,11 +45,11 @@ Delivery notes required:
 
 ## Acceptance Criteria — How This PR Satisfies
 
-| Criterion | Implementation | Evidence |
-|-----------|---------------|---------|
-| **Coverage reports include statements, branches, functions, and lines** | `vite.config.ts:11` `reporter: ['text','json','html','lcov','text-summary']`, `provider: 'v8'` | `npm run test:coverage` prints all four: `Statements 28.55% Branches 25.32% Functions 23.15% Lines 29.84%` |
-| **Initial thresholds are documented and ratchet upward for critical modules** | Thresholds in `vite.config.ts:26` + tables in `README.md:207` and `CONTRIBUTING.md:410` | Global `25/23/20/26` (from `15/15/12/15`, next `35/30/28/35`), per-file ratchets listed below |
-| **Automated coverage and documentation are updated where the behavior changes** | CI now fails on threshold breach (`.github/workflows/ci.yml:64`), docs updated in same PR | `npm run test:coverage` in CI + artifact upload; docs co-located with config |
+| Criterion                                                                       | Implementation                                                                                 | Evidence                                                                                                   |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Coverage reports include statements, branches, functions, and lines**         | `vite.config.ts:11` `reporter: ['text','json','html','lcov','text-summary']`, `provider: 'v8'` | `npm run test:coverage` prints all four: `Statements 28.55% Branches 25.32% Functions 23.15% Lines 29.84%` |
+| **Initial thresholds are documented and ratchet upward for critical modules**   | Thresholds in `vite.config.ts:26` + tables in `README.md:207` and `CONTRIBUTING.md:410`        | Global `25/23/20/26` (from `15/15/12/15`, next `35/30/28/35`), per-file ratchets listed below              |
+| **Automated coverage and documentation are updated where the behavior changes** | CI now fails on threshold breach (`.github/workflows/ci.yml:64`), docs updated in same PR      | `npm run test:coverage` in CI + artifact upload; docs co-located with config                               |
 
 ---
 
@@ -97,17 +97,17 @@ Lines      : 29.84% (294/985)   — threshold 26% ✅
 
 Per-file (critical modules):
 
-| File | Stmts | Branch | Funcs | Lines | Threshold | Status |
-|------|------:|-------:|------:|------:|-----------|--------|
-| `src/lib/constants.ts` | 91.3% | 65% | 100% | 91.3% | 90/60/100/90 | ✅ |
-| `src/lib/stellar.ts` | 100% | 95% | 100% | 100% | 85/75/85/85 | ✅ |
-| `server/corsConfig.ts` | 100% | 100% | 100% | 100% | 90/85/95/90 | ✅ |
-| `src/components/search/SearchBar.tsx` | 85% | 94.3% | 100% | 88.8% | 80/80/90/80 | ✅ |
-| `server/index.ts` | 39.7% | 33.3% | 38% | 42.8% | 35/30/35/35 | ✅ |
-| `api/search.ts` | 93.6% | 78.7% | 100% | 92.6% | 90/75/80/90 | ✅ |
-| `api/health.ts` | 100% | 100% | 100% | 100% | 80/50/100/80 | ✅ |
-| `mcp-server/index.ts` | 33.3% | 25.4% | 25% | 34.1% | 30/20/20/30 | ✅ |
-| `src/hooks/useFreighterWallet.ts` | 92.8% | 69.7% | 93.7% | 93.7% | 85/65/90/85 | ✅ |
+| File                                  | Stmts | Branch | Funcs | Lines | Threshold    | Status |
+| ------------------------------------- | ----: | -----: | ----: | ----: | ------------ | ------ |
+| `src/lib/constants.ts`                | 91.3% |    65% |  100% | 91.3% | 90/60/100/90 | ✅     |
+| `src/lib/stellar.ts`                  |  100% |    95% |  100% |  100% | 85/75/85/85  | ✅     |
+| `server/corsConfig.ts`                |  100% |   100% |  100% |  100% | 90/85/95/90  | ✅     |
+| `src/components/search/SearchBar.tsx` |   85% |  94.3% |  100% | 88.8% | 80/80/90/80  | ✅     |
+| `server/index.ts`                     | 39.7% |  33.3% |   38% | 42.8% | 35/30/35/35  | ✅     |
+| `api/search.ts`                       | 93.6% |  78.7% |  100% | 92.6% | 90/75/80/90  | ✅     |
+| `api/health.ts`                       |  100% |   100% |  100% |  100% | 80/50/100/80 | ✅     |
+| `mcp-server/index.ts`                 | 33.3% |  25.4% |   25% | 34.1% | 30/20/20/30  | ✅     |
+| `src/hooks/useFreighterWallet.ts`     | 92.8% |  69.7% | 93.7% | 93.7% | 85/65/90/85  | ✅     |
 
 ### Ratchet Policy (documented in README + CONTRIBUTING)
 
@@ -121,52 +121,52 @@ Per-file (critical modules):
 
 ### Config & Tooling
 
-| File | Change | Lines |
-|------|--------|------:|
-| `vite.config.ts:6` | Add `test` block with `jsdom`, `vitest.setup.ts`, `coverage` thresholds | +41 |
-| `vitest.setup.ts:1` | New — `import '@testing-library/jest-dom/vitest'` | +1 |
-| `package.json:9` | `test:coverage`, `test:coverage:check`; add `@vitest/coverage-v8`, `jsdom`, `supertest`, `@testing-library/react|jest-dom|user-event`, `@types/supertest` | +9 |
-| `package-lock.json` | Dependency tree update | +1156 |
-| `tsconfig.json:7` | Add `types: ["vitest/globals","@testing-library/jest-dom"]`, include `vitest.setup.ts` | +3 |
-| `.github/workflows/ci.yml:48` | `test` job now `npm run test:coverage` + artifact; new `coverage` gate job | +35 |
+| File                          | Change                                                                                                           |    Lines |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------: | ------------------------------- | --- |
+| `vite.config.ts:6`            | Add `test` block with `jsdom`, `vitest.setup.ts`, `coverage` thresholds                                          |      +41 |
+| `vitest.setup.ts:1`           | New — `import '@testing-library/jest-dom/vitest'`                                                                |       +1 |
+| `package.json:9`              | `test:coverage`, `test:coverage:check`; add `@vitest/coverage-v8`, `jsdom`, `supertest`, `@testing-library/react | jest-dom | user-event`, `@types/supertest` | +9  |
+| `package-lock.json`           | Dependency tree update                                                                                           |    +1156 |
+| `tsconfig.json:7`             | Add `types: ["vitest/globals","@testing-library/jest-dom"]`, include `vitest.setup.ts`                           |       +3 |
+| `.github/workflows/ci.yml:48` | `test` job now `npm run test:coverage` + artifact; new `coverage` gate job                                       |      +35 |
 
 ### Server (Express) — Preserve x402
 
-| File | Change |
-|------|--------|
+| File                 | Change                                                                                                                                                                                                                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `server/index.ts:27` | Remove unused `HORIZON_URL` import; export `MAX_QUERY_LENGTH`/`validateQuery` for testability; deduplicate duplicate `POST /ai/chat` (kept whitelist version with `AVAILABLE_MODELS`), preserves `x402Accepts` `scheme:exact price:0.001 amount:10000 network:payTo` at `server/index.ts:104` |
 
 ### Browser (React)
 
-| File | Change |
-|------|--------|
+| File                        | Change                             |
+| --------------------------- | ---------------------------------- |
 | `src/hooks/useSearch.ts:20` | Remove unused `HORIZON_URL` (lint) |
-| `src/lib/stellar.ts` | No change — covered by new tests |
-| `src/lib/constants.ts` | No change — covered by new tests |
+| `src/lib/stellar.ts`        | No change — covered by new tests   |
+| `src/lib/constants.ts`      | No change — covered by new tests   |
 
 ### Tests Added (114 tests total, was 5)
 
-| Test File | Covers | Tests |
-|-----------|--------|------:|
-| `src/utils.test.ts:1` | Existing 5 utils (kept) | 5 |
-| `src/lib/stellar.test.ts:1` | `truncateAddress`, `truncateHash`, `explorerTxUrl`, `explorerAccountUrl`, `formatTimeAgo`, `fetchServerStats` | 17 |
-| `src/lib/constants.test.ts:1` | Network/issuer/contract alignment, `AMOUNT_STROOPS` settlement | 9 |
-| `server/corsConfig.test.ts:1` | `parseAllowedOrigins`, `isProductionEnv`, `getCorsStartupMessage`, `buildCorsOptions` (x402 headers) | 18 |
-| `server/validateQuery.test.ts:1` | `validateQuery` 400/256/control-char stripping | 13 |
-| `server/health.test.ts:1` | `GET /health`, `GET /`, `POST /ai/chat` validation (supertest + x402 mock) | 10 |
-| `src/components/search/SearchBar.test.tsx:1` | `FRESHNESS_OPTIONS`, submit, disabled, network mismatch, chips, balance | 10 |
-| `src/hooks/useFreighterWallet.test.ts:1` | `isConnected`/`requestAccess`/`getAddress`/`getNetwork`, Horizon `loadAccount`/`operations` | 7 |
-| `api/health.test.ts:1` | Vercel health, `0.001 USDC`, `x402`, timestamp | 3 |
-| `api/search.test.ts:1` | Vercel `OPTIONS`, `405`, `400`, `402` with decoded `PAYMENT-REQUIRED` (`x402Version:2, scheme:exact, network, amount:10000, asset:C..., payTo, maxTimeout:300`), Serper mock, freshness | 10 |
-| `mcp-server/tools.test.ts:1` | MCP `ListTools` `web_search|image_search|news_search|ai_summarize|check_balance|get_search_stats`, `AMOUNT_USDC` in description, `check_balance` Horizon mock | 4 |
-| **Total** | | **114** |
+| Test File                                    | Covers                                                                                                                                                                                  |        Tests |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -----------: | ----------- | ------------ | ------------- | --------------------------------------------------------------------------- | --- |
+| `src/utils.test.ts:1`                        | Existing 5 utils (kept)                                                                                                                                                                 |            5 |
+| `src/lib/stellar.test.ts:1`                  | `truncateAddress`, `truncateHash`, `explorerTxUrl`, `explorerAccountUrl`, `formatTimeAgo`, `fetchServerStats`                                                                           |           17 |
+| `src/lib/constants.test.ts:1`                | Network/issuer/contract alignment, `AMOUNT_STROOPS` settlement                                                                                                                          |            9 |
+| `server/corsConfig.test.ts:1`                | `parseAllowedOrigins`, `isProductionEnv`, `getCorsStartupMessage`, `buildCorsOptions` (x402 headers)                                                                                    |           18 |
+| `server/validateQuery.test.ts:1`             | `validateQuery` 400/256/control-char stripping                                                                                                                                          |           13 |
+| `server/health.test.ts:1`                    | `GET /health`, `GET /`, `POST /ai/chat` validation (supertest + x402 mock)                                                                                                              |           10 |
+| `src/components/search/SearchBar.test.tsx:1` | `FRESHNESS_OPTIONS`, submit, disabled, network mismatch, chips, balance                                                                                                                 |           10 |
+| `src/hooks/useFreighterWallet.test.ts:1`     | `isConnected`/`requestAccess`/`getAddress`/`getNetwork`, Horizon `loadAccount`/`operations`                                                                                             |            7 |
+| `api/health.test.ts:1`                       | Vercel health, `0.001 USDC`, `x402`, timestamp                                                                                                                                          |            3 |
+| `api/search.test.ts:1`                       | Vercel `OPTIONS`, `405`, `400`, `402` with decoded `PAYMENT-REQUIRED` (`x402Version:2, scheme:exact, network, amount:10000, asset:C..., payTo, maxTimeout:300`), Serper mock, freshness |           10 |
+| `mcp-server/tools.test.ts:1`                 | MCP `ListTools` `web_search                                                                                                                                                             | image_search | news_search | ai_summarize | check_balance | get_search_stats`, `AMOUNT_USDC`in description,`check_balance` Horizon mock | 4   |
+| **Total**                                    |                                                                                                                                                                                         |      **114** |
 
 ### Docs
 
-| File | Change |
-|------|--------|
-| `README.md:200` | New `## Testing & Coverage` section with thresholds table, ratchet policy, and x402 semantics note |
-| `CONTRIBUTING.md:398` | Rewrote `## Testing` with coverage table, ratchet policy, and “5 utils can pass” warning |
+| File                  | Change                                                                                             |
+| --------------------- | -------------------------------------------------------------------------------------------------- |
+| `README.md:200`       | New `## Testing & Coverage` section with thresholds table, ratchet policy, and x402 semantics note |
+| `CONTRIBUTING.md:398` | Rewrote `## Testing` with coverage table, ratchet policy, and “5 utils can pass” warning           |
 
 ---
 
@@ -251,4 +251,4 @@ When `src/hooks/useSearch.ts`, `api/ai/chat.ts`, `src/components/wallet/WalletPa
 
 ---
 
-*Generated for PR `Enforce_meaningful_Vitest` — 8f6ba32*
+_Generated for PR `Enforce_meaningful_Vitest` — 8f6ba32_

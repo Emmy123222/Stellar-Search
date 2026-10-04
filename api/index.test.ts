@@ -5,8 +5,9 @@ describe('api/index — Vercel root API handler', () => {
   it('returns service metadata and endpoint descriptions', () => {
     const res: any = {
       json: vi.fn(),
+      setHeader: vi.fn(),
     }
-    const req: any = {}
+    const req: any = { headers: {} }
 
     handler(req, res)
 

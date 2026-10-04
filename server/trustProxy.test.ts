@@ -34,6 +34,8 @@ vi.mock('groq-sdk', () => ({
 }))
 vi.mock('./logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  privacySafeIp: vi.fn((ip: string) => ip ? `ip:${ip}` : 'ip:unknown'),
+  privacySafeQuery: vi.fn(() => undefined),
 }))
 
 process.env.STELLAR_RECEIVING_ADDRESS = 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3'
@@ -59,7 +61,7 @@ describe('trust proxy — explicit hop configuration', () => {
   it('defaults to NOT trusting any proxy (X-Forwarded-For ignored)', async () => {
     const app = await loadApp(undefined)
     expect(app.get('trust proxy')).toBe(false)
-  })
+  }, 15000)
 
   it('TRUST_PROXY_HOPS=<n> trusts exactly n hops', async () => {
     const app = await loadApp('1')

@@ -15,7 +15,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FolderOpen, FolderPlus, Trash2, Pencil, Check, X,
-  ExternalLink, ChevronRight, ChevronDown,
+  ExternalLink, ChevronRight,
   Bookmark, BookmarkX, Star, Clock, AlertTriangle,
   ArchiveX,
 } from 'lucide-react'

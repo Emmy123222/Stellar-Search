@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { IS_MAINNET, STELLAR_NETWORK, AMOUNT_USDC, STELLAR_EXPERT_URL, truncateHash, formatTimeAgo, explorerTxUrl, explorerAccountUrl } from '../lib/stellar'
 import type { StellarTransaction } from '../hooks/useFreighterWallet'
 import type { SearchReceipt } from '../hooks/useSearch'
+import { useDirection } from '../lib/rtl'
 
 interface Props {
   transactions: StellarTransaction[]
@@ -16,16 +17,18 @@ interface Props {
 }
 
 export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance, xlmBalance, onRefresh }: Props) {
+  const { isRtl } = useDirection()
   const [receipts, setReceipts] = useState<SearchReceipt[]>([])
 
   useEffect(() => {
-    const raw = localStorage.getItem('stellarsearch_receipts')
-    if (raw) {
-      try {
+    try {
+      const storage = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined' ? window.localStorage : null
+      const raw = storage?.getItem('stellarsearch_receipts')
+      if (raw) {
         setReceipts(JSON.parse(raw))
-      } catch (e) {
-        console.error('Failed to parse receipts:', e)
       }
+    } catch (e) {
+      console.error('Failed to parse receipts:', e)
     }
   }, [])
 
@@ -151,6 +154,7 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
                   fontFamily="monospace"
                 />
                 <YAxis 
+                  orientation={isRtl ? 'right' : 'left'}
                   stroke="rgba(255,255,255,0.2)" 
                   fontSize={10} 
                   tickLine={false} 
@@ -165,7 +169,8 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
                     border: '1px solid rgba(255,184,0,0.2)',
                     borderRadius: '8px',
                     fontFamily: 'monospace',
-                    fontSize: '12px'
+                    fontSize: '12px',
+                    direction: isRtl ? 'rtl' : 'ltr',
                   }}
                   itemStyle={{ color: '#ffb800' }}
                   labelStyle={{ color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}
@@ -231,9 +236,19 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
                 transition={{ delay: i * 0.04 }}
                 className="flex items-center gap-4 px-5 py-3.5 hover:bg-white/2 transition-colors"
               >
-                <div className="w-1.5 h-1.5 rounded-full bg-neon-green flex-shrink-0" />
+                <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${tx.direction === 'inbound' ? 'bg-neon-green' : 'bg-neon-cyan'}`} />
                 <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-display text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider ${tx.direction === 'inbound' ? 'bg-neon-green/10 text-neon-green border border-neon-green/30' : 'bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30'}`}>
+                      {tx.direction || 'transfer'}
+                    </span>
                   <p className="text-sm text-white/60 capitalize truncate">{tx.type.replace('_', ' ')}</p>
+                  </div>
+                  {tx.counterparty && (
+                    <p className="font-mono text-white/30 truncate mt-0.5" style={{ fontSize: '10px' }}>
+                      Counterparty: {tx.counterparty}
+                    </p>
+                  )}
                   <div className="flex items-center gap-3 mt-0.5">
                     <a
                       href={explorerTxUrl(tx.hash)}
@@ -247,7 +262,7 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
                     <span className="text-white/20" style={{ fontSize: '10px' }}>{formatTimeAgo(tx.timestamp)}</span>
                   </div>
                 </div>
-                <div className="text-right flex-shrink-0">
+                <div className="text-end flex-shrink-0">
                   <p className="font-display text-sm text-white/60">{tx.amount} {tx.asset}</p>
                   <p className="font-display text-neon-green/50 mt-0.5" style={{ fontSize: '9px' }}>CONFIRMED</p>
                 </div>
@@ -308,7 +323,7 @@ export function DashboardPage({ transactions, txLoading, publicKey, usdcBalance,
                     <span className="text-white/20" style={{ fontSize: '10px' }}>{formatTimeAgo(receipt.timestamp)}</span>
                   </div>
                 </div>
-                <div className="text-right flex-shrink-0">
+                <div className="text-end flex-shrink-0">
                   <p className="font-display text-sm text-neon-amber/80">{receipt.amount} USDC</p>
                   <p className="font-display text-white/15 mt-0.5 uppercase" style={{ fontSize: '9px' }}>
                     {receipt.network.split(':')[1]}
