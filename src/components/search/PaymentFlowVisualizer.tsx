@@ -1,7 +1,8 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, ShieldCheck, ShieldAlert, AlertTriangle } from 'lucide-react'
 import type { SearchSession } from '../../hooks/useSearch'
 import { explorerTxUrl, truncateHash } from '../../lib/stellar'
+import type { FeeSponsorshipInfo } from '../../lib/feeSponsorship'
 
 // 6 steps of the x402 flow per the official x402 quickstart:
 //   request → 402 → sign → retry → facilitate → result
@@ -18,9 +19,117 @@ const TOTAL_STEPS = STEPS.length
 
 interface Props {
   session: SearchSession
+  /** Acknowledges the challenge's fee terms so signing can proceed (#312). */
+  onAcknowledge?: () => void
 }
 
-export function PaymentFlowVisualizer({ session }: Props) {
+/** Visual treatment per sponsorship classification. */
+const SPONSORSHIP_STYLE: Record<FeeSponsorshipInfo['payer'], { color: string; bg: string; border: string }> = {
+  sponsor: { color: '#39ff14', bg: 'rgba(57,255,20,0.05)', border: 'rgba(57,255,20,0.25)' },
+  payer:   { color: '#ffb800', bg: 'rgba(255,184,0,0.05)', border: 'rgba(255,184,0,0.25)' },
+  unknown: { color: '#ef4444', bg: 'rgba(239,68,68,0.05)', border: 'rgba(239,68,68,0.25)' },
+}
+
+function SponsorshipIcon({ payer }: { payer: FeeSponsorshipInfo['payer'] }) {
+  const className = 'w-3.5 h-3.5 flex-shrink-0'
+  if (payer === 'sponsor') return <ShieldCheck className={className} />
+  if (payer === 'payer') return <ShieldAlert className={className} />
+  return <AlertTriangle className={className} />
+}
+
+/**
+ * Shows who pays the Stellar network fee for the active challenge, and any
+ * estimated payer fee the challenge stated (#312). Purely presentational — the
+ * acknowledgement gate itself lives in `useSearch`.
+ */
+function FeeSponsorshipPanel({
+  sponsorship,
+  awaiting,
+  onAcknowledge,
+}: {
+  sponsorship: FeeSponsorshipInfo
+  awaiting: boolean
+  onAcknowledge?: () => void
+}) {
+  const style = SPONSORSHIP_STYLE[sponsorship.payer]
+
+  return (
+    <div
+      className="space-y-2"
+      data-testid="sponsorship-row"
+      data-payer={sponsorship.payer}
+    >
+      <div
+        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-2.5 px-3 rounded-lg"
+        style={{ background: style.bg, border: `1px solid ${style.border}` }}
+      >
+        <div className="flex items-start gap-2">
+          <span style={{ color: style.color }} className="mt-0.5">
+            <SponsorshipIcon payer={sponsorship.payer} />
+          </span>
+          <div>
+            <p className="font-display text-xs" style={{ color: style.color }} data-testid="sponsorship-label">
+              {sponsorship.label}
+            </p>
+            <p className="text-white/40" style={{ fontSize: '11px' }} data-testid="sponsorship-detail">
+              {sponsorship.detail}
+            </p>
+          </div>
+        </div>
+
+        {sponsorship.estimatedNetworkFeeXlm && (
+          <div className="text-right flex-shrink-0" data-testid="sponsorship-estimated-fee">
+            <p className="font-display text-white/25" style={{ fontSize: '8px' }}>EST. PAYER FEE</p>
+            <p className="font-display" style={{ fontSize: '10px', color: style.color }}>
+              {sponsorship.estimatedNetworkFeeXlm} XLM
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Unknown or changed sponsorship: no optimistic copy, no signing until
+          the payer explicitly continues (#312). */}
+      <AnimatePresence>
+        {awaiting && (
+          <motion.div
+            key="sponsorship-ack"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-2.5 px-3 rounded-lg"
+              style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)' }}
+              data-testid="sponsorship-acknowledgement"
+            >
+              <p className="text-red-200" style={{ fontSize: '11px' }}>
+                {sponsorship.acknowledgementReason === 'changed'
+                  ? 'Fee sponsorship changed since the last challenge. Nothing is signed until you confirm these terms.'
+                  : 'The challenge does not state who pays the network fee. Nothing is signed until you confirm these terms.'}
+              </p>
+              {onAcknowledge && (
+                <motion.button
+                  type="button"
+                  onClick={onAcknowledge}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="inline-flex items-center justify-center px-3 py-2 rounded-lg font-display text-xs tracking-wider text-red-200 flex-shrink-0"
+                  style={{ border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.08)' }}
+                  data-testid="sponsorship-acknowledge-button"
+                >
+                  I UNDERSTAND — CONTINUE
+                </motion.button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+export function PaymentFlowVisualizer({ session, onAcknowledge }: Props) {
   if (session.status === 'idle') return null
 
   const isSearching = session.status === 'searching'
@@ -144,6 +253,15 @@ export function PaymentFlowVisualizer({ session }: Props) {
           </p>
         </motion.div>
       </AnimatePresence>
+
+      {/* Network-fee terms, shown before (and after) signing (#312) */}
+      {session.sponsorship && (
+        <FeeSponsorshipPanel
+          sponsorship={session.sponsorship}
+          awaiting={session.awaitingSponsorshipAcknowledgement === true}
+          onAcknowledge={onAcknowledge}
+        />
+      )}
 
       {/* TX hash */}
       {session.status === 'complete' && session.txHash && (

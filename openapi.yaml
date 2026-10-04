@@ -459,9 +459,32 @@ components:
                 example: "GDQP2KPQGKIHYJGXNUIYOMHARUARCA7DJT5FO2FFOOKY3B2WSQHG4W37"
               maxTimeoutSeconds:
                 type: integer
+                description: >
+                  Seconds the signed authorization stays valid. Clients should
+                  display this window and request a fresh challenge if it
+                  elapses before signing completes.
                 example: 300
               extra:
                 type: object
+                description: >
+                  Fee metadata for the challenge. `areFeesSponsored` states who
+                  pays the Stellar network fee; `estimatedFeeStroops` is an
+                  optional estimate of the payer's network fee when it is not
+                  sponsored.
+                example: { areFeesSponsored: true }
+                properties:
+                  areFeesSponsored:
+                    type: boolean
+                    description: >-
+                      True when StellarSearch covers the Stellar network fee so
+                      the payer is charged only `amount`.
+                  estimatedFeeStroops:
+                    type: integer
+                    minimum: 0
+                    description: >-
+                      Optional estimate, in stroops, of the network fee the
+                      payer covers. Omitted when fees are sponsored or the
+                      server cannot estimate one.
                 additionalProperties: true
 
     SearchResult:

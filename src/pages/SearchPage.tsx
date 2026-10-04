@@ -262,7 +262,7 @@ export function SearchPage({ wallet, onConnectWallet, session, search, reset }: 
             animate={{ opacity: 1, y: 0 }}
             className="space-y-5"
           >
-            <PaymentFlowVisualizer session={session} />
+            <PaymentFlowVisualizer session={session} onAcknowledge={acknowledgeSponsorship} />
 
             {session.status === 'error' && (
               <div className="flex items-center gap-3 p-4 rounded-xl border border-red-500/25 bg-red-500/5">

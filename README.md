@@ -198,6 +198,34 @@ While connected, the browser watches Freighter for account/network updates. A ne
 | Spendable amount    | USDC balance ≥ 0.001 USDC (`AMOUNT_STROOPS=10000`)                           | Fund the wallet with testnet USDC                  |
 | Signer availability | Freighter can sign Soroban authorization entries                             | Unlock Freighter and approve the request           |
 
+### Fee sponsorship & network-fee details (#312)
+
+A challenge advertises `extra.areFeesSponsored`, which decides whether the
+payer's 0.001 USDC is the *only* cost or whether they also cover the Stellar
+network fee. The wallet flow used to ignore it, so the terms shown before
+signing were not necessarily the terms the challenge actually offered.
+
+- **Stated sponsorship is shown as-is** — the payment flow renders a fee panel
+  naming the payer: `Network fees sponsored` (StellarSearch covers the network
+  fee, so only the advertised price is charged) or `You pay network fees`
+  (the price plus the network fee).
+- **Estimated payer fee** — when a challenge provides
+  `extra.estimatedFeeStroops` (or `extra.estimatedPayerFeeStroops`), the
+  estimate is shown next to the status as `EST. PAYER FEE` in XLM. When it is
+  absent the panel says the challenge did not state an estimate instead of
+  guessing a number.
+- **Unknown or changed sponsorship requires acknowledgement** — if a challenge
+  omits `areFeesSponsored`, or states a different value from the previous
+  challenge, signing is **paused**. Nothing is sent to Freighter and nothing
+  reaches the facilitator until the payer presses `I UNDERSTAND — CONTINUE`.
+  Cancelling the flow, resetting it, or starting a new search clears the prompt
+  rather than leaving a stale one on screen.
+
+The parsing and copy live in `src/lib/feeSponsorship.ts` (pure, unit-tested),
+the gate is owned by `useSearch` (`session.sponsorship`,
+`session.awaitingSponsorshipAcknowledgement`, `acknowledgeSponsorship()`), and
+the presentation lives in `PaymentFlowVisualizer`.
+
 1. Agent hits `/search` — the `@x402/express` middleware intercepts
 2. Returns `HTTP 402 Payment Required` with price + network + payTo address
 3. After the preflight passes, the x402 client signs a Soroban authorization entry via Freighter wallet

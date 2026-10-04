@@ -74,9 +74,12 @@ export interface SearchSession {
 interface ActivePayment {
   controller: AbortController
   cancelled: boolean
+  /** Lets a paused flow be released when the request is abandoned. */
+  onCancel?: () => void
 }
 
 const NETWORK_CHANGED_MESSAGE = 'Freighter network changed. Payment creation was cancelled; switch back and try again.'
+const SUPERSEDED_MESSAGE = 'Payment creation was cancelled because a new search started.'
 
 export function useSearch(
   walletAddress: string | null = null,
@@ -87,6 +90,11 @@ export function useSearch(
   })
   const activePaymentRef = useRef<ActivePayment | null>(null)
   const previousNetworkRef = useRef(walletNetwork)
+  // The sponsorship advertised by the previous challenge, so a *changed* value
+  // can require fresh acknowledgement (#312).
+  const previousSponsorshipRef = useRef<boolean | null | undefined>(undefined)
+  // Resolver for a flow paused on an unacknowledged sponsorship (#312).
+  const acknowledgementRef = useRef<{ resolve: () => void; reject: (error: Error) => void } | null>(null)
 
   const cancelActivePayment = useCallback((message = NETWORK_CHANGED_MESSAGE) => {
     const activePayment = activePaymentRef.current
@@ -94,9 +102,22 @@ export function useSearch(
 
     activePayment.cancelled = true
     activePayment.controller.abort()
+    activePayment.onCancel?.()
+    // A cancelled flow must not keep showing an acknowledgement prompt: the
+    // challenge it describes is invalid (#312).
     setSession(prev => prev.status === 'searching'
-      ? { ...prev, status: 'error', error: message }
+      ? { ...prev, status: 'error', error: message, awaitingSponsorshipAcknowledgement: false }
       : prev)
+  }, [])
+
+  /**
+   * Releases the flow when the payer acknowledges the challenge's fee terms
+   * (#312). Signing does not proceed until this is called.
+   */
+  const acknowledgeSponsorship = useCallback(() => {
+    const pending = acknowledgementRef.current
+    acknowledgementRef.current = null
+    pending?.resolve()
   }, [])
 
   // A Freighter network switch invalidates any in-progress payment payload.
@@ -114,6 +135,16 @@ export function useSearch(
   const search = useCallback(async (query: string, countOrFreshness: number | string = 5, includeDomains?: string[], excludeDomains?: string[]) => {
     if (!query.trim()) return
 
+    // A new search supersedes any in-flight payment, including one paused on an
+    // unacknowledged sponsorship. Abandoning it without touching the session
+    // keeps the new search's state authoritative.
+    const superseded = activePaymentRef.current
+    if (superseded) {
+      superseded.cancelled = true
+      superseded.controller.abort()
+      superseded.onCancel?.()
+    }
+
     const activePayment: ActivePayment = {
       controller: new AbortController(),
       cancelled: false,
@@ -125,7 +156,11 @@ export function useSearch(
       }
     }
 
-    setSession({ query, results: [], txHash: null, paidAmount: null, status: 'searching', step: 1, suggestions: [] })
+    setSession({
+      query, results: [], txHash: null, paidAmount: null,
+      status: 'searching', step: 1, suggestions: [],
+      sponsorship: null, awaitingSponsorshipAcknowledgement: false,
+    })
 
     const t0     = Date.now()
     const countVal = typeof countOrFreshness === 'number' ? String(countOrFreshness) : '5'
@@ -220,6 +255,36 @@ export function useSearch(
         (name) => firstRes.headers.get(name)
       )
       console.log('💰 Payment requirements:', paymentRequired)
+
+      // Fee sponsorship is part of the payment terms. Surface it — and require
+      // an explicit acknowledgement when the challenge does not state who pays
+      // the network fee, or states something different from last time — before
+      // the wallet is asked to sign (#312).
+      const sponsorship = readFeeSponsorship(paymentRequired, previousSponsorshipRef.current)
+      previousSponsorshipRef.current = sponsorship.areFeesSponsored
+      setSession(prev => ({ ...prev, sponsorship }))
+
+      if (sponsorship.requiresAcknowledgement) {
+        setSession(prev => ({ ...prev, awaitingSponsorshipAcknowledgement: true }))
+        await new Promise<void>((resolve, reject) => {
+          acknowledgementRef.current = {
+            resolve: () => {
+              acknowledgementRef.current = null
+              resolve()
+            },
+            reject: (error: Error) => {
+              acknowledgementRef.current = null
+              reject(error)
+            },
+          }
+          activePayment.onCancel = () => {
+            acknowledgementRef.current = null
+            reject(new Error(SUPERSEDED_MESSAGE))
+          }
+        })
+        throwIfCancelled()
+        setSession(prev => ({ ...prev, awaitingSponsorshipAcknowledgement: false }))
+      }
 
       // Flow step 3 — createPaymentPayload() triggers the Freighter popup (signs auth entry)
       advance(3)
@@ -317,6 +382,7 @@ export function useSearch(
         ...prev,
         status: 'error',
         error:  msg,
+        awaitingSponsorshipAcknowledgement: false,
       }))
     } finally {
       if (activePaymentRef.current === activePayment) {
@@ -326,8 +392,17 @@ export function useSearch(
   }, [walletAddress, walletNetwork])
 
   const reset = useCallback(() => {
-    setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [] })
+    const active = activePaymentRef.current
+    if (active) {
+      active.cancelled = true
+      active.controller.abort()
+      active.onCancel?.()
+    }
+    setSession({
+      query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [],
+      sponsorship: null, awaitingSponsorshipAcknowledgement: false,
+    })
   }, [])
 
-  return { session, search, reset, cancelActivePayment }
+  return { session, search, reset, cancelActivePayment, acknowledgeSponsorship }
 }
