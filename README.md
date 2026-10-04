@@ -892,6 +892,8 @@ Both runtimes enforce identical x402 payment semantics (`AMOUNT_STROOPS = "10000
 | **Client Disconnect Handling** | Listens to `req.on('close')`, terminates downstream Serper calls via `AbortController`, and emits `CLIENT_DISCONNECT` events.                | Handled via platform request cancellation.                                                           | Serverless functions are abruptly terminated by the host when client disconnects; state cleanup is non-guaranteed.                                                                   |
 | **AI Chat Streaming**          | Server-Sent Events (`text/event-stream`). Flushes SSE chunks as Groq generates tokens.                                                       | Server-Sent Events (`text/event-stream`) with `Cache-Control: no-cache` and `X-Accel-Buffering: no`. | Subject to Vercel function timeout limits (10s on Hobby tier, 60s on Pro tier).                                                                                                      |
 
+AI chat requests are bounded consistently in Express and Vercel: JSON bodies may be at most 64 KiB, conversations at most 50 messages and 32,000 total characters, and each message at most 8,000 characters. Express returns HTTP 413 for an oversized body; structurally valid JSON that exceeds a conversation limit returns HTTP 400 before Groq is called.
+
 ---
 
 ### 4. Metrics & Health Diagnostics

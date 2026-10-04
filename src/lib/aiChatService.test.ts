@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
+  AI_CHAT_LIMITS,
   DEFAULT_MODEL,
   DEFAULT_SYSTEM_PROMPT,
   DEFAULT_MAX_TOKENS,
@@ -59,6 +60,13 @@ describe('aiChatService - Shared AI Chat Service', () => {
         { role: 'assistant', content: 'Stellar is a payment network.' },
       ]
       expect(validateChatMessages(valid)).toBeNull()
+    })
+
+    it('bounds message count, per-message size, and total conversation size', () => {
+      expect(validateChatMessages(Array.from({ length: AI_CHAT_LIMITS.messages + 1 }, () => ({ role: 'user', content: 'x' })))).toMatch(/Too many messages/)
+      expect(validateChatMessages([{ role: 'user', content: 'x'.repeat(AI_CHAT_LIMITS.messageCharacters + 1) }])).toMatch(/too long/)
+      const messages = Array.from({ length: 5 }, () => ({ role: 'user', content: 'x'.repeat(7_000) }))
+      expect(validateChatMessages(messages)).toMatch(/Conversation is too long/)
     })
   })
 
