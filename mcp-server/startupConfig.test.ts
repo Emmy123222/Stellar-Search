@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { validateStartupConfig, maskSecret, maskAddress } from './startupConfig'
 
 describe('maskSecret — safe secret redaction', () => {

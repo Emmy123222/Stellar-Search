@@ -21,10 +21,10 @@ const CORS_EXPOSED_HEADERS = [
 const CORS_METHODS = ['GET', 'POST', 'OPTIONS'] as const
 
 export function parseAllowedOrigins(raw?: string): string[] {
-  return (raw ?? '')
+  return Array.from(new Set((raw ?? '')
     .split(',')
     .map((entry) => entry.trim())
-    .filter(Boolean)
+    .filter(Boolean)))
 }
 
 export function isProductionEnv(): boolean {

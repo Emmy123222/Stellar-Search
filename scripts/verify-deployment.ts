@@ -34,11 +34,6 @@ type Check = { name: string; ok: boolean; status?: number; latencyMs: number; de
 
 const checks: Check[] = []
 
-function isJsonResponse(headers: Headers): boolean {
-  const ct = headers.get('content-type') || ''
-  return ct.includes('application/json')
-}
-
 async function fetchWithTimeout(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), init.timeoutMs ?? TIMEOUT_MS)

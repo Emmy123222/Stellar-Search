@@ -4,8 +4,6 @@ import { decodePaymentSignatureHeader } from '@x402/core/http'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { STELLAR_NETWORK, AMOUNT_USDC, assertValidStellarConfig } from '../src/lib/constants'
 import {
-  getNetwork,
-  getPayTo,
   buildPaymentRequirement,
   buildPaymentRequiredPayload,
 } from '../src/lib/x402Config'
@@ -119,7 +117,7 @@ async function verifyPayment(
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  applyServerlessHeaders(res)
+  applyServerlessHeaders(res, req)
 
   // ─── CORS ─────────────────────────────────────────────────────────────────
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -155,6 +153,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const cleanQ = validation.cleanQ
 
+  const { includeDomains, excludeDomains } = req.query as Record<string, string>
+
   // ─── Parameter validation (#188) ─────────────────────────────────────────
   const validatedCount = validateCount(req.query.count, SEARCH_COUNT)
   if (!validatedCount.ok) {
@@ -170,6 +170,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const count = validatedCount.value
   const tbs = validatedFreshness.value ? FRESHNESS_TBS[validatedFreshness.value] : undefined
+
+  let finalQ = cleanQ
+  const appliedIncludes = includeDomains ? includeDomains.split(',').map(d => d.trim().toLowerCase()).filter(d => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)).slice(0, 5) : []
+  const appliedExcludes = excludeDomains ? excludeDomains.split(',').map(d => d.trim().toLowerCase()).filter(d => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)).slice(0, 10) : []
+
+  if (appliedIncludes.length > 0) {
+    finalQ += ' (' + appliedIncludes.map(d => `site:${d}`).join(' OR ') + ')'
+  }
+  if (appliedExcludes.length > 0) {
+    finalQ += ' ' + appliedExcludes.map(d => `-site:${d}`).join(' ')
+  }
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -209,9 +220,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // ─── Serper.dev ──────────────────────────────────────────────────────────
     const requestBody: Record<string, unknown> = {
-      q: cleanQ,
+      q: finalQ,
       num: count,
     }
+
     if (tbs) requestBody.tbs = tbs
 
     const serperRes = await fetchSerper('/search', {
@@ -242,7 +254,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const peopleAlsoAsk = normalizePeopleAlsoAsk(data)
 
     const responseBody: SearchResponse = {
-      query: cleanQ,
+      query: queryMeta.executedQuery,
+      originalQuery: queryMeta.originalQuery,
+      executedQuery: queryMeta.executedQuery,
+      suggestedQuery: queryMeta.suggestedQuery,
+      isCorrected: queryMeta.isCorrected,
       results,
       count: results.length,
       network: NETWORK,

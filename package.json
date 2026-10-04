@@ -6,7 +6,12 @@
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
+    "test:sdk": "vitest run packages/typescript-client",
+    "build:sdk": "npm run --workspace=@stellar-search/client build",
     "setup": "bash scripts/setup.sh",
     "dev": "vite",
     "build": "vite build",

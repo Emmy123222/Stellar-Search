@@ -87,5 +87,6 @@ describe('vercel.json — Deployment manifest, rewrites, and security headers', 
     expect(headersMap['Access-Control-Allow-Headers']).toContain('payment-signature')
     expect(headersMap['Access-Control-Expose-Headers']).toContain('PAYMENT-REQUIRED')
     expect(headersMap['Access-Control-Expose-Headers']).toContain('X-Payment-Response')
+    expect(headersMap['Vary']).toBe('Accept-Encoding')
   })
 })

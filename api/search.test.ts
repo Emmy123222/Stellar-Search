@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 vi.hoisted(() => {
   process.env.STELLAR_RECEIVING_ADDRESS =
@@ -102,6 +102,10 @@ function mockReqRes(overrides: any = {}) {
 
 describe("api/search — Vercel x402 settlement (aligned with Express)", () => {
   const originalFetch = global.fetch;
+
+  afterAll(() => {
+    global.fetch = originalFetch;
+  });
 
   beforeEach(() => {
     vi.clearAllMocks()

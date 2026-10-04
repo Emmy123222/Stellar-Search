@@ -16,8 +16,7 @@ import { x402Client, x402HTTPClient }          from '@x402/fetch'
 import { ExactStellarScheme }                  from '@x402/stellar/exact/client'
 import { signAuthEntry, getNetworkDetails }    from '@stellar/freighter-api'
 import { Networks }                            from '@stellar/stellar-sdk'
-import { Buffer }                              from 'buffer'
-import { HORIZON_URL, IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
+import { IS_MAINNET, EXPECTED_WALLET_NETWORK, explorerTxUrl } from '../lib/stellar'
 
 const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
   typeof window !== 'undefined' && window.location.origin.includes('vercel.app') 
@@ -61,12 +60,16 @@ export type PaymentStep = 1 | 2 | 3 | 4 | 5 | 6
 
 export interface SearchSession {
   query: string
+  originalQuery?: string
+  executedQuery?: string
+  suggestedQuery?: string
+  isCorrected?: boolean
   results: SearchResult[]
   txHash: string | null
   paidAmount: string | null
   status: 'idle' | 'searching' | 'complete' | 'error'
   step?: PaymentStep
-  error?: string
+  error?: string | null
   durationMs?: number
   suggestions: string[]
   peopleAlsoAsk?: PeopleAlsoAskResult[]
@@ -112,7 +115,11 @@ export function useSearch(
     }
   }, [walletNetwork, cancelActivePayment])
 
-  const search = useCallback(async (query: string, count = 5) => {
+  const cancel = useCallback(() => {
+    cancelActivePayment('Search request was cancelled.')
+  }, [cancelActivePayment])
+
+  const search = useCallback(async (query: string, count = 5, includeDomains?: string[], excludeDomains?: string[]) => {
     if (!query.trim()) return
 
     const activePayment: ActivePayment = {
@@ -129,7 +136,12 @@ export function useSearch(
     setSession({ query, results: [], txHash: null, paidAmount: null, status: 'searching', step: 1, suggestions: [], peopleAlsoAsk: [] })
 
     const t0     = Date.now()
-    const params = new URLSearchParams({ q: query, count: String(count), suggestions: '1' })
+    const countVal = typeof countOrFreshness === 'number' ? String(countOrFreshness) : '5'
+    const freshnessVal = typeof countOrFreshness === 'string' && countOrFreshness ? countOrFreshness : undefined
+    const params = new URLSearchParams({ q: query, count: countVal, suggestions: '1' })
+    if (freshnessVal) params.append('freshness', freshnessVal)
+    if (includeDomains && includeDomains.length > 0) params.append('includeDomains', includeDomains.join(','))
+    if (excludeDomains && excludeDomains.length > 0) params.append('excludeDomains', excludeDomains.join(','))
 
     const advance = (step: PaymentStep) =>
       setSession(prev => ({ ...prev, step }))
@@ -249,12 +261,19 @@ export function useSearch(
       const data = await paidRes.json()
       console.log('✅ Search complete!')
 
+      const paymentResponseHeader = paidRes.headers.get('PAYMENT-RESPONSE') || paidRes.headers.get('x-payment-response')
+      const paymentResponse = paymentResponseHeader
+        ? httpClient.parsePaymentResponseHeader(paymentResponseHeader)
+        : null
+      const txHash = data.txHash || paymentResponse?.transactionHash || null
+      const paidAmount = data.paidAmount || paymentResponse?.amount || null
+
       // Flow step 6 — result received and rendered
       setSession({
         query,
         results:     data.results    ?? [],
-        txHash:      data.txHash     ?? null,
-        paidAmount:  data.paidAmount ?? null,
+        txHash:      txHash,
+        paidAmount:  paidAmount,
         status:      'complete',
         step:        6,
         durationMs:  Date.now() - t0,
@@ -262,26 +281,26 @@ export function useSearch(
         peopleAlsoAsk: data.peopleAlsoAsk ?? [],
       })
 
-      if (data.txHash) {
-        toast.success(`Payment settled: ${data.paidAmount || '0.001'} USDC`, {
+      if (txHash) {
+        toast.success(`Payment settled: ${paidAmount || '0.001'} USDC`, {
           description: 'View transaction on Stellar network',
           action: {
             label: 'Explorer',
-            onClick: () => window.open(explorerTxUrl(data.txHash), '_blank')
+            onClick: () => window.open(explorerTxUrl(txHash), '_blank')
           }
         })
       }
 
       // Persist receipt
-      if (data.txHash) {
+      if (txHash) {
         try {
           const receiptsRaw = localStorage.getItem('stellarsearch_receipts')
           const receipts: SearchReceipt[] = receiptsRaw ? JSON.parse(receiptsRaw) : []
           
           const newReceipt: SearchReceipt = {
-            txHash: data.txHash,
+            txHash: txHash,
             query: query.trim(),
-            amount: data.paidAmount || '0.001',
+            amount: paidAmount || '0.001',
             timestamp: new Date().toISOString(),
             network: data.network || 'stellar:testnet',
           }
@@ -316,5 +335,5 @@ export function useSearch(
     setSession({ query: '', results: [], txHash: null, paidAmount: null, status: 'idle', suggestions: [], peopleAlsoAsk: [] })
   }, [])
 
-  return { session, search, reset, cancelActivePayment }
+  return { session, search, reset, cancel } as const
 }

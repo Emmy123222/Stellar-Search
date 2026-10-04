@@ -5,8 +5,8 @@ import { LiveTicker } from './LiveTicker'
 describe('LiveTicker — accessibility', () => {
   it('exposes exactly one semantic copy of each item to assistive tech', () => {
     render(<LiveTicker walletConnected={false} />)
-    expect(screen.getAllByText('PROTOCOL')).toHaveLength(1)
-    expect(screen.getAllByText('x402')).toHaveLength(1)
+    expect(screen.getAllByText('PROTOCOL').filter(e => !e.closest('[aria-hidden="true"]'))).toHaveLength(1)
+    expect(screen.getAllByText('x402').filter(e => !e.closest('[aria-hidden="true"]'))).toHaveLength(1)
   })
 
   it('hides the duplicated loop copy from screen readers', () => {
@@ -24,6 +24,6 @@ describe('LiveTicker — accessibility', () => {
 
   it('reflects wallet connection status', () => {
     render(<LiveTicker walletConnected={true} />)
-    expect(screen.getAllByText('WALLET CONNECTED')).toHaveLength(1)
+    expect(screen.getAllByText('WALLET CONNECTED').filter(e => !e.closest('[aria-hidden="true"]'))).toHaveLength(1)
   })
 })
