@@ -22,9 +22,11 @@ vi.mock('groq-sdk', () => ({
 }))
 vi.mock('./logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  privacySafeIp: vi.fn((ip: string) => ip ? `ip:${ip}` : 'ip:unknown'),
+  privacySafeQuery: vi.fn(() => undefined),
 }))
 
-import { validateQuery, MAX_QUERY_LENGTH } from './index'
+import { validateQuery, MAX_QUERY_LENGTH } from './validateQuery'
 
 describe('validateQuery — x402 paid route input validation', () => {
   it('accepts valid query and trims', () => {

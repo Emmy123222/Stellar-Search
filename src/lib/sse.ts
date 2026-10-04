@@ -12,7 +12,7 @@ export async function consumeSSE(
       const match = buffer.match(/\r?\n\r?\n/)
       if (!match && !flush) return false
 
-      let rawEvent = ''
+      let rawEvent: string
       if (match) {
         rawEvent = buffer.slice(0, match.index)
         buffer = buffer.slice(match.index! + match[0].length)

@@ -1,4 +1,8 @@
-import '@testing-library/jest-dom/vitest'
+console.log("VITEST SETUP RUNNING")
+import { expect } from 'vitest'
+import * as matchers from '@testing-library/jest-dom/matchers'
+
+expect.extend(matchers)
 
 // Modules validate configuration at import time to mirror deployment startup.
 // Provide non-secret fixtures before each test module is evaluated.
