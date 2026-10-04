@@ -6,10 +6,13 @@
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
-    font-family: 'DM Sans', sans-serif;
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     background: #020408;
     color: #fff;
     -webkit-font-smoothing: antialiased;
+  }
+  [dir="rtl"] body {
+    font-family: 'DM Sans', 'Segoe UI', Tahoma, Arial, sans-serif;
   }
   ::selection { background: rgba(0,245,255,0.25); color: #fff; }
   ::-webkit-scrollbar { width: 4px; }
@@ -25,6 +28,12 @@
   .shadow-neon { box-shadow: 0 0 20px rgba(0,245,255,0.4), 0 0 60px rgba(0,245,255,0.1); }
   .shadow-neon-sm { box-shadow: 0 0 10px rgba(0,245,255,0.3); }
   .glow-text { text-shadow: 0 0 20px rgba(0,245,255,0.8), 0 0 40px rgba(0,245,255,0.4); }
+
+  /* Direction-aware icon flipping for progression & flow icons in RTL */
+  [dir="rtl"] .rtl-flip {
+    transform: scaleX(-1);
+    display: inline-block;
+  }
 }
 
 @keyframes ticker {
@@ -32,6 +41,14 @@
   100% { transform: translateX(-50%); }
 }
 .animate-ticker { animation: ticker 30s linear infinite; }
+
+@keyframes ticker-rtl {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(50%); }
+}
+[dir="rtl"] .animate-ticker {
+  animation: ticker-rtl 30s linear infinite;
+}
 
 @keyframes scan {
   0% { top: 0%; }
@@ -46,5 +63,5 @@
   content: '█';
   animation: blink 1s step-end infinite;
   color: #00f5ff;
-  margin-left: 2px;
+  margin-inline-start: 2px;
 }

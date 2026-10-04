@@ -19,7 +19,11 @@ const CARDS = [
   { key: 'uptime',           label: 'Uptime',        Icon: Shield,     color: '#7dd3fc', fmt: (v: unknown) => String(v) },
 ]
 
-export function StatsGrid() {
+interface Props {
+  pollingIntervalMs?: number
+}
+
+export function StatsGrid({ pollingIntervalMs }: Props = {}) {
   const [stats, setStats] = useState<ServerStats>({
     totalQueries: 0,
     totalUsdcSettled: '0.00',
@@ -44,9 +48,9 @@ export function StatsGrid() {
       }
     }
     load()
-    const id = setInterval(load, 10_000)
+    const id = setInterval(load, pollingIntervalMs || 10_000)
     return () => clearInterval(id)
-  }, [])
+  }, [pollingIntervalMs])
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

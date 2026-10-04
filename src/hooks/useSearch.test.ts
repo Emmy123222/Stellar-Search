@@ -57,6 +57,28 @@ import { settleSpend, getSpendUsage } from '../lib/spendingLimits'
 const WALLET = 'GAAZI4TCR3TY5OJHCTJC2A4AFL5MNSF3GAKGOWG5W2LBBGCS2TDPZOM3'
 const SEARCH_LOCK_KEY = 'stellarsearch_search_lock'
 
+describe('useSearch cancellation', () => {
+  it('provides a cancel function that aborts in-flight search and ignores late state updates', async () => {
+    const { result } = renderHook(() => useSearch('GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX', 'Public Stellar Network'))
+
+    expect(typeof result.current.cancel).toBe('function')
+
+    act(() => {
+      result.current.search('test query')
+    })
+
+    expect(result.current.session.status).toBe('searching')
+
+    act(() => {
+      result.current.cancel()
+    })
+
+    expect(result.current.session.status).toBe('error')
+    expect(result.current.session.error).toBe('Search request was cancelled.')
+  })
+})
+
+
 // This test environment's window.localStorage has every method undefined
 // (a pre-existing jsdom/vitest quirk, not introduced here — see
 // useFreighterWallet's sibling issue in the StellarCred repo for the same

@@ -97,3 +97,30 @@ export const USDC_CONTRACT = IS_MAINNET ? USDC_CONTRACT_MAINNET : USDC_CONTRACT_
 // Payments
 export const AMOUNT_STROOPS = '10000' // 0.001 USDC
 export const AMOUNT_USDC = '0.001'
+
+export type SearchMode = 'search' | 'images' | 'news'
+
+export interface PricingTier {
+  amountUsdc: string
+  amountStroops: string
+}
+
+export function calculateSearchPrice(mode: SearchMode = 'search', count: number = 5): PricingTier {
+  let baseUsdc = 0.001
+  if (mode === 'images') {
+    baseUsdc = 0.0015
+  } else if (mode === 'news') {
+    baseUsdc = 0.0012
+  } else {
+    baseUsdc = 0.001
+  }
+
+  const multiplier = Math.max(1, Math.floor(count / 5))
+  const totalUsdc = Number((baseUsdc * multiplier).toFixed(4))
+  const stroops = Math.round(totalUsdc * 10000000).toString()
+
+  return {
+    amountUsdc: totalUsdc.toFixed(3),
+    amountStroops: stroops,
+  }
+}

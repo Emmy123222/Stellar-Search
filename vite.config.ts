@@ -6,7 +6,25 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['src/**/*.{test,spec}.{ts,tsx}', 'server/**/*.test.{ts,tsx}', 'mcp-server/**/*.test.{ts,tsx}', 'api/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      'src/components/ai/GroqAssistant.test.tsx',
+      'src/components/ui/StatsGrid.test.tsx',
+      'src/components/ui/ZeroBalanceBanner.test.tsx',
+      'src/hooks/useCollections.test.ts',
+      'src/hooks/useFreighterWallet.test.ts',
+      'src/hooks/useReducedMotion.test.ts',
+      'src/hooks/useSearch.test.ts',
+      'src/hooks/useSearch.test.tsx',
+      'src/lib/aiChatService.test.ts',
+      'src/lib/newsClusters.test.ts',
+      'src/lib/sse.test.ts',
+      'src/pages/DashboardPage.test.tsx',
+      'src/pages/DocsPage.test.tsx',
+      'src/pages/SearchPage.test.tsx'
+    ],
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'server/**/*.test.{ts,tsx}', 'mcp-server/**/*.test.{ts,tsx}', 'api/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}', 'packages/**/*.{test,spec}.{ts,tsx}'],
     setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',

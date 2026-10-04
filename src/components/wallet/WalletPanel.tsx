@@ -24,6 +24,7 @@ export function WalletPanel({
   wallet, transactions, txLoading,
   onConnect, onDisconnect, onRefresh,
 }: Props) {
+  const { t } = useTranslation('wallet')
   const [open, setOpen]     = useState(false)
   const [copied, setCopied] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -102,7 +103,7 @@ export function WalletPanel({
         ) : (
           <Wallet className="w-3.5 h-3.5" />
         )}
-        {wallet.loading ? 'CONNECTING...' : 'CONNECT FREIGHTER'}
+        {wallet.loading ? t('connecting', 'CONNECTING...') : t('connect', 'CONNECT FREIGHTER')}
       </motion.button>
     )
   }
@@ -115,7 +116,7 @@ export function WalletPanel({
         onClick={() => open ? close() : setOpen(true)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label="Wallet menu"
+        aria-label={t('menuLabel', 'Wallet menu')}
         className={`flex items-center gap-2 px-4 py-2 rounded-lg border font-display text-xs tracking-wider transition-all ${
           isWrongNetwork 
             ? 'border-red-500/50 bg-red-500/5 text-red-400' 
@@ -128,7 +129,7 @@ export function WalletPanel({
         <span>{truncateAddress(wallet.publicKey!)}</span>
         <span className="text-white/30">·</span>
         <span className={isWrongNetwork ? 'text-red-300' : 'text-neon-amber'}>
-          {isWrongNetwork ? 'WRONG NETWORK' : `${wallet.usdcBalance} USDC`}
+          {isWrongNetwork ? t('wrongNetwork', 'WRONG NETWORK') : `${wallet.usdcBalance} USDC`}
         </span>
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </motion.button>
@@ -152,7 +153,7 @@ export function WalletPanel({
               initial={{ opacity: 0, y: 8, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.95 }}
-              className="fixed inset-x-0 bottom-0 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 z-50 rounded-t-2xl sm:rounded-xl overflow-hidden pb-4 sm:pb-0 w-full sm:w-[320px]"
+              className="fixed inset-x-0 bottom-0 sm:absolute sm:inset-auto sm:end-0 sm:top-full sm:mt-2 z-50 rounded-t-2xl sm:rounded-xl overflow-hidden pb-4 sm:pb-0 w-full sm:w-[320px] rtl:sm:left-0 rtl:sm:right-auto"
               style={{
                 background: 'rgba(6,13,20,0.95)',
                 backdropFilter: 'blur(20px)',
@@ -162,11 +163,11 @@ export function WalletPanel({
             {/* Header */}
             <div className="p-4 border-b border-white/5">
               <div className="flex items-center justify-between mb-2">
-                <span className="font-display text-xs text-white/30 tracking-widest">FREIGHTER WALLET</span>
+                <span className="font-display text-xs text-white/30 tracking-widest">{t('panelLabel', 'FREIGHTER WALLET')}</span>
                 <div className="flex items-center gap-2">
                   <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${isWrongNetwork ? 'bg-red-500' : 'bg-neon-green'}`} />
                   <span className={`font-display text-[10px] tracking-widest uppercase ${isWrongNetwork ? 'text-red-400' : 'text-neon-green/70'}`}>
-                    {wallet.network} {isWrongNetwork && '(EXPECTED ' + EXPECTED_WALLET_NETWORK + ')'}
+                    {wallet.network} {isWrongNetwork && t('expectedNetwork', { network: EXPECTED_WALLET_NETWORK, defaultValue: `(EXPECTED ${EXPECTED_WALLET_NETWORK})` })}
                   </span>
                 </div>
               </div>
@@ -192,16 +193,19 @@ export function WalletPanel({
               {/* Balances */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="py-2 px-3 rounded-lg bg-white/5">
-                  <p className="font-display text-white/30" style={{ fontSize: '9px' }}>USDC BALANCE</p>
+                  <p className="font-display text-white/30" style={{ fontSize: '9px' }}>{t('usdcBalanceLabel', 'USDC BALANCE')}</p>
                   <p className="font-display text-lg text-neon-amber mt-0.5">{wallet.usdcBalance}</p>
                   <p className="font-display text-white/25 mt-0.5" style={{ fontSize: '9px' }}>
-                    ~{Math.floor(parseFloat(wallet.usdcBalance) / parseFloat(AMOUNT_USDC)).toLocaleString()} queries
+                    {t('queriesRemaining', {
+                      count: Math.floor((isNaN(parseFloat(wallet.usdcBalance)) ? 0 : Math.max(0, parseFloat(wallet.usdcBalance))) / parseFloat(AMOUNT_USDC)),
+                      defaultValue: `~${Math.floor((isNaN(parseFloat(wallet.usdcBalance)) ? 0 : Math.max(0, parseFloat(wallet.usdcBalance))) / parseFloat(AMOUNT_USDC)).toLocaleString()} queries`,
+                    })}
                   </p>
                 </div>
                 <div className="py-2 px-3 rounded-lg bg-white/5">
-                  <p className="font-display text-white/30" style={{ fontSize: '9px' }}>XLM BALANCE</p>
+                  <p className="font-display text-white/30" style={{ fontSize: '9px' }}>{t('xlmBalanceLabel', 'XLM BALANCE')}</p>
                   <p className="font-display text-lg text-neon-cyan mt-0.5">{wallet.xlmBalance}</p>
-                  <p className="font-display text-white/25 mt-0.5" style={{ fontSize: '9px' }}>for gas fees</p>
+                  <p className="font-display text-white/25 mt-0.5" style={{ fontSize: '9px' }}>{t('gasFeesNote', 'for gas fees')}</p>
                 </div>
               </div>
 
@@ -217,7 +221,7 @@ export function WalletPanel({
             <div className="p-3">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-display text-white/30 tracking-widest" style={{ fontSize: '10px' }}>
-                  RECENT TRANSACTIONS
+                  {t('recentTransactions', 'RECENT TRANSACTIONS')}
                 </span>
                 <button
                   onClick={onRefresh}
@@ -237,7 +241,7 @@ export function WalletPanel({
                   />
                 </div>
               ) : transactions.length === 0 ? (
-                <p className="text-xs text-white/20 text-center py-3">No transactions yet</p>
+                <p className="text-xs text-white/20 text-center py-3">{t('noTransactions', 'No transactions yet')}</p>
               ) : (
                 <div className="space-y-1.5 max-h-40 overflow-y-auto">
                   {transactions.map(tx => (
@@ -246,9 +250,19 @@ export function WalletPanel({
                       className="flex items-center justify-between py-1.5 px-2 rounded bg-white/3 hover:bg-white/5 transition-colors"
                     >
                       <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-display text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider ${tx.direction === 'inbound' ? 'bg-neon-green/10 text-neon-green border border-neon-green/30' : 'bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30'}`}>
+                            {tx.direction || 'transfer'}
+                          </span>
                         <p className="font-display text-xs text-white/50 capitalize">
                           {tx.type.replace('_', ' ')}
                         </p>
+                        </div>
+                        {tx.counterparty && (
+                          <p className="font-mono text-white/30 truncate mt-0.5" style={{ fontSize: '9px' }}>
+                            Counterparty: {truncateAddress(tx.counterparty, 4, 4)}
+                          </p>
+                        )}
                         <div className="flex items-center gap-2 mt-0.5">
                           <a
                             href={explorerTxUrl(tx.hash)}
@@ -264,7 +278,7 @@ export function WalletPanel({
                           </span>
                         </div>
                       </div>
-                      <p className="font-display text-xs text-white/60 flex-shrink-0 ml-2">
+                      <p className="font-display text-xs text-white/60 flex-shrink-0 ms-2">
                         {tx.amount} {tx.asset}
                       </p>
                     </div>
@@ -282,7 +296,7 @@ export function WalletPanel({
                   rel="noopener noreferrer"
                   className="flex-1 py-2 rounded-lg border border-neon-amber/20 text-center font-display text-[10px] text-neon-amber/70 hover:bg-neon-amber/5 transition-colors uppercase tracking-widest"
                 >
-                  Buy USDC ↗
+                  {t('buyUsdc', 'Buy USDC ↗')}
                 </a>
               ) : (
                 <a
@@ -291,14 +305,14 @@ export function WalletPanel({
                   rel="noopener noreferrer"
                   className="flex-1 py-2 rounded-lg border border-neon-cyan/20 text-center font-display text-[10px] text-neon-cyan/70 hover:bg-neon-cyan/5 transition-colors uppercase tracking-widest"
                 >
-                  Fund Testnet ↗
+                  {t('fundTestnet', 'Fund Testnet ↗')}
                 </a>
               )}
               <button
                 onClick={() => { onDisconnect(); close() }}
                 className="flex items-center gap-1.5 py-2 px-3 rounded-lg border border-white/10 font-display text-xs text-white/30 hover:text-red-400 hover:border-red-500/30 transition-all"
               >
-                <LogOut className="w-3 h-3" /> Disconnect
+                <LogOut className="w-3 h-3 rtl-flip" /> {t('disconnect', 'Disconnect')}
               </button>
             </div>
           </motion.div>

@@ -88,6 +88,40 @@ npm run search:cli -- "Stellar x402" --mode search --count 5 --timeout 30000 --f
 
 The CLI supports `discovery`, `quote`, and `search` modes, emits machine-readable JSON when `--json` is used, and can write a receipt file with `--receipt path/to/file.json`. For paid actions, prefer secure environment variables or a protected prompt for signing material; never pass private keys on the command line or print them in logs.
 
+### 7. TypeScript Client SDK (`@stellar-search/client`)
+
+External autonomous agents, backend services, and web applications can use the official typed TypeScript SDK located in [`packages/typescript-client`](packages/typescript-client):
+
+```typescript
+import { StellarSearchClient, createServerSigner } from '@stellar-search/client'
+
+const client = new StellarSearchClient({
+  baseUrl: process.env.SEARCH_API_URL || 'http://localhost:3001',
+  signer: createServerSigner({
+    getSecretKey: async () => process.env.STELLAR_PRIVATE_KEY!,
+  }),
+  network: 'stellar:testnet',
+})
+
+// Paid web search with automatic 402 challenge negotiation & payment retry
+const response = await client.search('Stellar smart contracts', { count: 5 })
+console.log(response.results)
+
+// Verify settlement receipt on-chain via Horizon
+if (response.txHash) {
+  const verification = await client.verifyReceipt({
+    txHash: response.txHash,
+    query: response.query,
+    amount: response.paidAmount,
+    network: response.network,
+    timestamp: new Date().toISOString(),
+  })
+  console.log(`Receipt verified: ${verification.status}`) // 'confirmed'
+}
+```
+
+See [`packages/typescript-client/README.md`](packages/typescript-client/README.md) for browser signer (Freighter), server signer (Keypair/secrets), and complete API docs.
+
 ---
 
 ## Environment Variables
@@ -105,12 +139,17 @@ All environment variables are read from a local `.env` (see the sanitized `.env.
 | `PORT`                      | No       | `3001`                             | Express server listen port. Falls back to `3001` if missing.                                                                                                                                                                                     | `3001`                                                     |
 | `TRUST_PROXY_HOPS`          | No       | `0`                                | Reverse-proxy hops to trust so the rate limiter resolves real client IPs (e.g. `1` for Vercel). `0`/unset disables trusting `X-Forwarded-For` (spoof-safe); `true` trusts all proxies.                                                           | `1`                                                        |
 | `RATE_LIMIT_PER_MINUTE`     | No       | `30`                               | Positive request limit applied by Express.                                                                                                                                                                                                       | `30`                                                       |
+| `RATE_LIMIT_STORE`          | No       | `memory`                           | Use `redis` in horizontally scaled production to share atomic rate-limit buckets.                                                                                                                                                                | `redis`                                                    |
+| `UPSTASH_REDIS_REST_URL`    | Redis only | —                                | Upstash-compatible Redis REST endpoint.                                                                                                                                                                                                           | `https://...upstash.io`                                    |
+| `UPSTASH_REDIS_REST_TOKEN`  | Redis only | —                                | Redis REST bearer token; keep it in encrypted deployment secrets.                                                                                                                                                                                 | `...`                                                      |
 | `PAYMENT_AMOUNT_USDC`       | No       | `0.001`                            | Positive USDC amount. Must exactly equal `PAYMENT_AMOUNT_STROOPS / 10^7`.                                                                                                                                                                        | `0.001`                                                    |
 | `PAYMENT_AMOUNT_STROOPS`    | No       | `10000`                            | Positive Stellar stroop amount paired with `PAYMENT_AMOUNT_USDC`.                                                                                                                                                                                | `10000`                                                    |
 | `VITE_SERVER_URL`           | No       | `/api`                             | Browser-safe API base URL. Defaults to same-origin `/api`, which works for custom domains and subpaths; Vite proxies it to Express locally.                                                                                                      | `/api` or `https://api.example.com/stellar`                |
 | `MCP_ENABLE_RECEIPTS`       | No       | `0`                                | Set `1` to opt-in MCP local receipt storage for `stellar-search://receipts/recent` (in-memory capped at 50)                                                                                                                                      | `1`                                                        |
 
 ### Deployment configuration
+
+Local development uses the zero-setup in-memory limiter. With `RATE_LIMIT_STORE=redis`, one Lua command atomically increments each bucket and establishes its expiry across all application instances. Startup fails if either Redis credential is absent. Runtime store failures are logged and fail open, preserving availability while temporarily weakening throttling; production monitoring should alert on those errors.
 
 Use your platform's encrypted secret configuration (for example, Vercel Project Settings → Environment Variables) for `STELLAR_RECEIVING_ADDRESS` and `SERPER_API_KEY`; do not commit production `.env` files. `.env.production`, `.env`, and local override files are ignored. Only `.env.example` is tracked and it contains placeholders only.
 
@@ -127,8 +166,58 @@ The typed schema checks required core variables separately from optional feature
 | `SERPER_BREAKER_FAILURE_THRESHOLD` | No | `5` | Consecutive Serper failures (5xx/429/network error) required to open the circuit breaker (see [Serper circuit breaker](#serper-circuit-breaker-120)). | `5` |
 | `SERPER_BREAKER_OPEN_MS` | No | `30000` | Milliseconds the breaker stays open before allowing a half-open recovery probe. | `30000` |
 | `SERPER_BREAKER_HALF_OPEN_PROBES` | No | `1` | Concurrent requests allowed through while the breaker is half-open, testing recovery. | `1` |
+| `DEBUG_LOGGING` | No | `false` | Enable debug logging mode for development/troubleshooting. See [Logging & Privacy](#logging--privacy) for details. | `false` |
 
 > Startup validation: the server validates `STELLAR_NETWORK` and `STELLAR_RECEIVING_ADDRESS` before the paid routes are mounted. Invalid values fail fast with a clear error that redacts the actual address instead of logging secret material.
+
+---
+
+## Logging & Privacy
+
+StellarSearch implements privacy-preserving logging by default to protect user data and reduce sensitive telemetry exposure.
+
+### Default behavior (production)
+
+In default mode (`DEBUG_LOGGING=false` or unset):
+
+- **IP addresses** are logged as SHA-256 hashes (first 16 characters) prefixed with `ip:` — e.g., `ip:a1b2c3d4e5f6...`
+- **Query text** is never logged — the `query` field is omitted from payment attempt logs
+- **Sensitive data** (API keys, wallet addresses, payment headers) is automatically redacted by the shared redactor (`src/lib/redactor.ts`)
+- Use request IDs for correlation instead of query content
+
+### Debug mode (development/troubleshooting only)
+
+When `DEBUG_LOGGING=true`:
+
+- **IP addresses** are logged in full (e.g., `192.168.1.1`) for troubleshooting network issues
+- **Query text** is logged truncated to 200 characters to aid debugging search behavior
+- All other redaction rules still apply (API keys, secrets, etc. remain redacted)
+- Log level is set to `debug` for more verbose output
+
+#### Debug mode retention policy
+
+⚠️ **Debug mode should only be enabled temporarily for active debugging sessions.**
+
+- Never store debug logs long-term or commit them to version control
+- Clear debug logs immediately after the debugging session is complete
+- Debug logs are subject to the same access controls as regular logs
+- In production deployments, ensure `DEBUG_LOGGING` is unset or set to `false`
+
+### Implementation
+
+The privacy functions are centralized in `server/logger.ts`:
+
+- `privacySafeIp(value)` — hashes IPs by default, returns full IP in debug mode
+- `privacySafeQuery(value)` — returns `undefined` by default, truncated query in debug mode
+- Both functions respect the `DEBUG_LOGGING` environment variable
+
+The shared redactor (`src/lib/redactor.ts`) provides recursive, case-insensitive redaction of:
+- Authorization/payment headers
+- API keys and secrets
+- Wallet addresses and signing material
+- Query/search text and provider messages
+
+This redactor is used across all runtimes (Express, Vercel, browser, MCP) for consistent privacy protection.
 
 ---
 
@@ -643,6 +732,12 @@ stellar-search/
 │   ├── pages/                        # SearchPage, DocsPage, DashboardPage
 │   └── i18n/                         # i18next setup + locales/en/*.json (#345)
 │
+├── packages/                         # Monorepo client packages
+│   └── typescript-client/            # Typed TypeScript client SDK (@stellar-search/client)
+│       ├── src/                      # Client, signers (browser & server), x402, verification
+│       ├── examples/                 # Browser signer (Freighter) and Server signer (Agent)
+│       └── tests/                    # Automated SDK test suite
+│
 ├── server/                           # EXPRESS runtime (the only one serving /images, /news)
 │   ├── index.ts                      # App + x402 middleware, paid-route param validation,
 │   │                                 # /search /images /news /search/batch /jobs /health /ai/chat
@@ -822,7 +917,22 @@ Both runtimes enforce identical x402 payment semantics (`AMOUNT_STROOPS = "10000
 
 ---
 
-### 6. Reproducible Verification Commands
+### 6. Response Compression & Content Negotiation (Issue #330)
+
+Search snippets, rich structured payloads, and non-streaming Groq AI completions negotiate high-performance HTTP compression across runtimes without breaking streaming, 204/304 semantics, or x402 payment integrity:
+
+| Rule / Feature               | Express (`server/index.ts` via `compressionMiddleware`)                                                                       | Vercel Serverless (`api/` via `applyServerlessHeaders` + `vercel.json`)                                                 |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Negotiated Algorithms**    | Prioritizes Brotli (`br`) > Gzip (`gzip`) > Deflate (`deflate`) via parsed `Accept-Encoding` quality weights (`q-values`).    | Edge CDN Brotli/Gzip negotiation + programmatic `attachServerlessCompression`.                                        |
+| **Threshold Gate**           | Payloads `< 1024 bytes` remain uncompressed to avoid compression overhead. Configurable via `COMPRESSION_THRESHOLD_BYTES`.     | Default 1024 bytes. Smaller responses pass through uncompressed.                                                       |
+| **Vary Header**              | Always appends `Vary: Accept-Encoding` on compressible resources to ensure downstream proxies and caches separate encodings. | Enforced in `vercel.json` under `/api/(.*)` headers and in `applyServerlessHeaders`.                                  |
+| **Streaming / SSE Bypass**   | `text/event-stream` (AI chat SSE) and `application/x-ndjson` (batch JSONL) bypass buffering and compression completely.     | `text/event-stream` flushes directly without compression or buffering (`X-Accel-Buffering: no`).                      |
+| **No-Transform Bypass**      | `Cache-Control: no-transform` or `x-no-compression: 1` immediately disables compression.                                     | Respected in both serverless headers and route handlers.                                                              |
+| **x402 & Status Invariants** | `204 No Content` and `304 Not Modified` omit body and `Content-Encoding`. `PAYMENT-REQUIRED` and `X-Payment-Response` intact. | `204`/`304` remain bodyless; x402 challenge (`402`) and settlement (`200`) response headers strictly preserved.         |
+
+---
+
+### 7. Reproducible Verification Commands
 
 Use these exact commands to verify behavior across runtimes:
 
@@ -910,7 +1020,17 @@ English is the complete, always-available fallback locale, via [i18next](https:/
 }
 ```
 
-Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.### MCP progress notifications (#327)
+Then tell Claude Code: `"Search for the latest Stellar x402 examples"` — it calls `web_search`, the server pays via x402, and Claude gets real results.
+
+### Dual Output: Markdown Text + `structuredContent` (#171)
+
+All search, balance, and stats tools expose documented `outputSchema` and return **dual outputs**:
+- `content: [{ type: "text", text: ... }]`: Formatted Markdown for direct LLM and human reading.
+- `structuredContent: { ... }`: Strictly typed JSON payload containing parsed URLs, titles, payment fields (`paidAmount`, `currency`, `network`, `txHash`), latencies, balances, and operational metrics.
+
+For complete tool schemas, field definitions, and JSON payloads, see [mcp-server/README.md](./mcp-server/README.md).
+
+### MCP progress notifications (#327)
 
 Paid MCP tools (`web_search`, `image_search`, `news_search`) emit **bounded** `notifications/progress` events for actual payment/search phases **only when the client sends `_meta.progressToken`**:
 
@@ -1384,6 +1504,22 @@ The `supply-chain` CI job generates a **CycloneDX SBOM** from the committed lock
 
 ---
 
+## Right-to-Left (RTL) & Internationalization (#346)
+
+StellarSearch supports full bidirectional layouts (LTR and RTL) with a dedicated RTL test locale (**Arabic, `ar`**) without breaking x402 payment authorization, wallet interactions, or result flows:
+
+- **Logical CSS Properties**: Directional spacing and positioning use CSS logical properties (`margin-inline-start`, `pe-10`, `text-end`, `sm:end-0`, `inset-x-0`) rather than physical left/right rules.
+- **Direction-Aware Icons**: Directional flow indicators (e.g. progression arrows `→`, suggestion arrows, `Send` icon, `Disconnect` icon) use `.rtl-flip` (`transform: scaleX(-1)` under `[dir="rtl"]`) to point naturally in the reading direction.
+- **Interactive RTL Switcher**: The navigation bar includes a one-click locale toggle (`EN` ↔ `العربية (RTL)`) that sets `document.documentElement.dir` (`'rtl'` / `'ltr'`) and `document.documentElement.lang` in real time.
+- **Wallet & Payment Flows**:
+  - `WalletPanel`: Fixed/dropdown panel anchors to `sm:end-0` (`sm:inset-inline-end: 0`) and aligns transaction balances with `text-end`.
+  - `PaymentFlowVisualizer`: x402 step progression line spans `inset-x-5` with direction-aware progression glyphs.
+  - `GroqAssistant`: Floating trigger button and chat drawer anchor cleanly to `end-6` (`bottom-left` in RTL, `bottom-right` in LTR).
+  - `DashboardPage` & Recharts: Transaction audit logs align numbers via `text-end`, and the `BarChart` dynamically configures `YAxis orientation={isRtl ? 'right' : 'left'}`.
+- **Namespaced Translations**: Complete Arabic locale chunks in `src/i18n/locales/ar/` (`common.json`, `wallet.json`, `search.json`, `onboarding.json`, `errors.json`, `docs.json`) loaded on demand with instant fallback.
+
+---
+
 ## Hackathon requirements
 
 | Requirement                       | ✓                                                                                |
@@ -1393,3 +1529,7 @@ The `supply-chain` CI job generates a **CycloneDX SBOM** from the committed lock
 | Real Stellar testnet transactions | ✅ Every search settles 0.001 USDC via OpenZeppelin facilitator                  |
 | x402 protocol                     | ✅ `@x402/express` + `@x402/stellar`                                             |
 | Addresses explicit demand signal  | ✅ "pay-per-query web search instead of monthly subscriptions"                   |
+
+## Request Integrity & Validation
+
+Incoming requests are validated for query presence, format correctness, and parameter bounds prior to invoking the x402 payment middleware or contacting any external facilitator. Malformed or unsupported requests immediately receive a `400 Bad Request` response, preventing unnecessary payment challenges or downstream facilitator calls.

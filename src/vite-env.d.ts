@@ -19,12 +19,14 @@ declare module 'lucide-react' {
   export const Activity: LucideIcon
   export const AlertCircle: LucideIcon
   export const AlertTriangle: LucideIcon
+  export const ArchiveX: LucideIcon
   export const ArrowDown: LucideIcon
   export const ArrowRight: LucideIcon
   export const ArrowUp: LucideIcon
   export const BarChart2: LucideIcon
   export const BookOpen: LucideIcon
   export const Bookmark: LucideIcon
+  export const BookmarkX: LucideIcon
   export const Bot: LucideIcon
   export const Calendar: LucideIcon
   export const Check: LucideIcon
@@ -40,6 +42,8 @@ declare module 'lucide-react' {
   export const ExternalLink: LucideIcon
   export const FileJson: LucideIcon
   export const FileSpreadsheet: LucideIcon
+  export const FolderOpen: LucideIcon
+  export const FolderPlus: LucideIcon
   export const GitBranch: LucideIcon
   export const Github: LucideIcon
   export const Globe: LucideIcon
@@ -50,6 +54,7 @@ declare module 'lucide-react' {
   export const Loader2: LucideIcon
   export const LogOut: LucideIcon
   export const Newspaper: LucideIcon
+  export const Pencil: LucideIcon
   export const RefreshCw: LucideIcon
   export const Search: LucideIcon
   export const Send: LucideIcon

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SearchBar, FRESHNESS_OPTIONS } from "./SearchBar";
+import { SearchBar } from "./SearchBar";
 
 vi.mock("sonner", () => ({
   toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() },
@@ -16,62 +16,15 @@ describe("SearchBar — UI pay-per-query", () => {
     defaultQuery: "",
   };
 
-  it("provides all 4 freshness options", () => {
-    expect(FRESHNESS_OPTIONS.map((o) => o.value)).toEqual([
-      "",
-      "pd",
-      "pw",
-      "pm",
-    ]);
-    expect(FRESHNESS_OPTIONS.map((o) => o.label)).toEqual([
-      "Any Time",
-      "Past Day",
-      "Past Week",
-      "Past Month",
-    ]);
-    expect(FRESHNESS_OPTIONS).toHaveLength(4);
-  });
-
-  it("exposes sensible locale defaults and submits them with the query", () => {
+  it("calls onSearch with query on submit", () => {
     const onSearch = vi.fn();
     render(<SearchBar {...baseProps} onSearch={onSearch} />);
-    expect(screen.getByLabelText("Search language")).toHaveValue("en");
-    expect(screen.getByLabelText("Search country")).toHaveValue("us");
-
-    const input = screen.getByLabelText("Search query") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "stellar x402" } });
-    fireEvent.submit(screen.getByRole("search"));
-
-    expect(onSearch).toHaveBeenCalledWith("stellar x402", "", {
-      locale: "en-US",
-      country: "us",
-      language: "en",
-    });
-  });
-
-  it("renders search input and freshness chips", () => {
-    render(<SearchBar {...baseProps} />);
-    expect(screen.getByLabelText("Search query")).toBeInTheDocument();
-    expect(screen.getByRole("search")).toBeInTheDocument();
-    expect(screen.getByText("Freshness:")).toBeInTheDocument();
-    for (const opt of FRESHNESS_OPTIONS) {
-      expect(
-        screen.getByRole("button", { name: opt.label }),
-      ).toBeInTheDocument();
-    }
-  });
-
-  it("calls onSearch with query and freshness on submit", () => {
-    const onSearch = vi.fn();
-    render(<SearchBar {...baseProps} onSearch={onSearch} />);
-    // Select freshness pw
-    fireEvent.click(screen.getByRole("button", { name: "Past Week" }));
     const input = screen.getByLabelText("Search query") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "stellar x402" } });
     // Submit form
     const form = screen.getByRole("search");
     fireEvent.submit(form);
-    expect(onSearch).toHaveBeenCalledWith("stellar x402", "pw");
+    expect(onSearch).toHaveBeenCalledWith("stellar x402", [], []);
   });
 
   it("does not call onSearch when query empty", () => {
@@ -104,16 +57,6 @@ describe("SearchBar — UI pay-per-query", () => {
     ).toMatch(/Switch network/);
   });
 
-  it("freshness chip aria-pressed reflects selection", () => {
-    render(<SearchBar {...baseProps} />);
-    const anyTime = screen.getByRole("button", { name: "Any Time" });
-    expect(anyTime).toHaveAttribute("aria-pressed", "true");
-    const pastDay = screen.getByRole("button", { name: "Past Day" });
-    expect(pastDay).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(pastDay);
-    expect(pastDay).toHaveAttribute("aria-pressed", "true");
-    expect(anyTime).toHaveAttribute("aria-pressed", "false");
-  });
 
   it("shows queries left calculated from balance", () => {
     render(<SearchBar {...baseProps} usdcBalance="0.005" />);
