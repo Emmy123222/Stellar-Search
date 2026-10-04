@@ -50,6 +50,7 @@ import {
 import { sanitizeOperatorText } from '../src/lib/logSanitize.js'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { fetchSerper, CircuitOpenError, getSerperBreakerState } from '../src/lib/serperClient.js'
+import { validateQuery, MAX_QUERY_LENGTH } from '../src/lib/queryValidation.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import {
   normalizeOrganicResults,

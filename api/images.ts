@@ -96,7 +96,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const t0 = Date.now()
 
   try {
-    const serperRes = await fetch('https://google.serper.dev/images', {
+    // Goes through the shared Serper client so this route gets the same
+    // circuit-breaker protection and bounded transient-failure retries (#118)
+    // as the Express server and /api/search.
+    const serperRes = await fetchSerper('/images', {
       method:  'POST',
       headers: {
         'X-API-KEY':    SERPER_API_KEY,

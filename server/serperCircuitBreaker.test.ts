@@ -26,6 +26,11 @@ process.env.GROQ_API_KEY = 'gsk_test'
 process.env.SERPER_BREAKER_FAILURE_THRESHOLD = '2'
 process.env.SERPER_BREAKER_OPEN_MS = '30000'
 process.env.SERPER_BREAKER_HALF_OPEN_PROBES = '1'
+// The retry loop (issue #118) is exercised in src/lib/serperClient.test.ts.
+// Disable it here so these cases count *logical* upstream failures: with
+// retries enabled a single 502 would occupy the whole attempt budget and the
+// breaker would trip on one request instead of two.
+process.env.SERPER_RETRY_ATTEMPTS = '1'
 
 let app: any
 let serperBreaker: import('../src/lib/circuitBreaker').CircuitBreaker
