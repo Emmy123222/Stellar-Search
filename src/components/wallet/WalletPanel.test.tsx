@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { forwardRef } from 'react'
 import { WalletPanel } from './WalletPanel'
 import type { WalletState } from '../../hooks/useFreighterWallet'
 import { initI18n, loadNamespace } from '../../i18n'
@@ -17,8 +18,8 @@ vi.mock('framer-motion', async () => {
   return {
     ...actual,
     motion: {
-      div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-      button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
+      div: forwardRef<HTMLDivElement, any>(({ children, ...props }, ref) => <div ref={ref} {...props}>{children}</div>),
+      button: forwardRef<HTMLButtonElement, any>(({ children, ...props }, ref) => <button ref={ref} {...props}>{children}</button>),
     },
     AnimatePresence: ({ children }: any) => <>{children}</>,
   }
@@ -36,6 +37,26 @@ const baseWallet: WalletState = {
 }
 
 describe('WalletPanel — independent resource states', () => {
+  it('moves focus into the dialog, closes on Escape, and restores trigger focus', async () => {
+    render(<WalletPanel wallet={baseWallet} transactions={[]} txLoading={false} onConnect={vi.fn()} onDisconnect={vi.fn()} onRefresh={vi.fn()} />)
+    const trigger = screen.getByLabelText('Wallet menu')
+    fireEvent.click(trigger)
+    const dialog = screen.getByRole('dialog', { name: 'Wallet details' })
+
+    await vi.waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await vi.waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('closes when pointer interaction occurs outside the dialog', () => {
+    render(<WalletPanel wallet={baseWallet} transactions={[]} txLoading={false} onConnect={vi.fn()} onDisconnect={vi.fn()} onRefresh={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Wallet menu'))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('shows connection error from wallet.error', () => {
     const wallet = { ...baseWallet, error: 'Freighter not found' }
     render(<WalletPanel wallet={wallet} transactions={[]} txLoading={false} onConnect={vi.fn()} onDisconnect={vi.fn()} onRefresh={vi.fn()} />)
