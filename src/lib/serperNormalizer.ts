@@ -1,4 +1,27 @@
-import type { SearchResult, ImageResult, NewsResult, Sitelink } from '../types/index.js'
+import type { SearchResult, ImageResult, NewsResult, Sitelink, PeopleAlsoAskResult } from '../types/index.js'
+
+/** Normalize Serper's optional People Also Ask expansion without trusting upstream URLs. */
+export function normalizePeopleAlsoAsk(rawData: unknown): PeopleAlsoAskResult[] {
+  if (!rawData || typeof rawData !== 'object') return []
+  const rows = (rawData as Record<string, unknown>).peopleAlsoAsk
+  if (!Array.isArray(rows)) return []
+
+  return rows.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as Record<string, unknown>
+    const question = typeof row.question === 'string' ? row.question.trim() : ''
+    const answerValue = row.snippet ?? row.answer
+    const answer = typeof answerValue === 'string' ? answerValue.trim() : ''
+    const linkValue = row.link ?? row.url
+    if (!question || !answer || !isValidHttpUrl(linkValue)) return []
+    const url = (linkValue as string).trim()
+    const sourceValue = row.title ?? row.source
+    const source = typeof sourceValue === 'string' && sourceValue.trim()
+      ? sourceValue.trim()
+      : extractSafeHostname(url)
+    return [{ question, answer, source, url }]
+  })
+}
 
 /**
  * Validates whether a given string is a valid HTTP or HTTPS URL.

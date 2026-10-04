@@ -68,10 +68,14 @@ export interface SearchResponse {
   txHash?: string | null
   latencyMs: number
   suggestions?: string[]
-  filters?: {
-    includeDomains?: string[]
-    excludeDomains?: string[]
-  }
+  peopleAlsoAsk?: PeopleAlsoAskResult[]
+}
+
+export interface PeopleAlsoAskResult {
+  question: string
+  answer: string
+  source: string
+  url: string
 }
 
 // Alias for compatibility
