@@ -33,6 +33,8 @@ const NETWORK = (process.env.STELLAR_NETWORK ?? STELLAR_NETWORK) as
 const SERPER_API_KEY = process.env.SERPER_API_KEY!
 const FACILITATOR_URL = process.env.FACILITATOR_URL || 'https://www.x402.org/facilitator'
 
+// Fail fast on a misconfigured network/address pair rather than handing out a
+// payment challenge that can never settle.
 assertValidStellarConfig({
   STELLAR_NETWORK: NETWORK,
   STELLAR_RECEIVING_ADDRESS: RECEIVING_ADDRESS,
@@ -167,6 +169,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     return res.status(400).json(errorBody)
   }
+  // `validateQuery` above already enforces MAX_QUERY_LENGTH and strips control
+  // characters, so no separate length/encoding pass is required here.
   const count = validatedCount.value
   const tbs = validatedFreshness.value ? FRESHNESS_TBS[validatedFreshness.value] : undefined
 

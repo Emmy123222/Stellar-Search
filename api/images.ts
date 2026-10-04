@@ -35,9 +35,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET')    return res.status(405).json({ error: 'Method not allowed' })
 
-  const { q, count = '10' } = req.query as Record<string, string>
+  const { q, count } = req.query as Record<string, unknown>
 
-  if (!q?.trim()) return res.status(400).json({ error: 'Missing required parameter: q' })
+  // Parameter validation (#98) runs before the 402 challenge/replay check so
+  // an invalid count is never charged and never reaches Serper. Image search
+  // does not support `freshness`; any value is ignored.
+  const queryValidation = validateQuery(q)
+  if (!queryValidation.ok) return res.status(400).json({ error: queryValidation.error })
+  const cleanQ = queryValidation.cleanQ
+
+  const countValidation = validateCount(count, IMAGES_COUNT)
+  if (!countValidation.ok) return res.status(400).json({ error: countValidation.error })
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -103,8 +111,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        q:   q.trim(),
-        num: Math.min(parseInt(count) || 10, 10),
+        q:   cleanQ,
+        num: countValidation.value,
       }),
     })
 
@@ -132,7 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }))
 
     return res.json({
-      query:      q.trim(),
+      query:      cleanQ,
       results,
       count:      results.length,
       network:    NETWORK,

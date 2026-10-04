@@ -1,15 +1,22 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../../src/lib/constants'
+import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC, MAX_BATCH_SIZE } from '../../src/lib/constants'
 import { consumePaymentPayload } from '../../src/lib/paymentIntegrity'
 import { normalizeOrganicResults, normalizeQueryMetadata } from '../../src/lib/serperNormalizer'
 import { fetchSerper, CircuitOpenError } from '../../src/lib/serperClient'
+import {
+  validateCount,
+  validateFreshness,
+  SEARCH_COUNT,
+  FRESHNESS_TBS,
+} from '../../src/lib/paramValidation'
 import crypto from 'crypto'
 
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
 const NETWORK = STELLAR_NETWORK as 'stellar:testnet' | 'stellar:mainnet'
 const SERPER_API_KEY = process.env.SERPER_API_KEY!
 
-export const MAX_BATCH_SIZE = 10
+// Batch-size bound is shared with Express and MCP via src/lib/constants.ts.
+export { MAX_BATCH_SIZE }
 export const MAX_BATCH_TOTAL_USDC = 0.01
 
 function validateQuery(q: unknown): { ok: true; cleanQ: string } | { ok: false; error: string } {
@@ -67,7 +74,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!v.ok) return res.status(400).json({ error: `Invalid query "${String(q).slice(0, 30)}": ${v.error}`, index: queries.indexOf(q) })
     cleanQueries.push(v.cleanQ)
   }
-  const parsedCount = Math.min(Math.max(parseInt(String(rawCount ?? '5')) || 5, 1), 20)
+  // Parameter validation (#98) precedes the payment check below, so an invalid
+  // batch is rejected with a stable 400 and is never charged or quoted.
+  const countValidation = validateCount(rawCount, SEARCH_COUNT)
+  if (!countValidation.ok) return res.status(400).json({ error: countValidation.error })
+  const freshnessValidation = validateFreshness(freshness)
+  if (!freshnessValidation.ok) return res.status(400).json({ error: freshnessValidation.error })
+  const parsedCount = countValidation.value
+  const freshnessTbs = freshnessValidation.value ? FRESHNESS_TBS[freshnessValidation.value] : undefined
 
   const paymentHeader = (req.headers['payment-signature'] || req.headers['x-payment'] || req.headers['X-PAYMENT']) as string | undefined
   let paymentId: string | null
@@ -136,10 +150,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const t0 = Date.now()
     try {
       const requestBody: Record<string, unknown> = { q, num: parsedCount }
-      if (freshness) {
-        const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
-        if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
-      }
+      if (freshnessTbs) requestBody.tbs = freshnessTbs
       const serperRes = await fetchSerper('/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },

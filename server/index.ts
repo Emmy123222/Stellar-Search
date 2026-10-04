@@ -13,7 +13,7 @@
  *   groq-sdk       — Groq AI (Llama 3)
  */
 
-import express, { Request, Response } from 'express'
+import express, { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import helmet from 'helmet'
@@ -50,6 +50,17 @@ import {
 import { sanitizeOperatorText } from '../src/lib/logSanitize.js'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { fetchSerper, CircuitOpenError, getSerperBreakerState } from '../src/lib/serperClient.js'
+import { validateQuery, MAX_QUERY_LENGTH } from '../src/lib/queryValidation.js'
+import {
+  validateCount,
+  validateFreshness,
+  SEARCH_COUNT,
+  IMAGES_COUNT,
+  NEWS_COUNT,
+  FRESHNESS_TBS,
+  type CountBounds,
+} from '../src/lib/paramValidation.js'
+import { getX402DiscoveryMetadata, requestOrigin } from '../src/lib/x402Discovery.js'
 import { formatConfigurationError, readServerConfig } from '../src/lib/config'
 import {
   normalizeOrganicResults,
@@ -196,7 +207,9 @@ const stats = {
 }
 
 // ─── Batch idempotency & async job stores (issues #324, #325) ────────────
-export const MAX_BATCH_SIZE = 10
+// The batch-size bound is shared with the Vercel handler and the MCP
+// capability document via src/lib/constants.ts.
+export { MAX_BATCH_SIZE }
 export const MAX_BATCH_TOTAL_USDC = 0.01
 export const MAX_JOB_WEBHOOK_ATTEMPTS = 5
 export const WEBHOOK_RETRY_BASE_MS = 1000
@@ -425,6 +438,11 @@ const schemes = [{ network: NETWORK, server: new ExactStellarScheme() }]
 
 // Apply middleware to all routes, not just /search
 
+// Validate `count`/`freshness` for the paid GET routes BEFORE the x402
+// middleware, so an invalid request always gets the same stable 400 response
+// and is never handed a payment challenge (issue #98).
+app.use(validatePaidRouteParams)
+
 // ─── Payment Logging Middleware ──────────────────────────────────────────
 app.use((req, res, next) => {
   if (req.path === '/search') {
@@ -587,6 +605,40 @@ function recordReconciliation(params: {
 
 export { validateQuery, MAX_QUERY_LENGTH }
 
+// ─── Paid-route parameter validation (issues #98, #188) ───────────────────
+// `count` and `freshness` are validated BEFORE any payment adapter runs, so an
+// invalid request always receives the same stable 400 response and can never
+// reach (or be charged by) the x402 middleware or Serper. Bounds are shared
+// with the Vercel functions and the MCP server via src/lib/paramValidation.ts.
+const PAID_GET_ROUTE_BOUNDS: Record<string, { count: CountBounds; freshness: boolean }> = {
+  '/search': { count: SEARCH_COUNT, freshness: true },
+  '/images': { count: IMAGES_COUNT, freshness: false },
+  '/news':   { count: NEWS_COUNT,   freshness: true },
+}
+
+export function validatePaidRouteParams(req: Request, res: Response, next: NextFunction): void {
+  const bounds = PAID_GET_ROUTE_BOUNDS[req.path]
+  if (!bounds) return next()
+
+  const count = validateCount(req.query.count, bounds.count)
+  if (!count.ok) {
+    const errorBody: ApiErrorResponse = { error: count.error }
+    res.status(400).json(errorBody)
+    return
+  }
+
+  if (bounds.freshness) {
+    const freshness = validateFreshness(req.query.freshness)
+    if (!freshness.ok) {
+      const errorBody: ApiErrorResponse = { error: freshness.error }
+      res.status(400).json(errorBody)
+      return
+    }
+  }
+
+  next()
+}
+
 // ─── GET /search ──────────────────────────────────────────────────────────
 app.get('/search', async (req: Request, res: Response) => {
   const requestId = randomUUID()
@@ -660,7 +712,7 @@ app.get('/search', async (req: Request, res: Response) => {
 
     // ── Optional AI suggestions via Groq ──────────────────────────────────
     let suggestions: string[] = []
-    if (req.query.suggestions === '1' && results.length > 0) {
+    if (groq && req.query.suggestions === '1' && results.length > 0) {
       try {
         const topSnippets = results
           .slice(0, 3)
@@ -1368,7 +1420,7 @@ app.post('/jobs', async (req: Request, res: Response) => {
     id: jobId,
     query: cleanQ,
     count: safeCount,
-    freshness,
+    freshness: freshnessValidation.value,
     status: 'running' as JobStatus,
     createdAt: now,
     updatedAt: now,

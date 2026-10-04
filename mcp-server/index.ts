@@ -42,6 +42,7 @@ import {
   AI_TEXT_MAX_LENGTH,
   AI_INSTRUCTION_MAX_LENGTH,
   AI_COMBINED_MAX_LENGTH,
+  MAX_BATCH_SIZE,
 } from '../src/lib/constants'
 import type { ApiErrorResponse } from '../src/types/index.js'
 import { resolveStat, statsUnavailableReason } from '../src/lib/serverHealth'
@@ -620,20 +621,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── web_search with progress ──────────────────────────────────────────
   if (name === "web_search") {
-    const {
-      query,
-      count = 5,
-      freshness,
-      locale = "en-US",
-      country = "us",
-      language = "en",
-    } = args as {
+    // Reject malformed arguments (wrong types, fractional/out-of-range counts,
+    // unknown freshness enums) before any progress notification or payment
+    // work happens. Never silently coerce — issue #98.
+    const invalidArgs = validateWebSearchArgs(args)
+    if (invalidArgs) {
+      return {
+        content: [{ type: "text", text: `Validation error: ${invalidArgs}` }],
+        isError: true,
+      };
+    }
+
+    const { query, count = 5, freshness } = args as {
       query: string;
       count?: number;
       freshness?: string;
-      locale?: string;
-      country?: string;
-      language?: string;
     };
 
     try {
@@ -746,7 +748,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── image_search ──────────────────────────────────────────────────────
   if (name === "image_search") {
-    const { query, count = 5 } = args as { query: string; count?: number };
+    const invalidArgs = validateImageSearchArgs(args)
+    if (invalidArgs) {
+      return {
+        content: [{ type: "text", text: `Validation error: ${invalidArgs}` }],
+        isError: true,
+      };
+    }
+
+    const { query, count = 10 } = args as { query: string; count?: number };
 
     try {
       await sendProgress(
@@ -781,9 +791,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `Searching images for "${query}"`,
       );
 
-      const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 10)
+      const safeCount = clampCount(count, { min: 1, max: 10, defaultValue: 10 })
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
-      if (safeSearch) params.set('safeSearch', safeSearch)
 
       const res = await fetch(`${SERVER_URL}/images?${params}`, {
         signal: controller.signal,
@@ -854,6 +863,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── news_search ───────────────────────────────────────────────────────
   if (name === "news_search") {
+    const invalidArgs = validateNewsSearchArgs(args)
+    if (invalidArgs) {
+      return {
+        content: [{ type: "text", text: `Validation error: ${invalidArgs}` }],
+        isError: true,
+      };
+    }
+
     const {
       query,
       count = 10,
@@ -897,7 +914,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `Searching news for "${query}"`,
       );
 
-      const safeCount = Math.min(Math.max(parseInt(String(count)) || 10, 1), 20)
+      const safeCount = clampCount(count, { min: 1, max: 20, defaultValue: 10 })
       const params = new URLSearchParams({ q: query, count: String(safeCount) })
       if (freshness) params.set('freshness', freshness)
 

@@ -35,9 +35,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET')    return res.status(405).json({ error: 'Method not allowed' })
 
-  const { q, count = '10', freshness } = req.query as Record<string, string>
+  const { q, count, freshness } = req.query as Record<string, unknown>
 
-  if (!q?.trim()) return res.status(400).json({ error: 'Missing required parameter: q' })
+  // Parameter validation (#98) runs BEFORE the 402 challenge and the replay
+  // check: a request the server would refuse anyway is never handed a payment
+  // challenge, is never charged, and never reaches Serper.
+  const queryValidation = validateQuery(q)
+  if (!queryValidation.ok) return res.status(400).json({ error: queryValidation.error })
+  const cleanQ = queryValidation.cleanQ
+
+  const countValidation = validateCount(count, NEWS_COUNT)
+  if (!countValidation.ok) return res.status(400).json({ error: countValidation.error })
+  const freshnessValidation = validateFreshness(freshness)
+  if (!freshnessValidation.ok) return res.status(400).json({ error: freshnessValidation.error })
 
   // ─── Payment check ────────────────────────────────────────────────────────
   const paymentHeader =
@@ -97,17 +107,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const requestBody: Record<string, unknown> = {
-      q:   q.trim(),
-      num: Math.min(parseInt(count) || 10, 20),
+      q:   cleanQ,
+      num: countValidation.value,
     }
 
-    if (freshness) {
-      const dateFilters: Record<string, string> = {
-        pd: 'qdr:d',  // past day
-        pw: 'qdr:w',  // past week
-        pm: 'qdr:m',  // past month
-      }
-      if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
+    if (freshnessValidation.value) {
+      requestBody.tbs = FRESHNESS_TBS[freshnessValidation.value]
     }
 
     const serperRes = await fetch('https://google.serper.dev/news', {
@@ -142,7 +147,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }))
 
     return res.json({
-      query:      q.trim(),
+      query:      cleanQ,
       results,
       count:      results.length,
       network:    NETWORK,

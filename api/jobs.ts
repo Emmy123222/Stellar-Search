@@ -3,6 +3,12 @@ import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults, normalizeQueryMetadata } from '../src/lib/serperNormalizer'
 import { fetchSerper } from '../src/lib/serperClient'
+import {
+  validateCount,
+  validateFreshness,
+  SEARCH_COUNT,
+  FRESHNESS_TBS,
+} from '../src/lib/paramValidation'
 import crypto from 'crypto'
 
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!
@@ -126,12 +132,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  const { query, count = '5', freshness, webhookUrl, webhookSecret } = (req.body || {}) as any
+  const { query, count, freshness, webhookUrl, webhookSecret } = (req.body || {}) as any
 
   const v = validateQuery(query)
   if (!v.ok) return res.status(400).json({ error: v.error })
   const cleanQ = v.cleanQ
-  const safeCount = Math.min(Math.max(parseInt(String(count)) || 5, 1), 20)
+
+  // Parameter validation (#98) precedes payment verification and job creation,
+  // so an invalid count never results in a settled payment or a stored job.
+  const countValidation = validateCount(count, SEARCH_COUNT)
+  if (!countValidation.ok) return res.status(400).json({ error: countValidation.error })
+  const freshnessValidation = validateFreshness(freshness)
+  if (!freshnessValidation.ok) return res.status(400).json({ error: freshnessValidation.error })
+  const safeCount = countValidation.value
+  const freshnessTbs = freshnessValidation.value ? FRESHNESS_TBS[freshnessValidation.value] : undefined
 
   if (webhookUrl) {
     const chk = validateWebhookUrl(webhookUrl)
@@ -173,7 +187,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     id: jobId,
     query: cleanQ,
     count: safeCount,
-    freshness,
+    freshness: freshnessValidation.value,
     status: 'running',
     createdAt: now,
     updatedAt: now,
@@ -199,10 +213,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const t0 = Date.now()
     try {
       const requestBody: Record<string, unknown> = { q: cleanQ, num: safeCount }
-      if (freshness) {
-        const dateFilters: Record<string, string> = { 'pd': 'qdr:d', 'pw': 'qdr:w', 'pm': 'qdr:m' }
-        if (dateFilters[freshness]) requestBody.tbs = dateFilters[freshness]
-      }
+      if (freshnessTbs) requestBody.tbs = freshnessTbs
       const serperRes = await fetchSerper('/search', {
         method: 'POST',
         headers: { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
