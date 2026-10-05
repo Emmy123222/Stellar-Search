@@ -41,10 +41,10 @@ jobs:
        github.event.deployment_status.environment != 'production')
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
         # No `npm ci`: scripts/smoke.mjs is dependency-free ESM on purpose, so
@@ -102,7 +102,7 @@ jobs:
 
       - name: Upload response artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: preview-smoke-results
           path: smoke-artifacts/
