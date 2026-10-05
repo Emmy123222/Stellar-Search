@@ -31,10 +31,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -83,7 +83,7 @@ jobs:
 
       - name: Upload smoke artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-local-${{ github.run_id }}
           path: |
@@ -110,10 +110,10 @@ jobs:
     if: github.event_name == 'schedule' || github.event.inputs.base_url != '' || vars.SMOKE_BASE_URL != ''
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -135,7 +135,7 @@ jobs:
 
       - name: Upload deployed smoke artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-deployed-${{ github.run_id }}
           path: |
@@ -154,10 +154,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.funded == 'true' || vars.SMOKE_FUND_ENABLED == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload funded artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-funded-${{ github.run_id }}
           path: |
