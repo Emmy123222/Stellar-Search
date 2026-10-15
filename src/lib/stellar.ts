@@ -6,9 +6,9 @@ import { STELLAR_EXPERT_URL } from './constants'
 
 export * from './constants'
 
-export function truncateAddress(address: string, chars = 6): string {
+export function truncateAddress(address: string, chars = 6, suffixChars = 4): string {
   if (!address) return ''
-  return `${address.slice(0, chars)}...${address.slice(-4)}`
+  return `${address.slice(0, chars)}...${address.slice(-suffixChars)}`
 }
 
 export function truncateHash(hash: string, chars = 8): string {
@@ -24,6 +24,10 @@ export function explorerAccountUrl(address: string): string {
   return `${STELLAR_EXPERT_URL}/account/${address}`
 }
 
+/**
+ * @deprecated Use formatRelativeTime from './formatters' instead.
+ * Kept for backward compatibility.
+ */
 export function formatTimeAgo(isoString: string): string {
   const diff = Date.now() - new Date(isoString).getTime()
   const s = Math.floor(diff / 1000)

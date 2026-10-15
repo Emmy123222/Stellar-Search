@@ -4,12 +4,14 @@ import {
   Wallet, ChevronDown, ExternalLink,
   Copy, CheckCheck, RefreshCw, LogOut, AlertCircle,
 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import type { WalletState, StellarTransaction } from '../../hooks/useFreighterWallet'
 import {
   truncateAddress, truncateHash,
-  explorerAccountUrl, explorerTxUrl, formatTimeAgo,
+  explorerAccountUrl, explorerTxUrl,
   IS_MAINNET, EXPECTED_WALLET_NETWORK, AMOUNT_USDC
 } from '../../lib/stellar'
+import { formatRelativeTime, formatRemainingQueries } from '../../lib/formatters'
 
 interface Props {
   wallet: WalletState
@@ -198,7 +200,7 @@ export function WalletPanel({
                   <p className="font-display text-white/25 mt-0.5" style={{ fontSize: '9px' }}>
                     {t('queriesRemaining', {
                       count: Math.floor((isNaN(parseFloat(wallet.usdcBalance)) ? 0 : Math.max(0, parseFloat(wallet.usdcBalance))) / parseFloat(AMOUNT_USDC)),
-                      defaultValue: `~${Math.floor((isNaN(parseFloat(wallet.usdcBalance)) ? 0 : Math.max(0, parseFloat(wallet.usdcBalance))) / parseFloat(AMOUNT_USDC)).toLocaleString()} queries`,
+                      defaultValue: `~${formatRemainingQueries(wallet.usdcBalance, AMOUNT_USDC)} queries`,
                     })}
                   </p>
                 </div>
@@ -274,7 +276,7 @@ export function WalletPanel({
                             {truncateHash(tx.hash, 6)} <ExternalLink className="w-2 h-2" />
                           </a>
                           <span className="text-white/20" style={{ fontSize: '10px' }}>
-                            {formatTimeAgo(tx.timestamp)}
+                            {formatRelativeTime(tx.timestamp)}
                           </span>
                         </div>
                       </div>

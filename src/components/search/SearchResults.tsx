@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ExternalLink, Star, Clock, Sparkles, Search } from 'lucide-react'
 import type { PeopleAlsoAskResult, SearchResult } from '../../hooks/useSearch'
+import { formatRelevanceScore } from '../../lib/formatters'
+import { useDirection } from '../../lib/rtl'
 
 interface Props {
   results: SearchResult[]
@@ -17,6 +19,7 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
 )
 
 export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }: Props) {
+  const { isRtl }                           = useDirection()
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
@@ -247,7 +250,7 @@ export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }:
                 </span>
                 <div className="flex items-center gap-1 text-neon-amber/60">
                   <Star className="w-3 h-3 fill-current" />
-                  <span className="font-display text-xs">{(r.relevanceScore * 100).toFixed(0)}%</span>
+                  <span className="font-display text-xs">{formatRelevanceScore(r.relevanceScore)}</span>
                 </div>
                 {r.publishedAt && (
                   <div className="flex items-center gap-1 text-white/25">

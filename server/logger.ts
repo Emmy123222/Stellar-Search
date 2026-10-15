@@ -29,8 +29,6 @@ export function privacySafeQuery(value: unknown): string | undefined {
     return raw ? String(raw).substring(0, 200) : undefined
   }
   // Default: query text is intentionally never logged; use request IDs for correlation.
-export function privacySafeQuery(_value: unknown): undefined {
-  // Query text is intentionally never logged; use request IDs for correlation.
   return undefined
 }
 

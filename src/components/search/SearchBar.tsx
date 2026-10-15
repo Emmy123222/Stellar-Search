@@ -4,6 +4,7 @@ import { Search, Zap, AlertTriangle, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
 import { IS_MAINNET, EXPECTED_WALLET_NETWORK } from '../../lib/stellar'
 import { calculateSearchPrice, type SearchMode } from '../../lib/constants'
+import { formatRemainingQueries } from '../../lib/formatters'
 
 export interface FreshnessOption {
   label: string
@@ -24,6 +25,7 @@ interface Props {
   usdcBalance: string
   walletNetwork: string
   defaultQuery?: string
+  defaultFreshness?: string
   searchMode?: SearchMode
   resultCount?: number
 }
@@ -35,6 +37,7 @@ export function SearchBar({
   usdcBalance,
   walletNetwork,
   defaultQuery = '',
+  defaultFreshness = '',
   searchMode = 'search',
   resultCount = 5,
 }: Props) {
@@ -211,7 +214,7 @@ export function SearchBar({
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mt-2 px-1">
         <p className="font-display text-xs text-white/20">
           {walletConnected
-            ? `Balance: ${usdcBalance} USDC · ~${Math.floor((isNaN(parseFloat(usdcBalance)) ? 0 : Math.max(0, parseFloat(usdcBalance))) / parseFloat(currentPricing.amountUsdc)).toLocaleString()} queries left (${searchMode}, count ${resultCount}, tier ${currentPricing.amountUsdc} USDC)`
+            ? `Balance: ${usdcBalance} USDC · ~${formatRemainingQueries(usdcBalance, currentPricing.amountUsdc)} queries left (${searchMode}, count ${resultCount}, tier ${currentPricing.amountUsdc} USDC)`
             : 'Connect Freighter wallet to search'}
         </p>
         <p className="font-display text-xs text-white/20 uppercase tracking-widest">

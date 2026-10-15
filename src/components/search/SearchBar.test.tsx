@@ -75,6 +75,6 @@ describe("SearchBar — UI pay-per-query", () => {
   it("displays USDC amount from constants", () => {
     render(<SearchBar {...baseProps} />);
     // Button shows "0.001 USDC"
-    expect(screen.getByText(/0\.001 USDC/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /0\.001 USDC/ })).toBeInTheDocument();
   });
 });

@@ -19,6 +19,7 @@ import {
   Bookmark, BookmarkX, Star, Clock, AlertTriangle,
   ArchiveX,
 } from 'lucide-react'
+import { formatRelevanceScore, formatDateTime } from '../../lib/formatters'
 import type { UseCollectionsReturn } from '../../hooks/useCollections'
 import type { Collection, SavedResult } from '../../types'
 import { COLLECTIONS_QUOTA_MAX, COLLECTIONS_MAX_COUNT } from '../../types'
@@ -101,7 +102,7 @@ function SavedResultRow({
           </span>
           <div className="flex items-center gap-1 text-neon-amber/50">
             <Star className="w-2.5 h-2.5 fill-current" />
-            <span className="font-display" style={{ fontSize: '10px' }}>{(r.relevanceScore * 100).toFixed(0)}%</span>
+            <span className="font-display" style={{ fontSize: '10px' }}>{formatRelevanceScore(r.relevanceScore)}</span>
           </div>
           {r.publishedAt && (
             <div className="flex items-center gap-1 text-white/20">
@@ -138,7 +139,7 @@ function SavedResultRow({
             </a>
           )}
           <span className="text-white/15" style={{ fontSize: '10px' }}>
-            {new Date(saved.savedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+            {formatDateTime(saved.savedAt)}
           </span>
         </div>
       </div>

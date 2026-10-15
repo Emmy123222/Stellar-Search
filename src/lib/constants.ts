@@ -4,6 +4,7 @@
  */
 
 import { StrKey } from '@stellar/stellar-sdk'
+import { formatUSDC } from './formatters'
 
 export const VALID_STELLAR_NETWORKS = ['stellar:testnet', 'stellar:mainnet'] as const
 export type StellarNetwork = (typeof VALID_STELLAR_NETWORKS)[number]
@@ -120,7 +121,7 @@ export function calculateSearchPrice(mode: SearchMode = 'search', count: number 
   const stroops = Math.round(totalUsdc * 10000000).toString()
 
   return {
-    amountUsdc: totalUsdc.toFixed(3),
+    amountUsdc: formatUSDC(totalUsdc, 'en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }),
     amountStroops: stroops,
   }
 }

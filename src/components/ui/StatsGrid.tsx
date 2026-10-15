@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { TrendingUp, Zap, Clock, Shield } from 'lucide-react'
 import { fetchServerStats } from '../../lib/stellar'
+import { formatNumber, formatUSDC, formatDuration } from '../../lib/formatters'
 
 interface ServerStats {
   totalQueries: number
@@ -13,8 +14,8 @@ interface ServerStats {
 }
 
 const CARDS = [
-  { key: 'totalQueries',     label: 'Total Queries', Icon: TrendingUp, color: '#00f5ff', fmt: (v: unknown) => Number(v).toLocaleString() },
-  { key: 'totalUsdcSettled', label: 'USDC Settled',  Icon: Zap,        color: '#ffb800', fmt: (v: unknown) => `$${v}` },
+  { key: 'totalQueries',     label: 'Total Queries', Icon: TrendingUp, color: '#00f5ff', fmt: (v: unknown) => formatNumber(Number(v)) },
+  { key: 'totalUsdcSettled', label: 'USDC Settled',  Icon: Zap,        color: '#ffb800', fmt: (v: unknown) => `$${formatUSDC(String(v))}` },
   { key: 'avgLatencyMs',     label: 'Avg Latency',   Icon: Clock,      color: '#39ff14', fmt: (v: unknown) => `${v}ms` },
   { key: 'uptime',           label: 'Uptime',        Icon: Shield,     color: '#7dd3fc', fmt: (v: unknown) => String(v) },
 ]

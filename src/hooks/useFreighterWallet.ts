@@ -14,6 +14,7 @@ import {
 } from '@stellar/freighter-api'
 import { Horizon } from '@stellar/stellar-sdk'
 import { HORIZON_URL, USDC_ISSUER } from '../lib/stellar'
+import { formatXLM, formatUSDC } from '../lib/formatters'
 
 declare global {
   interface Window {
@@ -118,14 +119,14 @@ export function useFreighterWallet() {
 
       for (const balance of account.balances) {
         if (balance.asset_type === 'native') {
-          xlm = parseFloat(balance.balance).toFixed(4)
+          xlm = formatXLM(balance.balance)
         } else if (
           balance.asset_type === 'credit_alphanum4' &&
           (balance as any).asset_code === 'USDC' &&
           (balance as any).asset_issuer === USDC_ISSUER
         ) {
           hasUsdcTrustline = true
-          usdc = parseFloat(balance.balance).toFixed(6)
+          usdc = formatUSDC(balance.balance)
         }
       }
 
@@ -192,7 +193,7 @@ export function useFreighterWallet() {
           id: op.id,
           hash: op.transaction_hash,
           type: op.type,
-          amount: op.amount ? parseFloat(op.amount).toFixed(4) : '—',
+          amount: op.amount ? formatXLM(op.amount) : '—',
           asset:
             op.asset_type === 'native'
               ? 'XLM'
@@ -236,7 +237,7 @@ export function useFreighterWallet() {
           id: op.id,
           hash: op.transaction_hash,
           type: op.type,
-          amount: op.amount ? parseFloat(op.amount).toFixed(4) : '—',
+          amount: op.amount ? formatXLM(op.amount) : '—',
           asset: op.asset_type === 'native' ? 'XLM' : op.asset_code || 'Unknown',
           from: op.from || op.funder || '',
           to: op.to || op.account || '',
