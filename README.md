@@ -146,6 +146,12 @@ All environment variables are read from a local `.env` (see the sanitized `.env.
 | `PAYMENT_AMOUNT_STROOPS`    | No       | `10000`                            | Positive Stellar stroop amount paired with `PAYMENT_AMOUNT_USDC`.                                                                                                                                                                                | `10000`                                                    |
 | `VITE_SERVER_URL`           | No       | `/api`                             | Browser-safe API base URL. Defaults to same-origin `/api`, which works for custom domains and subpaths; Vite proxies it to Express locally.                                                                                                      | `/api` or `https://api.example.com/stellar`                |
 | `MCP_ENABLE_RECEIPTS`       | No       | `0`                                | Set `1` to opt-in MCP local receipt storage for `stellar-search://receipts/recent` (in-memory capped at 50)                                                                                                                                      | `1`                                                        |
+| `MCP_HTTP_ENABLED`          | No       | `false`                            | Enable authenticated Streamable HTTP transport for MCP (`/mcp` or standalone)                                                                                                                                                                   | `true`                                                     |
+| `MCP_AUTH_TOKEN`            | No       | —                                  | Secret bearer token or `X-MCP-Token` required to access MCP over HTTP                                                                                                                                                                            | `secret-key-123`                                           |
+| `MCP_ALLOWED_ORIGINS`       | No       | `*`                                | Comma-separated list of allowed CORS origins for MCP HTTP requests                                                                                                                                                                              | `http://localhost:5173`                                   |
+| `MCP_MAX_SESSIONS`          | No       | `50`                               | Maximum concurrent active MCP HTTP sessions (returns 429 when exceeded)                                                                                                                                                                          | `20`                                                       |
+| `MCP_SESSION_TIMEOUT_MS`    | No       | `1800000`                          | Idle session timeout in milliseconds before pruning (30m default)                                                                                                                                                                                | `3600000`                                                  |
+| `MCP_REQUEST_TIMEOUT_MS`    | No       | `60000`                            | Request deadline in milliseconds for HTTP MCP calls                                                                                                                                                                                              | `30000`                                                    |
 
 ### Deployment configuration
 
@@ -1072,6 +1078,15 @@ Prompts (no silent payment):
 - `compare_sources` — free comparison with citations
 
 Prompts never call paid tools themselves; the agent must obtain user approval before initiating `x402` settlement. This preserves explicit user approval and verified settlement for paid actions.
+
+### MCP Streamable HTTP transport (#328)
+
+In addition to stdio, StellarSearch provides an authenticated **Streamable HTTP** transport:
+- **Full Parity**: Identical tools (`web_search`, `image_search`, `news_search`, `check_balance`, `get_search_stats`, `ai_summarize`), resources, prompts, and on-chain x402 settlement.
+- **Timing-Safe Auth**: Validated against `Authorization: Bearer <token>` or `X-MCP-Token: <token>` using `crypto.timingSafeEqual` (401 on failure).
+- **Origin & CORS Policy**: Enforces `MCP_ALLOWED_ORIGINS` (403 on disallowed origin; handles OPTIONS preflights).
+- **Session Lifecycle & Protection**: Managed by `McpSessionManager` (`MCP_MAX_SESSIONS` with 429 on limit, idle pruning via `MCP_SESSION_TIMEOUT_MS`, teardown on `DELETE /mcp`).
+- **Configuration & Launch**: Enable in Express via `MCP_HTTP_ENABLED=true` (mounted at `/mcp`), or run standalone using `MCP_TRANSPORT=http npm run mcp` (or `npm run mcp -- --http`). See [mcp-server/README.md](./mcp-server/README.md) for full deployment instructions.
 
 ### Batch JSON Lines streaming (#325)
 

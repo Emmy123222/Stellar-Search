@@ -25,12 +25,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const bodyBytes = Buffer.byteLength(JSON.stringify(req.body ?? {}), 'utf8')
+  const contentType = req.headers?.['content-type'] || (req.headers as any)?.['Content-Type'] || ''
+  if (typeof contentType === 'string' && contentType.trim() !== '' && !contentType.toLowerCase().includes('application/json')) {
+    return res.status(415).json({ error: 'Unsupported Media Type: application/json required' })
+  }
+
+  let body: any = req.body
+  if (typeof body === 'string') {
+    try {
+      body = body.trim() === '' ? {} : JSON.parse(body)
+    } catch (_err) {
+      return res.status(400).json({ error: 'Invalid JSON request body' })
+    }
+  } else if (!body || typeof body !== 'object') {
+    body = {}
+  }
+
+  const bodyBytes = Buffer.byteLength(JSON.stringify(body ?? {}), 'utf8')
   if (bodyBytes > AI_CHAT_LIMITS.bodyBytes) {
     return res.status(413).json({ error: `Request body exceeds ${AI_CHAT_LIMITS.bodyBytes} bytes` })
   }
 
-  const { messages, model: requestedModel } = (req.body || {}) as {
+  const { messages, model: requestedModel } = (body || {}) as {
     messages?: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string
     stream?: boolean

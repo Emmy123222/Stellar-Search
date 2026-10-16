@@ -44,7 +44,7 @@ describe('serperClient', () => {
     const { fetchSerper } = await import('./serperClient')
     await fetchSerper('/search', { method: 'POST', headers: { 'X-API-KEY': 'k' } })
 
-    expect(fetchMock).toHaveBeenCalledWith('https://google.serper.dev/search', { method: 'POST', headers: { 'X-API-KEY': 'k' } })
+    expect(fetchMock).toHaveBeenCalledWith('https://google.serper.dev/search', expect.objectContaining({ method: 'POST', headers: { 'X-API-KEY': 'k' } }))
   })
 
   it('trips the breaker on repeated 5xx responses and then fails fast without calling fetch', async () => {

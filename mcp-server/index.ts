@@ -28,6 +28,7 @@ import {
   ReadResourceRequestSchema,
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  CancelledNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import Groq from 'groq-sdk'
 import dotenv from 'dotenv'
@@ -279,11 +280,7 @@ export function formatFailureMessage(e: ApiErrorResponse, status: number): strin
 }
 
 // ─── MCP server ───────────────────────────────────────────────────────────
-export const server = new Server(
-  { name: 'stellar-search', version: '1.0.0' },
-  { capabilities: { tools: {}, resources: {}, prompts: {} } },
-)
-
+export function registerMcpHandlers(server: Server): Server {
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
@@ -1242,15 +1239,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 })
 
-// ─── Handle cancellation notifications gracefully ───────────────────────
-try {
-  const protoAny: any = server as any
-  if (typeof protoAny.setNotificationHandler === 'function') {
-    const { CancelledNotificationSchema } =
-      await import('@modelcontextprotocol/sdk/types.js').catch(() => ({
-        CancelledNotificationSchema: null,
-      }))
-    if (CancelledNotificationSchema) {
+  // ─── Handle cancellation notifications gracefully ───────────────────────
+  try {
+    const protoAny: any = server as any
+    if (typeof protoAny.setNotificationHandler === 'function') {
       protoAny.setNotificationHandler(
         CancelledNotificationSchema,
         async (notification: any) => {
@@ -1263,11 +1255,39 @@ try {
         },
       )
     }
+  } catch (err) {
+    void err
   }
-} catch (err) {
-  void err
+
+  return server
 }
 
-const transport = new StdioServerTransport()
-await server.connect(transport)
-console.error('StellarSearch MCP server started')
+export function createMcpServer(): Server {
+  const srv = new Server(
+    { name: 'stellar-search', version: '1.0.0' },
+    { capabilities: { tools: {}, resources: {}, prompts: {} } },
+  )
+  return registerMcpHandlers(srv)
+}
+
+export const server = createMcpServer()
+
+const isCli =
+  typeof process !== 'undefined' &&
+  Boolean(process.argv?.[1]) &&
+  (process.argv[1].endsWith('mcp-server/index.ts') ||
+    process.argv[1].endsWith('mcp-server/index.js') ||
+    process.argv[1].endsWith('mcp-server\\index.ts') ||
+    process.argv[1].endsWith('mcp-server\\index.js'))
+
+if (isCli && process.env.NODE_ENV !== 'test') {
+  if (process.argv.includes('--http') || process.env.MCP_TRANSPORT === 'http') {
+    const { startMcpHttpServer } = await import('./streamableHttp.js')
+    await startMcpHttpServer()
+  } else {
+    const transport = new StdioServerTransport()
+    await server.connect(transport)
+    console.error('StellarSearch MCP server started (stdio)')
+  }
+}
+

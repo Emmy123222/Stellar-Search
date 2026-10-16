@@ -27,17 +27,8 @@ import { HTTPFacilitatorClient } from '@x402/core/server'
 import logger, { privacySafeIp, privacySafeQuery } from './logger'
 import crypto, { randomUUID } from 'crypto'
 import { validateChatMessages } from '../src/lib/aiChatService'
+import { readMcpHttpConfig, createMcpHttpHandler } from '../mcp-server/streamableHttp.js'
 
-function privacySafeIp(value: unknown): string {
-  const raw = typeof value === 'string' ? value : ''
-  return raw
-    ? `ip:${crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16)}`
-    : 'ip:unknown'
-}
-
-function privacySafeQuery(_value: unknown): undefined {
-  return undefined
-}
 import { USDC_CONTRACT } from '../src/lib/constants'
 import {
   type CountBounds,
@@ -181,6 +172,7 @@ app.use(
   })
 )
 app.use(cors(buildCorsOptions()))
+app.use(compressionMiddleware())
 // Reject oversized payloads before parsing or invoking any paid upstream API.
 app.use(express.json({ limit: '64kb' }))
 app.use(limiter)
@@ -532,6 +524,18 @@ app.use((req: Request, res: Response, next) => {
   }
   next()
 })
+
+// ─── MCP Streamable HTTP Transport (Issue #328) ─────────────────────────
+const mcpHttpConfig = readMcpHttpConfig()
+if (mcpHttpConfig.enabled) {
+  app.use('/mcp', createMcpHttpHandler(mcpHttpConfig))
+} else {
+  app.all('/mcp', (_req: Request, res: Response) => {
+    res.status(404).json({
+      error: 'MCP Streamable HTTP transport is disabled. Set MCP_HTTP_ENABLED=true to enable.',
+    })
+  })
+}
 
 app.use(paymentMiddlewareFromConfig(x402Routes, facilitatorClient, schemes))
 
@@ -1708,8 +1712,12 @@ app.get('/', (_req: Request, res: Response) => {
       'GET /jobs': 'List recent jobs (capped at 50)',
       'POST /ai/chat': 'Groq AI — free',
       'GET /health': 'Live server stats',
+      'POST /mcp': mcpHttpConfig.enabled
+        ? 'Streamable HTTP transport for MCP (authenticated)'
+        : 'Streamable HTTP transport for MCP (disabled; set MCP_HTTP_ENABLED=true)',
     },
     mcp: {
+      streamableHttp: mcpHttpConfig.enabled ? 'enabled (/mcp)' : 'disabled',
       resources: [
         'stellar-search://capabilities',
         'stellar-search://schema/search',

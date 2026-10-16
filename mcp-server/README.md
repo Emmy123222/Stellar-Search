@@ -214,3 +214,55 @@ Add the server to your MCP configuration (e.g. `~/.claude/claude_desktop_config.
   }
 }
 ```
+
+---
+
+## Streamable HTTP Transport (#328)
+
+In addition to the standard `stdio` transport, StellarSearch supports an authenticated **Streamable HTTP** transport designed for remote agent environments, microservices, and containerized deployments.
+
+### Features
+- **Full Tool Parity**: Exposes identical search, balance, stats tools, prompts, resources, and x402 settlement flows as the `stdio` transport.
+- **Timing-Safe Authentication**: Protected by `Authorization: Bearer <token>` or `X-MCP-Token: <token>` headers, verified via `crypto.timingSafeEqual` (401 on failure).
+- **CORS & Origin Policy**: Configurable allowed origins (`MCP_ALLOWED_ORIGINS`), blocking unauthorized origins with 403 Forbidden and handling OPTIONS preflights.
+- **Session Lifecycle & Limits**: Tracks active sessions (`McpSessionManager`), enforces concurrent session caps (`MCP_MAX_SESSIONS`, 429 Too Many Requests), prunes idle sessions (`MCP_SESSION_TIMEOUT_MS`), and supports explicit teardown via `DELETE /mcp` (204 No Content).
+
+### Environment Variables
+| Variable | Default | Description |
+|---|---|---|
+| `MCP_HTTP_ENABLED` | `false` | Enable Streamable HTTP transport on the Express server (`/mcp`) |
+| `MCP_HTTP_PORT` | `3005` | Port for the standalone MCP HTTP runner |
+| `MCP_AUTH_TOKEN` | *(optional)* | Secret token required in `Authorization: Bearer` or `X-MCP-Token` |
+| `MCP_ALLOWED_ORIGINS` | `*` | Comma-separated list of allowed CORS origins |
+| `MCP_MAX_SESSIONS` | `50` | Maximum active concurrent MCP sessions |
+| `MCP_SESSION_TIMEOUT_MS` | `1800000` (30m) | Inactivity timeout before pruning idle sessions |
+| `MCP_REQUEST_TIMEOUT_MS` | `60000` (60s) | Request timeout in milliseconds |
+
+### Running the HTTP Transport
+
+#### 1. Embedded with Express Server (`server/index.ts`)
+Set `MCP_HTTP_ENABLED=true` in `.env`. The `/mcp` route will be automatically mounted and accessible on the server's port (e.g. `http://localhost:3001/mcp`).
+
+#### 2. Standalone MCP HTTP Server
+Run the MCP server in HTTP mode independently:
+```bash
+MCP_TRANSPORT=http MCP_AUTH_TOKEN="my-secret-key" npm run mcp
+# Or with CLI flag:
+npm run mcp -- --http
+```
+
+### Client Configuration (Remote Agent)
+To connect an MCP client over Streamable HTTP:
+```json
+{
+  "mcpServers": {
+    "stellar-search-remote": {
+      "url": "http://localhost:3001/mcp",
+      "headers": {
+        "Authorization": "Bearer my-secret-key"
+      }
+    }
+  }
+}
+```
+

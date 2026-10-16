@@ -125,3 +125,8 @@ export function calculateSearchPrice(mode: SearchMode = 'search', count: number 
     amountStroops: stroops,
   }
 }
+
+// AI summarization input limits (MCP ai_summarize + Express /ai/chat)
+export const AI_TEXT_MAX_LENGTH = 10_000
+export const AI_INSTRUCTION_MAX_LENGTH = 500
+export const AI_COMBINED_MAX_LENGTH = 10_000
