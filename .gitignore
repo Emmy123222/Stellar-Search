@@ -21,3 +21,10 @@ sbom.cyclonedx.json
 osv-results.json
 osv-results.sarif
 logs/
+
+# Python cache & build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/

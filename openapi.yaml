@@ -8,7 +8,9 @@ info:
     `/ai/chat` and `/health` are free. The same handlers are exposed by the
     Express server (this document's paths, e.g. `/search`) and by the Vercel
     serverless functions under `/api` (e.g. `/api/search`) — request and
-    response shapes are identical across both runtimes.
+    response shapes are identical across both runtimes. Official client SDKs
+    are available for TypeScript (`packages/typescript-client`) and Python
+    (`packages/python-client`).
   version: 1.0.0
   license:
     name: MIT

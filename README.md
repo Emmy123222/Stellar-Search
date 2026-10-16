@@ -122,6 +122,38 @@ if (response.txHash) {
 
 See [`packages/typescript-client/README.md`](packages/typescript-client/README.md) for browser signer (Freighter), server signer (Keypair/secrets), and complete API docs.
 
+### 8. Python Client SDK (`stellar-search-client`)
+
+Python AI agents and backend services can use the official typed Python SDK located in [`packages/python-client`](packages/python-client):
+
+```python
+import os
+from stellar_search import StellarSearchClient, create_server_signer
+
+client = StellarSearchClient(
+    base_url="http://localhost:3001",
+    signer=create_server_signer(secret_key=os.environ["STELLAR_PRIVATE_KEY"]),
+    network="stellar:testnet",
+)
+
+# Paid web search with automatic 402 challenge negotiation & payment retry
+response = client.search("Stellar smart contracts", count=5)
+print(response.results)
+
+# Verify settlement receipt on-chain via Horizon
+if response.tx_hash:
+    verification = client.verify_receipt({
+        "txHash": response.tx_hash,
+        "query": response.query,
+        "amount": response.paid_amount,
+        "network": response.network,
+        "timestamp": "2026-09-01T12:00:00Z",
+    })
+    print(f"Receipt verified: {verification.status}")  # 'confirmed'
+```
+
+See [`packages/python-client/README.md`](packages/python-client/README.md) for async client usage (`AsyncStellarSearchClient`), approval hooks, and complete API docs.
+
 ---
 
 ## Environment Variables
