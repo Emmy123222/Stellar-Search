@@ -59,6 +59,19 @@ describe('SearchResults — summary state reset (issue #95)', () => {
     global.fetch = mockFetch as any
   })
 
+  it('renders People Also Ask separately as an accessible disclosure', () => {
+    render(<SearchResults results={mockResults} query="stellar" peopleAlsoAsk={[{
+      question: 'How does Stellar work?',
+      answer: 'It uses the Stellar Consensus Protocol.',
+      source: 'Stellar Docs',
+      url: 'https://developers.stellar.org',
+    }]} />)
+
+    expect(screen.getByRole('heading', { name: 'PEOPLE ALSO ASK' })).toBeTruthy()
+    expect(screen.getByText('How does Stellar work?')).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Stellar Docs/ }).getAttribute('href')).toBe('https://developers.stellar.org')
+  })
+
   it('clears summary when query prop changes', async () => {
     const { rerender } = render(
       <SearchResults results={mockResults} query="first query" />,
@@ -174,6 +187,7 @@ describe('SearchResults — summary state reset (issue #95)', () => {
     )
 
     // Should not render any result cards
+    expect(container.firstChild).toBeNull()
     expect(screen.queryByText('SUMMARIZE')).toBeNull()
   })
 })

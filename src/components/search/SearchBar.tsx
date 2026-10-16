@@ -1,24 +1,52 @@
 import { useRef, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Search, Zap, AlertTriangle } from 'lucide-react'
+import { Search, Zap, AlertTriangle, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
-import { IS_MAINNET, EXPECTED_WALLET_NETWORK, AMOUNT_USDC } from '../../lib/stellar'
+import { IS_MAINNET, EXPECTED_WALLET_NETWORK } from '../../lib/stellar'
+import { calculateSearchPrice, type SearchMode } from '../../lib/constants'
+import { formatRemainingQueries } from '../../lib/formatters'
+
+export interface FreshnessOption {
+  label: string
+  value: string
+}
+
+export const FRESHNESS_OPTIONS: FreshnessOption[] = [
+  { label: 'Any Time', value: '' },
+  { label: 'Past Day', value: 'pd' },
+  { label: 'Past Week', value: 'pw' },
+  { label: 'Past Month', value: 'pm' },
+]
 
 interface Props {
-  onSearch: (query: string, includeDomains?: string[], excludeDomains?: string[]) => void
+  onSearch: (query: string, includeDomains?: string[], excludeDomains?: string[], freshness?: string) => void
   isSearching: boolean
   walletConnected: boolean
   usdcBalance: string
   walletNetwork: string
   defaultQuery?: string
+  defaultFreshness?: string
+  searchMode?: SearchMode
+  resultCount?: number
 }
 
 export function SearchBar({
-  onSearch, isSearching, walletConnected, usdcBalance, walletNetwork, defaultQuery = '',
+  onSearch,
+  isSearching,
+  walletConnected,
+  usdcBalance,
+  walletNetwork,
+  defaultQuery = '',
+  defaultFreshness = '',
+  searchMode = 'search',
+  resultCount = 5,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [freshness, setFreshness] = useState<string>(defaultFreshness)
   const [includeStr, setIncludeStr] = useState('')
   const [excludeStr, setExcludeStr] = useState('')
+
+  const currentPricing = calculateSearchPrice(searchMode, resultCount)
 
   const isWrongNetwork = walletConnected && walletNetwork !== EXPECTED_WALLET_NETWORK
 
@@ -32,18 +60,23 @@ export function SearchBar({
 
     const parsedUsdc = parseFloat(usdcBalance);
     const safeUsdc = isNaN(parsedUsdc) ? 0 : Math.max(0, parsedUsdc);
-    
-    if (walletConnected && safeUsdc < parseFloat(AMOUNT_USDC)) {
-      toast.info('Low Balance', { description: `You need at least ${AMOUNT_USDC} USDC to search.` })
+
+    if (walletConnected && safeUsdc < parseFloat(currentPricing.amountUsdc)) {
+      toast.info('Low Balance', { description: `You need at least ${currentPricing.amountUsdc} USDC to search.` })
       return
     }
 
     const q = (e.currentTarget.elements.namedItem('q') as HTMLInputElement).value.trim()
-    
     const includeDomains = includeStr.split(',').map(d => d.trim()).filter(Boolean)
     const excludeDomains = excludeStr.split(',').map(d => d.trim()).filter(Boolean)
 
-    if (q) onSearch(q, includeDomains, excludeDomains)
+    if (q) {
+      if (freshness) {
+        onSearch(q, includeDomains, excludeDomains, freshness)
+      } else {
+        onSearch(q, includeDomains, excludeDomains)
+      }
+    }
   }
 
   return (
@@ -52,7 +85,7 @@ export function SearchBar({
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="absolute -top-12 left-0 right-0 py-2 px-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center gap-3 text-red-400"
+          className="absolute -top-12 inset-x-0 py-2 px-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center gap-3 text-red-400"
         >
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           <p className="text-xs font-display tracking-wide">
@@ -64,9 +97,14 @@ export function SearchBar({
       <div className="relative group">
         {/* Glow ring on focus */}
         <div
-          className={`absolute -inset-px rounded-2xl opacity-0 group-focus-within:opacity-100 transition-opacity blur-sm ${isWrongNetwork ? 'bg-red-500/20' : ''
-            }`}
-          style={!isWrongNetwork ? { background: 'linear-gradient(135deg, rgba(0,245,255,0.2), rgba(14,165,233,0.2), rgba(0,245,255,0.2))' } : {}}
+          className={`absolute -inset-px rounded-2xl opacity-0 group-focus-within:opacity-100 transition-opacity blur-sm ${
+            isWrongNetwork ? 'bg-red-500/20' : ''
+          }`}
+          style={
+            !isWrongNetwork
+              ? { background: 'linear-gradient(135deg, rgba(0,245,255,0.2), rgba(14,165,233,0.2), rgba(0,245,255,0.2))' }
+              : {}
+          }
         />
 
         <div
@@ -77,7 +115,10 @@ export function SearchBar({
             backdropFilter: 'blur(16px)',
           }}
         >
-          <Search className="w-5 h-5 flex-shrink-0" style={{ color: isWrongNetwork ? 'rgba(239,68,68,0.5)' : 'rgba(0,245,255,0.5)' }} />
+          <Search
+            className="w-5 h-5 flex-shrink-0"
+            style={{ color: isWrongNetwork ? 'rgba(239,68,68,0.5)' : 'rgba(0,245,255,0.5)' }}
+          />
 
           <input
             ref={inputRef}
@@ -110,10 +151,44 @@ export function SearchBar({
                 transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
               />
             ) : (
-              <><Zap className="w-3.5 h-3.5" /> {AMOUNT_USDC} USDC</>
+              <><Zap className="w-3.5 h-3.5" /> {currentPricing.amountUsdc} USDC</>
             )}
           </motion.button>
         </div>
+      </div>
+
+      {/* Date Range Freshness Filter Chips (#17) */}
+      <div
+        className="flex items-center gap-2 mt-3 px-1 flex-wrap"
+        role="group"
+        aria-label="Date range filters"
+      >
+        <span className="inline-flex items-center gap-1 font-display text-xs text-white/30 tracking-wider uppercase mr-1">
+          <Calendar className="w-3 h-3 text-neon-cyan/60" /> Freshness:
+        </span>
+        {FRESHNESS_OPTIONS.map((opt) => {
+          const isSelected = freshness === opt.value
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setFreshness(opt.value)}
+              className="px-2.5 py-1 rounded-lg font-display text-xs transition-all border cursor-pointer"
+              style={{
+                background: isSelected
+                  ? 'rgba(0,245,255,0.15)'
+                  : 'rgba(255,255,255,0.03)',
+                borderColor: isSelected
+                  ? 'rgba(0,245,255,0.5)'
+                  : 'rgba(255,255,255,0.08)',
+                color: isSelected ? '#00f5ff' : 'rgba(255,255,255,0.4)',
+              }}
+              aria-pressed={isSelected}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
       </div>
 
       <div className="flex gap-3">
@@ -139,7 +214,7 @@ export function SearchBar({
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mt-2 px-1">
         <p className="font-display text-xs text-white/20">
           {walletConnected
-            ? `Balance: ${usdcBalance} USDC · ~${Math.floor((isNaN(parseFloat(usdcBalance)) ? 0 : Math.max(0, parseFloat(usdcBalance))) / parseFloat(AMOUNT_USDC)).toLocaleString()} queries left`
+            ? `Balance: ${usdcBalance} USDC · ~${formatRemainingQueries(usdcBalance, currentPricing.amountUsdc)} queries left (${searchMode}, count ${resultCount}, tier ${currentPricing.amountUsdc} USDC)`
             : 'Connect Freighter wallet to search'}
         </p>
         <p className="font-display text-xs text-white/20 uppercase tracking-widest">

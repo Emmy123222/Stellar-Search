@@ -45,8 +45,9 @@ describe('validateCount', () => {
     expect(validateCount('21', bounds).ok).toBe(false)
     expect(validateCount('999', bounds).ok).toBe(false)
     expect(validateCount(0, bounds).ok).toBe(false)
-    if (!validateCount('21', bounds).ok) {
-      expect(validateCount('21', bounds).error).toMatch(/between 1 and 20/)
+    const res = validateCount('21', bounds)
+    if (!res.ok) {
+      expect(res.error).toMatch(/between 1 and 20/)
     }
   })
 

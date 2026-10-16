@@ -37,6 +37,14 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const DEFAULT_MAX_TOKENS = 512
 export const DEFAULT_TEMPERATURE = 0.7
 
+/** Resource limits applied before a request can consume Groq quota. */
+export const AI_CHAT_LIMITS = {
+  bodyBytes: 64 * 1024,
+  messages: 50,
+  messageCharacters: 8_000,
+  totalCharacters: 32_000,
+} as const
+
 /**
  * Validates and resolves the model to use.
  * Returns the requested model if valid, otherwise falls back to DEFAULT_MODEL.
@@ -57,6 +65,11 @@ export function validateChatMessages(messages: unknown): string | null {
     return 'messages array required'
   }
 
+  if (messages.length > AI_CHAT_LIMITS.messages) {
+    return `Too many messages: maximum is ${AI_CHAT_LIMITS.messages}`
+  }
+
+  let totalCharacters = 0
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]
     if (!msg || typeof msg !== 'object') {
@@ -67,6 +80,13 @@ export function validateChatMessages(messages: unknown): string | null {
     }
     if (typeof msg.content !== 'string' || msg.content.trim() === '') {
       return `Invalid content at index ${i}: must be a non-empty string`
+    }
+    if (msg.content.length > AI_CHAT_LIMITS.messageCharacters) {
+      return `Message at index ${i} is too long: maximum is ${AI_CHAT_LIMITS.messageCharacters} characters`
+    }
+    totalCharacters += msg.content.length
+    if (totalCharacters > AI_CHAT_LIMITS.totalCharacters) {
+      return `Conversation is too long: maximum is ${AI_CHAT_LIMITS.totalCharacters} characters`
     }
   }
 

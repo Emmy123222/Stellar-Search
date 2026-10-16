@@ -1,0 +1,5 @@
+{
+  "freighterNotFound": "لم يتم العثور على إضافة Freighter. قم بتثبيتها من freighter.app",
+  "accountLoadFailed": "فشل تحميل الحساب",
+  "connectionFailed": "فشل الاتصال"
+}

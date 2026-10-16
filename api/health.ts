@@ -11,7 +11,7 @@ import {
 } from '../src/lib/serverHealth'
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
-  applyServerlessHeaders(res)
+  applyServerlessHeaders(res, req)
   const config = readServerConfig()
   const NETWORK = config.stellarNetwork
   const FACILITATOR_URL = config.facilitatorUrl

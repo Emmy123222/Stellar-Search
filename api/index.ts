@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { applyServerlessHeaders } from '../src/lib/serverlessHeaders'
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
-  applyServerlessHeaders(res)
+  applyServerlessHeaders(res, req)
   res.json({
     requestId: req.headers['x-vercel-id'] || 'dev',
     name: 'StellarSearch',

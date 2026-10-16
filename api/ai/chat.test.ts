@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockCreate = vi.fn();
 
@@ -7,7 +7,6 @@ vi.mock('groq-sdk', () => ({
     chat = { completions: { create: mockCreate } }
   },
 }))
-
 
 describe('Vercel API: /api/ai/chat handler', () => {
   beforeEach(() => {
@@ -26,6 +25,40 @@ describe('Vercel API: /api/ai/chat handler', () => {
     await handler(req, res)
     expect(res.status).toHaveBeenCalledWith(405)
     expect(res.json).toHaveBeenCalledWith({ error: 'Method not allowed' })
+  })
+
+  it('rejects unsupported media types with 415', async () => {
+    const handler = (await import('./chat')).default
+    const req: any = {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: 'hello',
+    }
+    const res: any = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+      setHeader: vi.fn(),
+    }
+    await handler(req, res)
+    expect(res.status).toHaveBeenCalledWith(415)
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.any(String) }))
+  })
+
+  it('rejects invalid JSON request body with 400', async () => {
+    const handler = (await import('./chat')).default
+    const req: any = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{invalid json',
+    }
+    const res: any = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
+      setHeader: vi.fn(),
+    }
+    await handler(req, res)
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.any(String) }))
   })
 
   it('validates messages array and rejects invalid payloads with 400', async () => {
@@ -50,7 +83,7 @@ describe('Vercel API: /api/ai/chat handler', () => {
     const handler = (await import('./chat')).default
     const req: any = {
       method: 'POST',
-      headers: {},
+      headers: { 'content-type': 'application/json' },
       query: {},
       body: {
         messages: [{ role: 'user', content: 'What is Stellar?' }],
@@ -74,7 +107,7 @@ describe('Vercel API: /api/ai/chat handler', () => {
     const handler = (await import('./chat')).default
     const req: any = {
       method: 'POST',
-      headers: {},
+      headers: { 'content-type': 'application/json' },
       query: {},
       body: {
         messages: [{ role: 'user', content: 'What is Stellar?' }],
@@ -102,7 +135,7 @@ describe('Vercel API: /api/ai/chat handler', () => {
     const writes: string[] = []
     const req: any = {
       method: 'POST',
-      headers: { accept: 'text/event-stream' },
+      headers: { accept: 'text/event-stream', 'content-type': 'application/json' },
       query: {},
       body: {
         messages: [{ role: 'user', content: 'What is Stellar?' }],
@@ -135,7 +168,7 @@ describe('Vercel API: /api/ai/chat handler', () => {
     const writes: string[] = []
     const req: any = {
       method: 'POST',
-      headers: { accept: 'text/event-stream' },
+      headers: { accept: 'text/event-stream', 'content-type': 'application/json' },
       query: {},
       body: {
         messages: [{ role: 'user', content: 'What is Stellar?' }],

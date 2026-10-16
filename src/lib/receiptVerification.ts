@@ -10,8 +10,8 @@
  *   5. Destination receiving address alignment
  */
 
-import { HORIZON_TESTNET, HORIZON_MAINNET, USDC_ISSUER_TESTNET, USDC_ISSUER_MAINNET } from './constants'
-import type { SearchReceipt, ReceiptVerificationDetail, ReceiptVerificationStatus } from '../types'
+import { HORIZON_TESTNET, HORIZON_MAINNET } from './constants'
+import type { SearchReceipt, ReceiptVerificationDetail } from '../types'
 
 export interface VerifyOptions {
   horizonUrl?: string
@@ -213,7 +213,6 @@ export async function verifyReceiptAgainstHorizon(
         // If destination is specified, check if txData or op touches the receiving address
         let destinationMatches = true
         if (expectedDestination) {
-          const opSource = op.source_account || op.account || txData.source_account || txData.account
           if (op.to && op.to !== expectedDestination) {
             destinationMatches = false
           }

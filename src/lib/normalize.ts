@@ -5,7 +5,9 @@ export function normalizeUrl(link: any): string {
     if (url.protocol === 'http:' || url.protocol === 'https:') {
       return url.href;
     }
-  } catch {}
+  } catch {
+    // Invalid URL format
+  }
   return '';
 }
 

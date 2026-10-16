@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Bookmark, ExternalLink, Tag, Trash2, X } from 'lucide-react'
 import { useSavedResearch } from '../../hooks/useSavedResearch'
-import { formatTimeAgo } from '../../lib/stellar'
+import { formatRelativeTime } from '../../lib/formatters'
 
 /**
  * Dashboard panel listing the user's saved research, with editable notes
@@ -113,7 +113,7 @@ export function SavedResearchPanel() {
                     <ExternalLink className="w-3 h-3 flex-shrink-0 opacity-50" />
                   </a>
                   <p className="text-white/30 text-xs mt-0.5">
-                    Saved from "{item.query}" · {formatTimeAgo(item.savedAt)}
+                    Saved from "{item.query}" · {formatRelativeTime(item.savedAt)}
                   </p>
                 </div>
                 <button

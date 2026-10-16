@@ -55,7 +55,7 @@ export function SpellingCorrectionBanner({
           <div className="text-white/80 leading-relaxed">
             <span>Showing results for </span>
             <span className="font-semibold text-neon-cyan">"{executedQuery}"</span>
-            <span className="text-white/40 text-xs block sm:inline sm:ml-2">
+            <span className="text-white/40 text-xs block sm:inline sm:ms-2">
               (auto-corrected from <em className="italic text-white/60">"{originalQuery}"</em>)
             </span>
           </div>
@@ -70,7 +70,7 @@ export function SpellingCorrectionBanner({
             title={`Search original query "${originalQuery}" (${AMOUNT_USDC} USDC with wallet approval)`}
           >
             <span>Search instead for <em>"{originalQuery}"</em></span>
-            <ArrowRight className="w-3 h-3 text-neon-cyan" />
+            <ArrowRight className="w-3 h-3 text-neon-cyan rtl-flip" />
           </button>
         </div>
       </motion.div>
@@ -97,7 +97,7 @@ export function SpellingCorrectionBanner({
         <div className="flex items-start gap-2.5">
           <Sparkles className="w-4 h-4 text-neon-amber flex-shrink-0 mt-0.5" />
           <div className="text-white/80 leading-relaxed">
-            <span className="text-neon-amber font-medium mr-1.5">Did you mean:</span>
+            <span className="text-neon-amber font-medium me-1.5">Did you mean:</span>
             <button
               type="button"
               onClick={() => onSearch(suggestedQuery)}
@@ -106,7 +106,7 @@ export function SpellingCorrectionBanner({
             >
               <span>"{suggestedQuery}"</span>
             </button>
-            <span className="text-white/40 text-xs block sm:inline sm:ml-2">
+            <span className="text-white/40 text-xs block sm:inline sm:ms-2">
               (current results are for <em className="italic text-white/60">"{originalQuery}"</em>)
             </span>
           </div>
@@ -125,7 +125,7 @@ export function SpellingCorrectionBanner({
             title={`Search "${suggestedQuery}" with wallet confirmation`}
           >
             <span>Search Suggestion</span>
-            <ArrowRight className="w-3 h-3 text-neon-amber" />
+            <ArrowRight className="w-3 h-3 text-neon-amber rtl-flip" />
           </button>
 
           {onDismiss && (

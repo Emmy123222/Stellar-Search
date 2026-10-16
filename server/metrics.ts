@@ -45,14 +45,6 @@ function boundErrorType(type: string): string {
   return BOUNDED_ERROR_TYPES.includes(type) ? type : 'other'
 }
 
-function normalizeLabels(labels: MetricLabels): MetricLabels {
-  const result: MetricLabels = {}
-  for (const [k, v] of Object.entries(labels)) {
-    result[k] = v
-  }
-  return result
-}
-
 class HistogramMetric {
   private data: HistogramData = { buckets: {}, sum: 0, count: 0 }
 

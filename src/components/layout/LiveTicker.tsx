@@ -20,9 +20,6 @@ export function LiveTicker({ walletConnected }: Props) {
     ['STATUS', walletConnected ? 'WALLET CONNECTED' : 'NOT CONNECTED'],
   ]
 
-  // Duplicate for seamless loop
-  const doubled = [...items, ...items]
-
   return (
     <div
       role="marquee"

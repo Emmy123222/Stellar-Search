@@ -4,8 +4,6 @@ import { decodePaymentSignatureHeader } from '@x402/core/http'
 import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { STELLAR_NETWORK, AMOUNT_USDC, assertValidStellarConfig } from '../src/lib/constants'
 import {
-  getNetwork,
-  getPayTo,
   buildPaymentRequirement,
   buildPaymentRequiredPayload,
 } from '../src/lib/x402Config'
@@ -15,6 +13,7 @@ import {
   normalizeQueryMetadata,
   normalizeAnswerBox,
   normalizeKnowledgeGraph,
+  normalizePeopleAlsoAsk,
 } from '../src/lib/serperNormalizer'
 import { fetchSerper, CircuitOpenError } from '../src/lib/serperClient'
 import type { SearchResponse, ApiErrorResponse, CreditReceipt } from '../src/types/index.js'
@@ -118,7 +117,7 @@ async function verifyPayment(
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  applyServerlessHeaders(res)
+  applyServerlessHeaders(res, req)
 
   // ─── CORS ─────────────────────────────────────────────────────────────────
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -252,9 +251,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const queryMeta = normalizeQueryMetadata(data, cleanQ)
     const answerBox = normalizeAnswerBox(data)
     const knowledgeGraph = normalizeKnowledgeGraph(data)
+    const peopleAlsoAsk = normalizePeopleAlsoAsk(data)
 
     const responseBody: SearchResponse = {
-      query: cleanQ,
+      query: queryMeta.executedQuery,
+      originalQuery: queryMeta.originalQuery,
+      executedQuery: queryMeta.executedQuery,
+      suggestedQuery: queryMeta.suggestedQuery,
+      isCorrected: queryMeta.isCorrected,
       results,
       count: results.length,
       network: NETWORK,
@@ -264,10 +268,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       latencyMs,
       ...(answerBox && { answerBox }),
       ...(knowledgeGraph && { knowledgeGraph }),
-      filters: {
-        ...(appliedIncludes.length > 0 && { includeDomains: appliedIncludes }),
-        ...(appliedExcludes.length > 0 && { excludeDomains: appliedExcludes }),
-      }
+      ...(peopleAlsoAsk.length > 0 && { peopleAlsoAsk }),
     }
 
     return res.json(responseBody)

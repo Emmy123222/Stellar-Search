@@ -1,0 +1,48 @@
+{
+  "name": "@stellar-search/client",
+  "version": "1.0.0",
+  "description": "Typed TypeScript client SDK for paid search with x402 on Stellar",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@stellar/freighter-api": "^6.0.1",
+    "@stellar/stellar-sdk": "^14.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@stellar/freighter-api": {
+      "optional": true
+    },
+    "@stellar/stellar-sdk": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "stellar",
+    "x402",
+    "search",
+    "sdk",
+    "client",
+    "micropayments",
+    "agent"
+  ],
+  "author": "StellarSearch Team",
+  "license": "MIT"
+}

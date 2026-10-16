@@ -1,0 +1,17 @@
+{
+  "nav": {
+    "search": "بحث",
+    "docs": "كيف يعمل",
+    "dashboard": "لوحة التحكم",
+    "setupGuide": "فتح دليل الإعداد"
+  },
+  "footer": {
+    "tagline": "STELLARSEARCH · هاكاثون ستيلا 2026",
+    "links": {
+      "x402": "x402.org",
+      "stellarDocs": "وثائق ستيلا",
+      "explorer": "مستكشف {{network}}",
+      "freighter": "Freighter"
+    }
+  }
+}

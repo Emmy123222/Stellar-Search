@@ -29,6 +29,8 @@ vi.mock('groq-sdk', () => ({
 }))
 vi.mock('./logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  privacySafeIp: vi.fn((ip: string) => ip ? `ip:${ip}` : 'ip:unknown'),
+  privacySafeQuery: vi.fn(() => undefined),
 }))
 // Spy on the payment adapter so tests can prove it is never invoked for
 // invalid input, while keeping real replay-protection behavior for valid ones.

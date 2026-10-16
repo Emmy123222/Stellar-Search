@@ -18,6 +18,11 @@ vi.mock('groq-sdk', () => ({
 }))
 vi.mock('./logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  privacySafeIp: vi.fn((ip: string) => ip ? `ip:${ip}` : 'ip:unknown'),
+  privacySafeQuery: vi.fn(() => undefined),
+}))
+vi.mock('./readiness.js', () => ({
+  getReadiness: vi.fn().mockResolvedValue({ status: 'ok', checks: [] })
 }))
 vi.mock('./readiness.js', () => ({
   getReadiness: vi.fn().mockResolvedValue({ status: 'ok', checks: [] })
@@ -103,6 +108,15 @@ describe('POST /ai/chat validation', () => {
   it('returns 400 when messages empty', async () => {
     const res = await request(app).post('/ai/chat').send({ messages: [] }).set('Content-Type', 'application/json')
     expect(res.status).toBe(400)
+  })
+
+  it('returns 413 before handling a JSON body larger than 64 KiB', async () => {
+    const res = await request(app)
+      .post('/ai/chat')
+      .send({ messages: [{ role: 'user', content: 'x'.repeat(70_000) }] })
+      .set('Content-Type', 'application/json')
+
+    expect(res.status).toBe(413)
   })
 })
 

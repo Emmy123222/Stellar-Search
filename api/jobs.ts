@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { STELLAR_NETWORK, USDC_CONTRACT, AMOUNT_STROOPS, AMOUNT_USDC } from '../src/lib/constants'
 import { consumePaymentPayload } from '../src/lib/paymentIntegrity'
 import { normalizeOrganicResults, normalizeQueryMetadata } from '../src/lib/serperNormalizer'
-import { fetchSerper } from '../src/lib/serperClient'
+import { fetchSerper, CircuitOpenError } from '../src/lib/serperClient'
 import crypto from 'crypto'
 
 const RECEIVING_ADDRESS = process.env.STELLAR_RECEIVING_ADDRESS!

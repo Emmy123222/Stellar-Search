@@ -133,6 +133,19 @@ describe('full server x402 payment flow integration (#26)', () => {
     expect(decoded.accepts[0].network).toBe('stellar:testnet')
   })
 
+  it('invalid or missing query input → 400 before facilitator is touched', async () => {
+    const fetchMock = global.fetch as any
+    fetchMock.mockClear()
+
+    const res = await request(app).get('/search')
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBeDefined()
+
+    // Verify facilitator was never contacted for discovery (/supported) or verify/settle
+    const facilitatorCalls = fetchMock.mock.calls.filter((call: any[]) => typeof call[0] === 'string' && call[0].includes('facilitator'))
+    expect(facilitatorCalls).toHaveLength(0)
+  })
+
   it('valid header → 200 with results', async () => {
     // Challenge step: retrieve server payment requirements
     const initialRes = await request(app).get('/search?q=stellar')

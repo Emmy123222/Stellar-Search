@@ -180,7 +180,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
       {/* Floating button */}
       <motion.button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full flex items-center justify-center"
+        className="fixed bottom-6 end-6 rtl:right-auto rtl:left-6 z-40 w-12 h-12 rounded-full flex items-center justify-center"
         style={{ background: 'rgba(0,245,255,0.15)', border: '1px solid rgba(0,245,255,0.4)' }}
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
@@ -203,7 +203,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="fixed bottom-20 right-6 z-40 w-80 rounded-2xl overflow-hidden flex flex-col"
+            className="fixed bottom-20 end-6 rtl:right-auto rtl:left-6 z-40 w-80 rounded-2xl overflow-hidden flex flex-col"
             style={{
               height: '420px',
               background: 'rgba(6,13,20,0.96)',
@@ -291,7 +291,7 @@ export function GroqAssistant({ lastSearch }: Props = {}) {
                     border: '1px solid rgba(0,245,255,0.3)',
                   }}
                 >
-                  <Send className="w-3.5 h-3.5 text-neon-cyan" />
+                  <Send className="w-3.5 h-3.5 text-neon-cyan rtl-flip" />
                 </button>
               </div>
             </div>
