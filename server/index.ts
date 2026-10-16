@@ -26,18 +26,11 @@ import { ExactStellarScheme } from '@x402/stellar/exact/server'
 import { HTTPFacilitatorClient } from '@x402/core/server'
 import logger, { privacySafeIp, privacySafeQuery } from './logger'
 import crypto, { randomUUID } from 'crypto'
-import { validateChatMessages } from '../src/lib/aiChatService'
-
-function privacySafeIp(value: unknown): string {
-  const raw = typeof value === 'string' ? value : ''
-  return raw
-    ? `ip:${crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16)}`
-    : 'ip:unknown'
-}
-
-function privacySafeQuery(_value: unknown): undefined {
-  return undefined
-}
+import {
+  validateChatMessages,
+  resolveModel,
+  buildChatMessages,
+} from '../src/lib/aiChatService'
 import { USDC_CONTRACT } from '../src/lib/constants'
 import {
   type CountBounds,
@@ -181,6 +174,7 @@ app.use(
   })
 )
 app.use(cors(buildCorsOptions()))
+app.use(compressionMiddleware())
 // Reject oversized payloads before parsing or invoking any paid upstream API.
 app.use(express.json({ limit: '64kb' }))
 app.use(limiter)
@@ -1596,8 +1590,8 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
   if (!groq) {
     return res.status(503).json({ error: 'AI assistant is not configured.' })
   }
-  const { messages, model: requestedModel } = req.body as {
-    messages: { role: 'system' | 'user' | 'assistant'; content: string }[]
+  const { messages, model: requestedModel } = (req.body || {}) as {
+    messages?: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string
   }
 
@@ -1606,28 +1600,14 @@ app.post('/ai/chat', async (req: Request, res: Response) => {
     return res.status(400).json({ error: validationError })
   }
 
-  // Available models whitelist
-  const AVAILABLE_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
-
-  // Use requested model if valid, otherwise fall back to default
-  const model =
-    requestedModel && AVAILABLE_MODELS.includes(requestedModel)
-      ? requestedModel
-      : 'llama-3.3-70b-versatile'
+  const model = resolveModel(requestedModel)
 
   const wantsStream =
     (req.headers.accept || '').includes('text/event-stream') ||
     (req.body as any)?.stream === true ||
     req.query.stream === '1'
 
-  const groqMessages = [
-    {
-      role: 'system' as const,
-      content:
-        'You are StellarSearch AI, a concise research assistant. Help users craft better search queries and understand results. Keep responses under 200 words.',
-    },
-    ...messages,
-  ]
+  const groqMessages = buildChatMessages(messages!)
 
   if (!wantsStream) {
     try {

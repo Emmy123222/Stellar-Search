@@ -1,7 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import Groq from 'groq-sdk'
 import { applyServerlessHeaders } from '../../src/lib/serverlessHeaders'
-import { AI_CHAT_LIMITS, validateChatMessages } from '../../src/lib/aiChatService'
+import {
+  AI_CHAT_LIMITS,
+  validateChatMessages,
+  resolveModel,
+  buildChatMessages,
+} from '../../src/lib/aiChatService'
 
 export const AVAILABLE_MODELS = [
   'llama-3.3-70b-versatile',
@@ -25,12 +30,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const bodyBytes = Buffer.byteLength(JSON.stringify(req.body ?? {}), 'utf8')
+  const contentType = (req.headers?.['content-type'] || req.headers?.['Content-Type'] || '') as string
+  if (contentType && !contentType.toLowerCase().includes('application/json')) {
+    return res.status(415).json({ error: 'Unsupported Media Type: application/json required' })
+  }
+
+  let body = req.body
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body)
+    } catch {
+      return res.status(400).json({ error: 'Invalid JSON request body' })
+    }
+  }
+
+  const bodyBytes = Buffer.byteLength(JSON.stringify(body ?? {}), 'utf8')
   if (bodyBytes > AI_CHAT_LIMITS.bodyBytes) {
     return res.status(413).json({ error: `Request body exceeds ${AI_CHAT_LIMITS.bodyBytes} bytes` })
   }
 
-  const { messages, model: requestedModel } = (req.body || {}) as {
+  const { messages, model: requestedModel } = (body || {}) as {
     messages?: { role: 'system' | 'user' | 'assistant'; content: string }[]
     model?: string
     stream?: boolean
@@ -41,24 +60,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: validationError })
   }
 
-  const model: AvailableModel =
-    requestedModel && (AVAILABLE_MODELS as readonly string[]).includes(requestedModel)
-      ? (requestedModel as AvailableModel)
-      : 'llama-3.3-70b-versatile'
+  const model = resolveModel(requestedModel) as AvailableModel
 
   const wantsStream =
     (req.headers?.accept || '').includes('text/event-stream') ||
-    (req.body as any)?.stream === true ||
+    (body as any)?.stream === true ||
     req.query?.stream === '1'
 
-  const groqMessages = [
-    {
-      role: 'system' as const,
-      content:
-        'You are StellarSearch AI, a concise research assistant. Help users craft better search queries and understand results. Keep responses under 200 words.',
-    },
-    ...messages,
-  ]
+  const groqMessages = buildChatMessages(messages!)
 
   if (!wantsStream) {
     try {

@@ -17,7 +17,6 @@ export default defineConfig({
       'src/hooks/useReducedMotion.test.ts',
       'src/hooks/useSearch.test.ts',
       'src/hooks/useSearch.test.tsx',
-      'src/lib/aiChatService.test.ts',
       'src/lib/newsClusters.test.ts',
       'src/lib/sse.test.ts',
       'src/pages/DashboardPage.test.tsx',

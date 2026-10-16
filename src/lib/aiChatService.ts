@@ -57,8 +57,32 @@ export function resolveModel(requestedModel?: string | null): string {
 }
 
 /**
- * Validates the chat messages array.
+ * Shared JSON Schema definition for a ChatMessage.
+ */
+export const chatMessageSchema = {
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  title: 'ChatMessage',
+  type: 'object',
+  required: ['role', 'content'],
+  properties: {
+    role: {
+      type: 'string',
+      enum: ['system', 'user', 'assistant'],
+      description: 'The role of the message author',
+    },
+    content: {
+      type: 'string',
+      minLength: 1,
+      maxLength: AI_CHAT_LIMITS.messageCharacters,
+      description: 'The content of the message',
+    },
+  },
+} as const
+
+/**
+ * Validates the chat messages array at runtime.
  * Returns null if valid, or an error string message if invalid.
+ * Validates array shape, element types, roles, and content bounds without echoing content.
  */
 export function validateChatMessages(messages: unknown): string | null {
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -71,20 +95,25 @@ export function validateChatMessages(messages: unknown): string | null {
 
   let totalCharacters = 0
   for (let i = 0; i < messages.length; i++) {
+    if (!(i in messages)) {
+      return `Invalid message at index ${i}: sparse array element not allowed`
+    }
     const msg = messages[i]
-    if (!msg || typeof msg !== 'object') {
+    if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
       return `Invalid message at index ${i}: expected object`
     }
-    if (!['system', 'user', 'assistant'].includes(msg.role)) {
+    const role = (msg as any).role
+    if (!['system', 'user', 'assistant'].includes(role)) {
       return `Invalid role at index ${i}: must be 'system', 'user', or 'assistant'`
     }
-    if (typeof msg.content !== 'string' || msg.content.trim() === '') {
+    const content = (msg as any).content
+    if (typeof content !== 'string' || content.trim() === '') {
       return `Invalid content at index ${i}: must be a non-empty string`
     }
-    if (msg.content.length > AI_CHAT_LIMITS.messageCharacters) {
+    if (content.length > AI_CHAT_LIMITS.messageCharacters) {
       return `Message at index ${i} is too long: maximum is ${AI_CHAT_LIMITS.messageCharacters} characters`
     }
-    totalCharacters += msg.content.length
+    totalCharacters += content.length
     if (totalCharacters > AI_CHAT_LIMITS.totalCharacters) {
       return `Conversation is too long: maximum is ${AI_CHAT_LIMITS.totalCharacters} characters`
     }
@@ -123,12 +152,16 @@ export async function executeChatCompletion(
   const max_tokens = options.maxTokens ?? DEFAULT_MAX_TOKENS
   const temperature = options.temperature ?? DEFAULT_TEMPERATURE
 
-  const completion = await groqClient.chat.completions.create({
+  const params = {
     model,
     messages,
     max_tokens,
     temperature,
-  }, signal ? { signal } : undefined)
+  }
+
+  const completion = signal
+    ? await groqClient.chat.completions.create(params, { signal })
+    : await groqClient.chat.completions.create(params)
 
   const content = completion.choices?.[0]?.message?.content || 'No response.'
   return {
@@ -150,16 +183,17 @@ export async function streamChatCompletion(
   const max_tokens = options.maxTokens ?? DEFAULT_MAX_TOKENS
   const temperature = options.temperature ?? DEFAULT_TEMPERATURE
 
-  return groqClient.chat.completions.create(
-    {
-      model,
-      messages,
-      max_tokens,
-      temperature,
-      stream: true,
-    },
-    signal ? { signal } : undefined
-  )
+  const params = {
+    model,
+    messages,
+    max_tokens,
+    temperature,
+    stream: true,
+  }
+
+  return signal
+    ? groqClient.chat.completions.create(params, { signal })
+    : groqClient.chat.completions.create(params)
 }
 
 /**

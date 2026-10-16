@@ -12,6 +12,7 @@ import {
   streamChatCompletion,
   formatAiError,
   ChatMessage,
+  chatMessageSchema,
 } from './aiChatService'
 
 describe('aiChatService - Shared AI Chat Service', () => {
@@ -67,6 +68,41 @@ describe('aiChatService - Shared AI Chat Service', () => {
       expect(validateChatMessages([{ role: 'user', content: 'x'.repeat(AI_CHAT_LIMITS.messageCharacters + 1) }])).toMatch(/too long/)
       const messages = Array.from({ length: 5 }, () => ({ role: 'user', content: 'x'.repeat(7_000) }))
       expect(validateChatMessages(messages)).toMatch(/Conversation is too long/)
+    })
+
+    it('rejects sparse array elements with offending index', () => {
+      const sparseArray: any[] = []
+      sparseArray[1] = { role: 'user', content: 'hello' }
+      const err = validateChatMessages(sparseArray)
+      expect(err).toContain('Invalid message at index 0')
+      expect(err).toMatch(/sparse array element not allowed/i)
+    })
+
+    it('rejects nested arrays as messages', () => {
+      const err = validateChatMessages([['nested message']])
+      expect(err).toContain('Invalid message at index 0: expected object')
+    })
+
+    it('rejects sparse objects missing required fields', () => {
+      expect(validateChatMessages([{}])).toContain('Invalid role at index 0')
+      expect(validateChatMessages([{ role: 'user' }])).toContain('Invalid content at index 0')
+    })
+
+    it('never echoes user message content in validation errors', () => {
+      const sensitiveSecret = 'super-secret-token-xyz-12345'
+      const err1 = validateChatMessages([{ role: 'unauthorized_role', content: sensitiveSecret }])
+      expect(err1).toContain('Invalid role at index 0')
+      expect(err1).not.toContain(sensitiveSecret)
+
+      const err2 = validateChatMessages([{ role: 'user', content: 'x'.repeat(AI_CHAT_LIMITS.messageCharacters + 5) }])
+      expect(err2).toContain('Message at index 0 is too long')
+      expect(err2).not.toContain('xxxxx')
+    })
+
+    it('exports a valid chatMessageSchema matching runtime rules', () => {
+      expect(chatMessageSchema.required).toEqual(['role', 'content'])
+      expect(chatMessageSchema.properties.role.enum).toEqual(['system', 'user', 'assistant'])
+      expect(chatMessageSchema.properties.content.maxLength).toBe(AI_CHAT_LIMITS.messageCharacters)
     })
   })
 
