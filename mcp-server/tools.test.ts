@@ -187,6 +187,10 @@ describe('MCP server — alignment with Express/Vercel/browser constants', () =>
     const aiRes: any = await callToolHandler({ params: { name: 'ai_summarize', arguments: { text: 'Some text' } } })
     expect(aiRes.content[0].text).toBe('summary')
 
+    // 2b. ai_summarize with format
+    const aiFormatRes: any = await callToolHandler({ params: { name: 'ai_summarize', arguments: { text: 'Some text', format: 'table' } } })
+    expect(aiFormatRes.content[0].text).toBe('summary')
+
     // 3. get_search_stats
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,

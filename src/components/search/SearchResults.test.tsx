@@ -190,4 +190,39 @@ describe('SearchResults — summary state reset (issue #95)', () => {
     expect(container.firstChild).toBeNull()
     expect(screen.queryByText('SUMMARIZE')).toBeNull()
   })
+
+  describe('research workflow integration', () => {
+    it('renders the RESEARCH button alongside SUMMARIZE', () => {
+      render(<SearchResults results={mockResults} query="stellar" />)
+      expect(screen.getByRole('button', { name: /Research report/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Quick AI summary/i })).toBeInTheDocument()
+    })
+
+    it('toggles the research panel when RESEARCH button is clicked', async () => {
+      render(<SearchResults results={mockResults} query="stellar" />)
+      const researchBtn = screen.getByRole('button', { name: /Research report/i })
+
+      // Initially research panel is closed
+      expect(screen.queryByText('REPORT FORMAT')).toBeNull()
+
+      // Click to open
+      await act(async () => {
+        researchBtn.click()
+      })
+      expect(screen.getByText('REPORT FORMAT')).toBeInTheDocument()
+
+      // Click again to close
+      await act(async () => {
+        researchBtn.click()
+      })
+      expect(screen.queryByText('REPORT FORMAT')).toBeNull()
+    })
+
+    it('assigns citation IDs (result-card-N) to result cards', () => {
+      render(<SearchResults results={mockResults} query="stellar" />)
+      expect(document.getElementById('result-card-1')).not.toBeNull()
+      expect(document.getElementById('result-card-2')).not.toBeNull()
+    })
+  })
 })
+

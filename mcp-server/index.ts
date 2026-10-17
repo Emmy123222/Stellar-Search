@@ -388,6 +388,16 @@ Use for breaking stories, current events, and time-sensitive reporting.`,
               'What to do with the text (e.g. "summarise", "extract key points")',
             default: 'summarise',
           },
+          format: {
+            type: 'string',
+            enum: ['bullets', 'narrative', 'table', 'comparison'],
+            description:
+              'Output format for the report. ' +
+              '"bullets" (default): concise bullet points with citations. ' +
+              '"narrative": flowing prose with inline citations. ' +
+              '"table": markdown table with source | claim | detail columns. ' +
+              '"comparison": side-by-side contrast of sources\' positions.',
+          },
         },
         required: ['text'],
       },
@@ -1040,7 +1050,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ── ai_summarize ──────────────────────────────────────────────────────
   if (name === 'ai_summarize') {
-    const { text, instruction = 'summarise' } = args as { text: string; instruction?: string }
+    const { text, instruction = 'summarise', format } = args as {
+      text: string
+      instruction?: string
+      format?: 'bullets' | 'narrative' | 'table' | 'comparison'
+    }
     const aiClient = getGroq()
     if (!aiClient) {
       return { content: [{ type: 'text', text: 'AI summarization is not configured.' }], isError: true }
@@ -1059,6 +1073,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: 'text', text: `Validation error: combined text + instruction length exceeds maximum of ${AI_COMBINED_MAX_LENGTH} characters (received ${text.length + instruction.length}).` }], isError: true }
     }
 
+    // ── Format-specific instruction directive ───────────────────────────
+    const VALID_FORMATS = new Set(['bullets', 'narrative', 'table', 'comparison'])
+    const resolvedFormat = format && VALID_FORMATS.has(format) ? format : undefined
+
+    const FORMAT_DIRECTIVES: Record<string, string> = {
+      bullets:    'Write a concise bullet-point summary (3–7 bullets). Each bullet must cite its source(s) using [N] notation.',
+      narrative:  'Write a flowing prose summary (2–4 paragraphs) with inline [N] citations. Do not use bullet lists.',
+      table:      'Produce a Markdown table with columns: Source [N] | Key Claim | Detail. One row per source.',
+      comparison: 'Compare and contrast the sources\' positions: agreements first, then disagreements. Use inline [N] citations.',
+    }
+
+    const userContent = resolvedFormat
+      ? `${FORMAT_DIRECTIVES[resolvedFormat]}\n\nText to analyse:\n\n${text}`
+      : `Please ${instruction} the following:\n\n${text}`
+
     try {
       const completion = await aiClient.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
@@ -1070,7 +1099,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           },
           {
             role: 'user',
-            content: `Please ${instruction} the following:\n\n${text}`,
+            content: userContent,
           },
         ],
         max_tokens: 512,
