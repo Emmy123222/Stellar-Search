@@ -25,6 +25,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
+  if (req.headers?.['content-type'] && !req.headers['content-type'].includes('application/json')) {
+    return res.status(415).json({ error: 'Unsupported Media Type: application/json required' })
+  }
+
   const bodyBytes = Buffer.byteLength(JSON.stringify(req.body ?? {}), 'utf8')
   if (bodyBytes > AI_CHAT_LIMITS.bodyBytes) {
     return res.status(413).json({ error: `Request body exceeds ${AI_CHAT_LIMITS.bodyBytes} bytes` })

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ExternalLink, Star, Clock, Sparkles, Search } from 'lucide-react'
+import { ExternalLink, Star, Clock, Sparkles, Search, FlaskConical } from 'lucide-react'
 import type { PeopleAlsoAskResult, SearchResult } from '../../hooks/useSearch'
 import { formatRelevanceScore } from '../../lib/formatters'
 import { useDirection } from '../../lib/rtl'
+import { ResearchWorkflowPanel } from './ResearchWorkflowPanel'
 
 interface Props {
   results: SearchResult[]
@@ -18,17 +19,26 @@ const SERVER_URL = (import.meta as any).env?.VITE_SERVER_URL ?? (
     : 'http://localhost:3001'
 )
 
+type AiMode = 'none' | 'summarize' | 'research'
+
 export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }: Props) {
   const { isRtl }                           = useDirection()
   const [summary, setSummary]               = useState<string>('')
   const [summaryError, setSummaryError]     = useState<string | null>(null)
   const [summarizing, setSummarizing]       = useState(false)
+  const [aiMode, setAiMode]                 = useState<AiMode>('none')
+  const summarizeAbortRef                   = useRef<AbortController | null>(null)
 
   useEffect(() => {
     setSummary('')
     setSummaryError(null)
     setSummarizing(false)
+    setAiMode('none')
   }, [query, results])
+
+  useEffect(() => {
+    return () => { summarizeAbortRef.current?.abort() }
+  }, [])
 
   if (isLoading) {
     return (
@@ -56,6 +66,10 @@ export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }:
 
   const summarize = async () => {
     if (summarizing) return
+    summarizeAbortRef.current?.abort()
+    const controller = new AbortController()
+    summarizeAbortRef.current = controller
+
     setSummarizing(true)
     setSummaryError(null)
     setSummary('')
@@ -79,6 +93,7 @@ export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }:
         body: JSON.stringify({
           messages: [{ role: 'user', content: prompt }],
         }),
+        signal: controller.signal,
       })
       if (!res.ok) throw new Error(`Server error ${res.status}`)
 
@@ -124,9 +139,32 @@ export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }:
         setSummary(data.content ?? 'No summary returned.')
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') return
       setSummaryError(err.message || 'Failed to generate summary.')
     } finally {
       setSummarizing(false)
+    }
+  }
+
+  const handleSummarizeClick = () => {
+    if (aiMode === 'summarize') {
+      summarize()
+    } else {
+      setAiMode('summarize')
+      setTimeout(summarize, 0)
+    }
+  }
+
+  const handleResearchClick = () => {
+    setAiMode((prev) => (prev === 'research' ? 'none' : 'research'))
+  }
+
+  const handleCitationClick = (index: number) => {
+    if (typeof document === 'undefined') return
+    const el = document.getElementById(`result-card-${index}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      ;(el as HTMLElement).focus({ preventScroll: true })
     }
   }
 
@@ -136,15 +174,34 @@ export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }:
         <p className="font-display text-xs text-white/35 tracking-widest" aria-live="polite">
           {results.length} RESULTS · SERPER.DEV · PAID VIA x402
         </p>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
-            onClick={summarize}
+            onClick={handleSummarizeClick}
             disabled={summarizing}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider text-neon-cyan disabled:opacity-40 hover:bg-neon-cyan/10 transition-colors"
-            style={{ border: '1px solid rgba(0,245,255,0.3)', background: 'rgba(0,245,255,0.06)' }}
+            style={{
+              border: '1px solid rgba(0,245,255,0.3)',
+              background: aiMode === 'summarize' ? 'rgba(0,245,255,0.1)' : 'rgba(0,245,255,0.06)',
+            }}
+            aria-pressed={aiMode === 'summarize'}
+            aria-label={summarizing ? 'Summarizing…' : 'Quick AI summary'}
           >
             <Sparkles className="w-3 h-3" />
-            {summarizing ? 'SUMMARIZING…' : summary ? 'REGENERATE' : 'SUMMARIZE'}
+            {summarizing ? 'SUMMARIZING…' : summary && aiMode === 'summarize' ? 'REGENERATE' : 'SUMMARIZE'}
+          </button>
+          <button
+            onClick={handleResearchClick}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-display text-xs tracking-wider disabled:opacity-40 hover:bg-neon-amber/10 transition-colors"
+            style={{
+              border: '1px solid rgba(255,190,0,0.3)',
+              background: aiMode === 'research' ? 'rgba(255,190,0,0.1)' : 'rgba(255,190,0,0.06)',
+              color: '#ffbe00',
+            }}
+            aria-pressed={aiMode === 'research'}
+            aria-label="Research report — select sources and format"
+          >
+            <FlaskConical className="w-3 h-3" />
+            RESEARCH
           </button>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-neon-green" />
@@ -154,7 +211,7 @@ export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }:
       </div>
 
       <AnimatePresence>
-        {(summarizing || summary || summaryError) && (
+        {aiMode === 'summarize' && (summarizing || summary || summaryError) && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -194,6 +251,22 @@ export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }:
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {aiMode === 'research' && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+          >
+            <ResearchWorkflowPanel
+              results={results}
+              query={query}
+              onCitationClick={handleCitationClick}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {peopleAlsoAsk.length > 0 && (
         <section aria-labelledby="people-also-ask-heading" className="rounded-xl p-4 space-y-2 border border-white/10 bg-white/[0.03]">
           <h2 id="people-also-ask-heading" className="font-display text-sm text-white/70 tracking-wider">
@@ -218,6 +291,8 @@ export function SearchResults({ results, query, isLoading, peopleAlsoAsk = [] }:
       {results.map((r, i) => (
         <motion.a
           key={r.id}
+          id={`result-card-${i + 1}`}
+          tabIndex={-1}
           href={r.url}
           target="_blank"
           rel="noopener noreferrer"

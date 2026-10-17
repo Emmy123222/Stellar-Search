@@ -19,6 +19,7 @@ declare module 'lucide-react' {
   export const Activity: LucideIcon
   export const AlertCircle: LucideIcon
   export const AlertTriangle: LucideIcon
+  export const AlignLeft: LucideIcon
   export const ArchiveX: LucideIcon
   export const ArrowDown: LucideIcon
   export const ArrowRight: LucideIcon
@@ -32,8 +33,10 @@ declare module 'lucide-react' {
   export const Check: LucideIcon
   export const CheckCheck: LucideIcon
   export const CheckCircle2: LucideIcon
+  export const CheckSquare: LucideIcon
   export const ChevronDown: LucideIcon
   export const ChevronRight: LucideIcon
+  export const ChevronUp: LucideIcon
   export const Circle: LucideIcon
   export const Clock: LucideIcon
   export const Coins: LucideIcon
@@ -42,15 +45,18 @@ declare module 'lucide-react' {
   export const ExternalLink: LucideIcon
   export const FileJson: LucideIcon
   export const FileSpreadsheet: LucideIcon
+  export const FlaskConical: LucideIcon
   export const FolderOpen: LucideIcon
   export const FolderPlus: LucideIcon
   export const GitBranch: LucideIcon
+  export const GitCompare: LucideIcon
   export const Github: LucideIcon
   export const Globe: LucideIcon
   export const HelpCircle: LucideIcon
   export const History: LucideIcon
   export const Image: LucideIcon
   export const Info: LucideIcon
+  export const List: LucideIcon
   export const Loader2: LucideIcon
   export const LogOut: LucideIcon
   export const Newspaper: LucideIcon
@@ -63,7 +69,9 @@ declare module 'lucide-react' {
   export const ShieldAlert: LucideIcon
   export const ShieldCheck: LucideIcon
   export const Sparkles: LucideIcon
+  export const Square: LucideIcon
   export const Star: LucideIcon
+  export const Table2: LucideIcon
   export const Tag: LucideIcon
   export const Trash2: LucideIcon
   export const TrendingUp: LucideIcon
